@@ -94,8 +94,10 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 
 	// 构建prompt文本（包含duration和ratio参数）
 	promptText := prompt
-	if options.AspectRatio != "" {
-		promptText += fmt.Sprintf("  --ratio %s", options.AspectRatio)
+	if options.AspectRatio != "" && options.AspectRatio != "adaptive" {
+		if strings.Contains(options.AspectRatio, ":") {
+			promptText += fmt.Sprintf("  --ratio %s", options.AspectRatio)
+		}
 	}
 	if options.Duration > 0 {
 		promptText += fmt.Sprintf("  --dur %d", options.Duration)
@@ -143,7 +145,8 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 			ImageURL: map[string]interface{}{
 				"url": imageURL,
 			},
-			// 单图模式不需要role
+			// 对于 seedance 系列，单图需作为首帧输入，否则会被服务端当成 r2v
+			Role: "first_frame",
 		})
 	} else if options.FirstFrameURL != "" {
 		// 4. 只有首帧

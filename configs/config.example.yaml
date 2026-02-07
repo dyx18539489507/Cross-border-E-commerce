@@ -19,11 +19,24 @@ database:
   max_open: 100
 
 storage:
-  type: "local"
+  type: "local" # local 或 r2
   local_path: "./data/storage"
-  base_url: "http://localhost:5678/static"
+  base_url: "http://localhost:5678/static" # r2 时填写公开访问域名，例如 https://<your-public-domain>
+  r2_account_id: ""
+  r2_access_key_id: ""
+  r2_secret_access_key: ""
+  r2_bucket: ""
+  r2_endpoint: "" # 可选，默认 https://<account_id>.r2.cloudflarestorage.com
+  r2_region: "auto"
 
 ai:
   default_text_provider: "openai"
   default_image_provider: "openai"
   default_video_provider: "doubao"
+
+volcengine:
+  access_key_id: ""
+  secret_access_key: ""
+  region: "cn-north-1"
+  service: "cv"
+  visual_host: "visual.volcengineapi.com"

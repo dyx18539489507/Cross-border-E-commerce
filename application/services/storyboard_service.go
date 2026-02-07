@@ -1,10 +1,11 @@
 package services
 
 import (
-	"strconv"
-
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/ai"
@@ -58,7 +59,46 @@ type GenerateStoryboardResult struct {
 	Total       int          `json:"total"`
 }
 
+type StoryboardProgressFunc func(progress int, message string)
+
 func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, model, nil)
+}
+
+func (s *StoryboardService) GenerateStoryboardWithProgress(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, model, progress)
+}
+
+func (s *StoryboardService) generateStoryboard(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+	var (
+		reportMu     sync.Mutex
+		lastProgress = -1
+		lastMessage  = ""
+	)
+	report := func(p int, msg string) {
+		if progress == nil {
+			return
+		}
+		if msg == "" {
+			msg = "处理中..."
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 99 {
+			p = 99
+		}
+		reportMu.Lock()
+		defer reportMu.Unlock()
+		if p < lastProgress || (p == lastProgress && msg == lastMessage) {
+			return
+		}
+		lastProgress = p
+		lastMessage = msg
+		progress(p, msg)
+	}
+
+	report(12, "准备分镜生成任务...")
 	// 从数据库获取剧集信息
 	var episode struct {
 		ID            string
@@ -86,6 +126,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 	} else {
 		return nil, fmt.Errorf("剧本内容为空，请先生成剧集内容")
 	}
+
+	report(15, "获取剧本内容完成，整理角色与场景信息...")
 
 	// 获取该剧本的所有角色
 	var characters []models.Character
@@ -118,6 +160,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		}
 		sceneList = fmt.Sprintf("[%s]", strings.Join(sceneInfoList, ", "))
 	}
+
+	report(20, "角色与场景信息准备完成，生成提示词...")
 
 	s.log.Infow("Generating storyboard",
 		"episode_id", episodeID,
@@ -159,7 +203,7 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 【剧本原文】
 %s
 
-【分镜要素】每个镜头聚焦单一动作，描述要详尽具体：
+【分镜要素】每个镜头聚焦单一动作，描述要简洁具体（每字段1-2句，避免冗长）：
 1. **镜头标题(title)**：用3-5个字概括该镜头的核心内容或情绪
    - 例如："噩梦惊醒"、"对视沉思"、"逃离现场"、"意外发现"
 2. **时间**：[清晨/午后/深夜/具体时分+详细光线描述]
@@ -218,7 +262,7 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
       "action": "陈峥缓缓转身，目光与身后的李芳对视，李芳手握手电筒，光束在两人之间晃动，眼神中透露疑惑和警惕",
       "dialogue": "陈峥：\"我们被耍了，这里根本没有我们要找的东西。\" 李芳：\"现在怎么办？我们的时间不多了。\"",
       "result": "两人站在昏暗中陷入沉思，手电筒光束照在地面形成圆形光斑，背景传来微弱的金属摩擦声，气氛紧张凝重",
-      "atmosphere": "低调光线·暗部占画面70%，侧面硬光勾勒人物轮廓，冷暖光对比强烈，海风吹过产生呼啸声，营造紧迫感",
+      "atmosphere": "低调光线·暗部占画面70%%，侧面硬光勾勒人物轮廓，冷暖光对比强烈，海风吹过产生呼啸声，营造紧迫感",
       "emotion": "紧张感↑↑·警惕↑↑（悬置）",
       "duration": 7,
       "bgm_prompt": "紧张感逐渐升级的音效，低频持续音",
@@ -246,36 +290,9 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - 如果列表中没有合适的背景，则scene_id填null
 - 例如：如果镜头发生在"城市公寓卧室·凌晨"，应选择id为1的场景背景
 
-**duration时长估算规则（秒）**：
-- **所有镜头时长必须在4-12秒范围内**，确保节奏合理流畅
-- **综合估算原则**：时长由对话内容、动作复杂度、情绪节奏三方面综合决定
-
-**估算步骤**：
-1. **基础时长**（从场景内容判断）：
-   - 纯对话场景（无明显动作）：基础4秒
-   - 纯动作场景（无对话）：基础5秒
-   - 对话+动作混合场景：基础6秒
-
-2. **对话调整**（根据台词字数增加时长）：
-   - 无对话：+0秒
-   - 短对话（1-20字）：+1-2秒
-   - 中等对话（21-50字）：+2-4秒
-   - 长对话（51字以上）：+4-6秒
-
-3. **动作调整**（根据动作复杂度增加时长）：
-   - 无动作/静态：+0秒
-   - 简单动作（表情、转身、拿物品）：+0-1秒
-   - 一般动作（走动、开门、坐下）：+1-2秒
-   - 复杂动作（打斗、追逐、大幅度移动）：+2-4秒
-   - 环境展示（全景扫描、氛围营造）：+2-5秒
-
-4. **最终时长** = 基础时长 + 对话调整 + 动作调整，确保结果在4-12秒范围内
-
-**示例**：
-- "陈峥转身离开"（简单动作，无对话）：5 + 0 + 1 = 6秒
-- "李芳：\"你要去哪里？\""（短对话，无动作）：4 + 2 + 0 = 6秒  
-- "陈峥推开房门，李芳：\"终于找到你了，这些年你去哪了？\""（一般动作+中等对话）：6 + 3 + 2 = 11秒
-- "两人在雨中激烈搏斗，陈峥：\"住手！\""（复杂动作+短对话）：6 + 2 + 4 = 12秒
+**duration时长（秒）**：
+- 4-10秒为主，动作/对话更多的镜头可适当延长
+- 估算依据：对话字数 + 动作复杂度，保持节奏自然
 
 **重要**：准确估算每个镜头时长，所有分镜时长之和将作为剧集总时长
 
@@ -283,13 +300,14 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - **【极其重要】必须100%%完整拆解整个剧本，不得省略、跳过、压缩任何剧情内容**
 - **从剧本第一个字到最后一个字，逐句逐段转换为分镜**
 - **每个对话、每个动作、每个场景转换都必须有对应的分镜**
-- 剧本越长，分镜数量越多（短剧本15-30个，中等剧本30-60个，长剧本60-100个甚至更多）
-- **宁可分镜多，也不要遗漏剧情**：一个长场景可拆分为多个连续分镜
+- 剧本越长，分镜数量越多（短剧本8-20个，中等剧本20-40个，长剧本40-60个）
+- 在不遗漏剧情前提下，适度合并相邻动作，避免过度拆分
 - 每个镜头只描述一个主要动作
 - 区分主镜（is_primary: true）和链接镜（is_primary: false）
 - 确保情绪节奏有变化
 - **duration字段至关重要**：准确估算每个镜头时长，这将用于计算整集时长
 - 严格按照JSON格式输出
+- **速度优先**：描述尽量精简，避免重复形容词与过长句子
 
 **【禁止行为】**：
 - ❌ 禁止用一个镜头概括多个场景
@@ -298,64 +316,78 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - ❌ 禁止合并本应分开的镜头
 - ✅ 正确做法：剧本有多少内容，就拆解出对应数量的分镜，确保观众看完所有分镜能完整了解剧情
 
-**【关键】场景描述详细度要求**（这些描述将直接用于视频生成模型）：
-1. **时间(time)字段**：必须包含≥15字的详细描述
-   - ✓ 好例子："深夜22:30·月光从破窗斜射入仓库，在地面积水中形成银白色反光，墙角昏暗不清"
-   - ✗ 差例子："深夜"
+**描述要求**：
+- 画面描述清晰即可，避免冗长堆砌
+- 时间/地点/动作/结果/氛围各用1-2句概括即可`, systemPrompt, scriptLabel, scriptContent, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint, scriptContent)
 
-2. **地点(location)字段**：必须包含≥20字的详细场景描述
-   - ✓ 好例子："废弃码头仓库·锈蚀货架林立，地面积水反射微弱灯光，墙角堆放腐朽木箱和渔网，空气中弥漫潮湿霉味"
-   - ✗ 差例子："仓库"
+	report(25, "生成分镜中")
 
-3. **动作(action)字段**：必须包含≥25字的详细动作描述，包括肢体细节和表情
-   - ✓ 好例子："陈峥弯腰双手握住撬棍用力撬动保险箱门，手臂青筋暴起，眉头紧锁，汗水从额头滑落脸颊，呼吸急促"
-   - ✗ 差例子："陈峥打开保险箱"
-
-4. **结果(result)字段**：必须包含≥25字的详细视觉结果描述
-   - ✓ 好例子："保险箱门突然弹开发出刺耳金属声，扬起灰尘在手电筒光束中飘散，箱内空无一物只有几张发黄的旧报纸，陈峥表情从期待转为震惊和失望，瞳孔放大"
-   - ✗ 差例子："门打开了"
-
-5. **氛围(atmosphere)字段**：必须包含≥20字的环境氛围描述，包括光线、色调、声音
-   - ✓ 好例子："昏暗冷色调·青灰色为主，只有手电筒光束在黑暗中晃动，远处传来海浪拍打码头的沉闷声，整体氛围压抑沉重"
-   - ✗ 差例子："昏暗"
-
-**描述原则**：
-- 所有描述性字段要像为盲人讲述画面一样详细
-- 包含感官细节：视觉、听觉、触觉、嗅觉
-- 描述光线、色彩、质感、动态
-- 为视频生成AI提供足够的画面构建信息
-- 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, scriptContent, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint)
+	startProgressTicker := func(start int, max int, message string) chan struct{} {
+		if progress == nil {
+			return nil
+		}
+		stop := make(chan struct{})
+		go func() {
+			current := start
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					if current >= max {
+						continue
+					}
+					current++
+					report(current, message)
+				}
+			}
+		}()
+		return stop
+	}
 
 	// 调用AI服务生成（如果指定了模型则使用指定的模型）
 	// 设置较大的max_tokens以确保完整返回所有分镜的JSON
-	var text string
+	report(30, "生成分镜中")
+	progressStop := startProgressTicker(30, 95, "生成分镜中")
+
+	scriptLen := len([]rune(scriptContent))
+	maxTokens := 8000
+	if scriptLen > 6000 {
+		maxTokens = 12000
+	}
+	if scriptLen > 12000 {
+		maxTokens = 16000
+	}
+
+	var (
+		text   string
+		genErr error
+	)
 	if model != "" {
 		s.log.Infow("Using specified model for storyboard generation", "model", model)
 		client, getErr := s.aiService.GetAIClientForModel("text", model)
 		if getErr != nil {
 			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			var err error
-			text, err = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
-			if err != nil {
-				s.log.Errorw("Failed to generate storyboard", "error", err)
-				return nil, fmt.Errorf("生成分镜头失败: %w", err)
-			}
+			text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
 		} else {
-			var err error
-			text, err = client.GenerateText(prompt, "", ai.WithMaxTokens(16000))
-			if err != nil {
-				s.log.Errorw("Failed to generate storyboard", "error", err)
-				return nil, fmt.Errorf("生成分镜头失败: %w", err)
-			}
+			text, genErr = client.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
 		}
 	} else {
-		var err error
-		text, err = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
-		if err != nil {
-			s.log.Errorw("Failed to generate storyboard", "error", err)
-			return nil, fmt.Errorf("生成分镜头失败: %w", err)
-		}
+		text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
 	}
+
+	if progressStop != nil {
+		close(progressStop)
+	}
+
+	if genErr != nil {
+		s.log.Errorw("Failed to generate storyboard", "error", genErr)
+		return nil, fmt.Errorf("生成分镜头失败: %w", genErr)
+	}
+
+	report(80, "AI生成完成，解析分镜结果...")
 
 	// 解析JSON结果
 	// AI可能返回两种格式：
@@ -380,6 +412,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		s.log.Infow("Parsed storyboard as object format", "count", len(result.Storyboards))
 	}
 
+	report(85, fmt.Sprintf("解析完成，共 %d 个分镜，保存中...", result.Total))
+
 	// 计算总时长（所有分镜时长之和）
 	totalDuration := 0
 	for _, sb := range result.Storyboards {
@@ -397,6 +431,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		return nil, fmt.Errorf("保存分镜头失败: %w", err)
 	}
 
+	report(92, "分镜保存完成，更新章节时长...")
+
 	// 更新剧集时长（秒转分钟，向上取整）
 	durationMinutes := (totalDuration + 59) / 60
 	if err := s.db.Model(&models.Episode{}).Where("id = ?", episodeID).Update("duration", durationMinutes).Error; err != nil {
@@ -408,6 +444,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 			"duration_seconds", totalDuration,
 			"duration_minutes", durationMinutes)
 	}
+
+	report(97, "分镜拆解即将完成...")
 
 	return &result, nil
 }

@@ -1,9 +1,19 @@
 package services
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
@@ -84,6 +94,21 @@ func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest) (*
 		if err := s.db.Where("id = ?", *request.ImageGenID).First(&imageGen).Error; err != nil {
 			return nil, fmt.Errorf("image generation not found")
 		}
+		if request.ImageURL == "" {
+			if imageGen.MinioURL != nil && *imageGen.MinioURL != "" {
+				request.ImageURL = *imageGen.MinioURL
+			} else if imageGen.ImageURL != nil && *imageGen.ImageURL != "" {
+				request.ImageURL = *imageGen.ImageURL
+			} else if imageGen.LocalPath != nil && *imageGen.LocalPath != "" {
+				request.ImageURL = *imageGen.LocalPath
+			}
+		}
+		if request.Prompt == "" && imageGen.Prompt != "" {
+			request.Prompt = imageGen.Prompt
+		}
+	}
+	if request.ImageURL != "" {
+		request.ImageURL = s.normalizeMediaURL(request.ImageURL)
 	}
 
 	provider := request.Provider
@@ -221,17 +246,21 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 		case "first_last":
 			// 首尾帧模式
 			if videoGen.FirstFrameURL != nil {
-				opts = append(opts, video.WithFirstFrame(*videoGen.FirstFrameURL))
+				opts = append(opts, video.WithFirstFrame(s.resolveMediaInputURLForProvider(*videoGen.FirstFrameURL, videoGen.Provider)))
 			}
 			if videoGen.LastFrameURL != nil {
-				opts = append(opts, video.WithLastFrame(*videoGen.LastFrameURL))
+				opts = append(opts, video.WithLastFrame(s.resolveMediaInputURLForProvider(*videoGen.LastFrameURL, videoGen.Provider)))
 			}
 		case "multiple":
 			// 多图模式
 			if videoGen.ReferenceImageURLs != nil {
 				var imageURLs []string
 				if err := json.Unmarshal([]byte(*videoGen.ReferenceImageURLs), &imageURLs); err == nil {
-					opts = append(opts, video.WithReferenceImages(imageURLs))
+					resolved := make([]string, 0, len(imageURLs))
+					for _, url := range imageURLs {
+						resolved = append(resolved, s.resolveMediaInputURLForProvider(url, videoGen.Provider))
+					}
+					opts = append(opts, video.WithReferenceImages(resolved))
 				}
 			}
 		}
@@ -240,7 +269,7 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 	// 构造imageURL参数（单图模式使用，其他模式传空字符串）
 	imageURL := ""
 	if videoGen.ImageURL != nil {
-		imageURL = *videoGen.ImageURL
+		imageURL = s.resolveMediaInputURLForProvider(*videoGen.ImageURL, videoGen.Provider)
 	}
 
 	result, err := client.GenerateVideo(imageURL, videoGen.Prompt, opts...)
@@ -478,6 +507,220 @@ func (s *VideoGenerationService) getVideoClient(provider string, modelName strin
 	default:
 		return nil, fmt.Errorf("unsupported video provider: %s", provider)
 	}
+}
+
+func (s *VideoGenerationService) normalizeMediaURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return trimmed
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	if s.localStorage == nil {
+		return trimmed
+	}
+	base := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
+	if base == "" {
+		return trimmed
+	}
+	if strings.HasPrefix(trimmed, "/static/") {
+		if strings.HasSuffix(base, "/static") {
+			return base + strings.TrimPrefix(trimmed, "/static")
+		}
+		return base + trimmed
+	}
+	if strings.HasPrefix(trimmed, "static/") {
+		if strings.HasSuffix(base, "/static") {
+			return base + strings.TrimPrefix(trimmed, "static")
+		}
+		return base + "/" + trimmed
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return base + trimmed
+	}
+	return base + "/" + trimmed
+}
+
+func (s *VideoGenerationService) resolveMediaInputURLForProvider(raw string, provider string) string {
+	normalized := s.normalizeMediaURL(raw)
+	if normalized == "" || strings.HasPrefix(normalized, "data:") {
+		return normalized
+	}
+	isLocal := s.isLocalMediaURL(normalized)
+	// doubao/volces 更倾向使用公网 URL
+	if isLocal && (provider == "doubao" || provider == "volces" || provider == "volcengine") {
+		if publicURL, err := s.uploadPublicMedia(normalized); err == nil && publicURL != "" {
+			return publicURL
+		}
+	}
+	if isLocal || provider == "openai" {
+		dataURL, err := s.tryLocalToDataURL(normalized)
+		if err == nil && dataURL != "" {
+			return dataURL
+		}
+	}
+	if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+		remoteDataURL, fetchErr := s.fetchURLToDataURL(normalized)
+		if fetchErr == nil && remoteDataURL != "" {
+			return remoteDataURL
+		}
+	}
+	return normalized
+}
+
+func (s *VideoGenerationService) tryLocalToDataURL(url string) (string, error) {
+	if s.localStorage == nil {
+		return "", fmt.Errorf("local storage not available")
+	}
+	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
+	rel := ""
+	if baseURL != "" && strings.HasPrefix(url, baseURL) {
+		rel = strings.TrimPrefix(url, baseURL)
+	} else if strings.HasPrefix(url, "/static/") {
+		rel = strings.TrimPrefix(url, "/static/")
+	} else if strings.HasPrefix(url, "static/") {
+		rel = strings.TrimPrefix(url, "static/")
+	}
+	if rel == "" {
+		return "", fmt.Errorf("not a local static url")
+	}
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return "", fmt.Errorf("empty local path")
+	}
+	localPath := filepath.Join(s.localStorage.BasePath(), filepath.FromSlash(rel))
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return "", err
+	}
+	mimeType := mime.TypeByExtension(filepath.Ext(localPath))
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+}
+
+func (s *VideoGenerationService) fetchURLToDataURL(url string) (string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("fetch status %d", resp.StatusCode)
+	}
+
+	const maxSize = 10 << 20
+	reader := io.LimitReader(resp.Body, maxSize+1)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxSize {
+		return "", fmt.Errorf("image too large")
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = mime.TypeByExtension(filepath.Ext(url))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf("data:%s;base64,%s", contentType, encoded), nil
+}
+
+func (s *VideoGenerationService) isLocalMediaURL(raw string) bool {
+	if strings.HasPrefix(raw, "/static/") || strings.HasPrefix(raw, "static/") {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
+}
+
+func (s *VideoGenerationService) uploadPublicMedia(raw string) (string, error) {
+	if s.localStorage == nil {
+		return "", fmt.Errorf("local storage not available")
+	}
+	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
+	rel := ""
+	if baseURL != "" && strings.HasPrefix(raw, baseURL) {
+		rel = strings.TrimPrefix(raw, baseURL)
+	} else if strings.HasPrefix(raw, "/static/") {
+		rel = strings.TrimPrefix(raw, "/static/")
+	} else if strings.HasPrefix(raw, "static/") {
+		rel = strings.TrimPrefix(raw, "static/")
+	}
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return "", fmt.Errorf("invalid local url")
+	}
+	localPath := filepath.Join(s.localStorage.BasePath(), filepath.FromSlash(rel))
+	info, err := os.Stat(localPath)
+	if err != nil || info.IsDir() {
+		return "", fmt.Errorf("local file not found")
+	}
+	file, err := os.Open(localPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	const maxSize = 10 << 20
+	if info.Size() > maxSize {
+		return "", fmt.Errorf("file too large")
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("reqtype", "fileupload"); err != nil {
+		return "", err
+	}
+	part, err := writer.CreateFormFile("fileToUpload", filepath.Base(localPath))
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", "https://catbox.moe/user/api.php", body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("upload status %d", resp.StatusCode)
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	publicURL := strings.TrimSpace(string(respBody))
+	if publicURL == "" || !strings.HasPrefix(publicURL, "http") {
+		return "", fmt.Errorf("upload invalid response")
+	}
+	return publicURL, nil
 }
 
 func (s *VideoGenerationService) RecoverPendingTasks() {

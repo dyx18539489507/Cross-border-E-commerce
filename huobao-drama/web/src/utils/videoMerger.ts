@@ -9,6 +9,15 @@ export interface VideoClip {
   transition?: TransitionEffect
 }
 
+export interface AudioClip {
+  url: string
+  startTime: number
+  endTime?: number
+  duration?: number
+  position: number
+  volume?: number
+}
+
 export type TransitionType = 'fade' | 'fadeblack' | 'fadewhite' | 'slideleft' | 'slideright' | 'slideup' | 'slidedown' | 'wipeleft' | 'wiperight' | 'circleopen' | 'circleclose' | 'none'
 
 export interface TransitionEffect {
@@ -114,7 +123,7 @@ class VideoMerger {
     throw new Error(`FFmpeg加载失败: ${lastError?.message || '未知错误'}。请检查网络连接或稍后重试。`)
   }
 
-  async mergeVideos(clips: VideoClip[]): Promise<Blob> {
+  async mergeVideos(clips: VideoClip[], audioClips: AudioClip[] = []): Promise<Blob> {
     if (!this.loaded) {
       await this.initialize(this.onProgress)
     }
@@ -227,8 +236,14 @@ class VideoMerger {
       message: '正在生成最终文件...'
     })
 
+    // 如有音频轨道，进行混音合成
+    let outputFile = 'output.mp4'
+    if (audioClips.length > 0) {
+      outputFile = await this.mixAudioWithVideo(audioClips, outputFile)
+    }
+
     // 读取输出文件
-    const data = await this.ffmpeg.readFile('output.mp4')
+    const data = await this.ffmpeg.readFile(outputFile)
     const blob = new Blob([data], { type: 'video/mp4' })
 
     // 清理临时文件
@@ -237,6 +252,9 @@ class VideoMerger {
     }
     await this.ffmpeg.deleteFile('concat.txt')
     await this.ffmpeg.deleteFile('output.mp4')
+    if (outputFile !== 'output.mp4') {
+      await this.ffmpeg.deleteFile(outputFile)
+    }
 
     this.onProgress?.({
       phase: 'completed',
@@ -245,6 +263,109 @@ class VideoMerger {
     })
 
     return blob
+  }
+
+  private async hasAudioStream(fileName: string): Promise<boolean> {
+    try {
+      await this.ffmpeg.exec([
+        '-i', fileName,
+        '-map', '0:a:0',
+        '-f', 'null',
+        '-'
+      ])
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private async mixAudioWithVideo(audioClips: AudioClip[], inputFile: string): Promise<string> {
+    const validClips = audioClips.filter(clip => clip.url)
+    if (validClips.length === 0) return inputFile
+
+    const audioInputs: Array<{ fileName: string; clip: AudioClip }> = []
+
+    for (let i = 0; i < validClips.length; i++) {
+      const clip = validClips[i]
+      const extMatch = clip.url.split('?')[0]?.match(/\.(\w{1,5})$/)
+      const ext = extMatch ? `.${extMatch[1]}` : '.mp3'
+      const audioFileName = `audio_${i}${ext}`
+      await this.ffmpeg.writeFile(audioFileName, await fetchFile(clip.url))
+      audioInputs.push({ fileName: audioFileName, clip })
+    }
+
+    const inputs: string[] = ['-i', inputFile]
+    audioInputs.forEach(input => {
+      inputs.push('-i', input.fileName)
+    })
+
+    const filterParts: string[] = []
+    const mixInputs: string[] = []
+
+    if (await this.hasAudioStream(inputFile)) {
+      filterParts.push('[0:a]asetpts=PTS-STARTPTS[basea]')
+      mixInputs.push('[basea]')
+    }
+
+    audioInputs.forEach((input, index) => {
+      const clip = input.clip
+      const inputIndex = index + 1
+      const label = `a${index}`
+      const startTime = clip.startTime || 0
+      const duration = clip.duration ?? ((clip.endTime ?? 0) - startTime)
+      const volume = clip.volume && clip.volume > 0 ? clip.volume : 1
+      const delayMs = Math.max(0, Math.round((clip.position || 0) * 1000))
+
+      let filter = `[${inputIndex}:a]`
+      if (startTime > 0 || duration > 0) {
+        filter += `atrim=start=${startTime}`
+        if (duration > 0) {
+          filter += `:duration=${duration}`
+        }
+        filter += ','
+      }
+      filter += 'asetpts=PTS-STARTPTS'
+      if (volume !== 1) {
+        filter += `,volume=${volume}`
+      }
+      if (delayMs > 0) {
+        filter += `,adelay=${delayMs}:all=1`
+      }
+      filter += `[${label}]`
+
+      filterParts.push(filter)
+      mixInputs.push(`[${label}]`)
+    })
+
+    if (mixInputs.length === 0) {
+      for (const input of audioInputs) {
+        await this.ffmpeg.deleteFile(input.fileName)
+      }
+      return inputFile
+    }
+
+    filterParts.push(`${mixInputs.join('')}amix=inputs=${mixInputs.length}:normalize=0,apad[aout]`)
+    const filterComplex = filterParts.join(';')
+
+    const outputFile = 'output_audio.mp4'
+    await this.ffmpeg.exec([
+      ...inputs,
+      '-filter_complex', filterComplex,
+      '-map', '0:v',
+      '-map', '[aout]',
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-shortest',
+      '-y',
+      outputFile
+    ])
+
+    for (const input of audioInputs) {
+      await this.ffmpeg.deleteFile(input.fileName)
+    }
+
+    return outputFile
   }
 
   private async mergeWithTransitions(inputFiles: string[], clips: VideoClip[]) {

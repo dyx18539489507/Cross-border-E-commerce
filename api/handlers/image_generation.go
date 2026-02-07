@@ -44,6 +44,24 @@ func (h *ImageGenerationHandler) GenerateImage(c *gin.Context) {
 	response.Success(c, imageGen)
 }
 
+// CreateImageRecord 手动上传图片后创建记录
+func (h *ImageGenerationHandler) CreateImageRecord(c *gin.Context) {
+	var req services.CreateImageRecordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	imageGen, err := h.imageService.CreateImageRecord(&req)
+	if err != nil {
+		h.log.Errorw("Failed to create image record", "error", err)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, imageGen)
+}
+
 func (h *ImageGenerationHandler) GenerateImagesForScene(c *gin.Context) {
 
 	sceneID := c.Param("scene_id")

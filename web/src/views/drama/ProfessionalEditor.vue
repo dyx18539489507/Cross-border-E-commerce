@@ -22,7 +22,7 @@
 
         <div class="storyboard-list">
           <div v-for="(shot, index) in storyboards" :key="shot.id" class="storyboard-item"
-            :class="{ active: currentStoryboardId === shot.id }" @click="selectStoryboard(shot.id)">
+            :class="{ active: String(currentStoryboardId) === String(shot.id) }" @click="selectStoryboard(shot.id)">
             <div class="shot-content">
               <div class="shot-header">
                 <div class="shot-title-row">
@@ -60,7 +60,7 @@
                     }}</el-button>
                 </div>
                 <div class="scene-preview" v-if="currentStoryboard.background?.image_url" @click="showSceneImage">
-                  <img :src="currentStoryboard.background.image_url" alt="场景" style="cursor: pointer;" />
+                  <img :src="fixMediaUrl(currentStoryboard.background.image_url)" alt="场景" style="cursor: pointer;" />
                   <div class="scene-info">
                     <div>{{ currentStoryboard.background.location }} · {{ currentStoryboard.background.time }}</div>
                     <div class="scene-id">{{ $t('editor.sceneId') }}: {{ currentStoryboard.scene_id || 'N/A' }}</div>
@@ -85,7 +85,7 @@
                 <div class="cast-list">
                   <div v-for="char in currentStoryboardCharacters" :key="char.id" class="cast-item active">
                     <div class="cast-avatar" @click="showCharacterImage(char)">
-                      <img v-if="char.image_url" :src="char.image_url" :alt="char.name" />
+                      <img v-if="char.image_url" :src="fixMediaUrl(char.image_url)" :alt="char.name" />
                       <span v-else>{{ char.name?.[0] || '?' }}</span>
                     </div>
                     <div class="cast-name">{{ char.name }}</div>
@@ -258,18 +258,33 @@
                     :disabled="!currentFramePrompt" @click="generateFrameImage">
                     {{ generatingImage ? $t('editor.generating') : $t('editor.generateImage') }}
                   </el-button>
-                  <el-button :icon="Upload" @click="uploadImage">{{ $t('editor.uploadImage') }}</el-button>
+                  <el-button :icon="Upload" :loading="uploadingImage" @click="uploadImage">
+                    {{ $t('editor.uploadImage') }}
+                  </el-button>
+                  <input
+                    ref="uploadInputRef"
+                    type="file"
+                    accept="image/*"
+                    style="display: none;"
+                    @change="handleUploadImage"
+                  />
                 </div>
 
                 <!-- 生成结果 -->
                 <div class="generation-result" v-if="generatedImages.length > 0">
                   <div class="section-label">{{ $t('editor.generationResult') }} ({{ generatedImages.length }})</div>
-                  <div class="image-grid">
-                    <div v-for="img in generatedImages" :key="img.id" class="image-item">
-                      <el-image v-if="img.image_url" :src="img.image_url"
-                        :preview-src-list="generatedImages.filter(i => i.image_url).map(i => i.image_url!)"
+                  <div class="image-grid image-grid--generated">
+                    <div
+                      v-for="img in generatedImages"
+                      :key="img.id"
+                      class="image-item"
+                      :class="{ 'has-image': !!img.image_url }"
+                      :style="img.image_url ? { '--image-url': `url('${fixMediaUrl(img.image_url)}')` } : undefined"
+                    >
+                      <el-image v-if="img.image_url" :src="fixMediaUrl(img.image_url)"
+                        :preview-src-list="generatedImages.filter(i => i.image_url).map(i => fixMediaUrl(i.image_url!))"
                         :initial-index="generatedImages.filter(i => i.image_url).findIndex(i => i.id === img.id)"
-                        fit="cover" preview-teleported />
+                        fit="contain" preview-teleported />
                       <div v-else class="image-placeholder">
                         <el-icon :size="32">
                           <Picture />
@@ -299,6 +314,7 @@
 
                 <!-- 视频参数设置 -->
                 <div class="video-params-section">
+                  <!--
                   <div class="param-row">
                     <span class="param-label">{{ $t('video.model') }}</span>
                     <el-select v-model="selectedVideoModel" :placeholder="$t('video.selectVideoModel')" size="default"
@@ -318,6 +334,7 @@
                       </el-option>
                     </el-select>
                   </div>
+                  -->
 
                   <!-- 参考图模式选择 -->
                   <div v-if="selectedVideoModel && availableReferenceModes.length > 0" class="param-row">
@@ -393,8 +410,8 @@
                           :key="img.id" class="reference-item"
                           :class="{ selected: selectedImagesForVideo.includes(img.id) }" style="position: relative;"
                           @click="handleImageSelect(img.id)">
-                          <el-image :src="img.image_url" fit="cover"
-                            style="max-width: 120px; width: 100%; display: block; pointer-events: none;" />
+                          <el-image :src="fixMediaUrl(img.image_url)" fit="cover"
+                            class="reference-image" />
                           <div class="preview-icon" @click.stop="previewImage(img.image_url)"
                             style="position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10;">
                             <el-icon :size="14" color="#fff">
@@ -418,8 +435,8 @@
                           :key="img.id" class="reference-item"
                           :class="{ selected: selectedImagesForVideo.includes(img.id) }" style="position: relative;"
                           @click="handleImageSelect(img.id)">
-                          <el-image :src="img.image_url" fit="cover"
-                            style="max-width: 120px; width: 100%; display: block; pointer-events: none;" />
+                          <el-image :src="fixMediaUrl(img.image_url)" fit="cover"
+                            class="reference-image" />
                           <div class="preview-icon" @click.stop="previewImage(img.image_url)"
                             style="position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10;">
                             <el-icon :size="14" color="#fff">
@@ -443,8 +460,8 @@
                           :key="img.id" class="reference-item"
                           :class="{ selected: selectedImagesForVideo.includes(img.id) }" style="position: relative;"
                           @click="handleImageSelect(img.id)">
-                          <el-image :src="img.image_url" fit="cover"
-                            style="max-width: 120px; width: 100%; display: block; pointer-events: none;" />
+                          <el-image :src="fixMediaUrl(img.image_url)" fit="cover"
+                            class="reference-image" />
                           <div class="preview-icon" @click.stop="previewImage(img.image_url)"
                             style="position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10;">
                             <el-icon :size="14" color="#fff">
@@ -468,8 +485,8 @@
                           :key="img.id" class="reference-item"
                           :class="{ selected: selectedImagesForVideo.includes(img.id) }" style="position: relative;"
                           @click="handleImageSelect(img.id)">
-                          <el-image :src="img.image_url" fit="cover"
-                            style="max-width: 120px; width: 100%; display: block; pointer-events: none;" />
+                          <el-image :src="fixMediaUrl(img.image_url)" fit="cover"
+                            class="reference-image" />
                           <div class="preview-icon" @click.stop="previewImage(img.image_url)"
                             style="position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10;">
                             <el-icon :size="14" color="#fff">
@@ -493,8 +510,8 @@
                           :key="img.id" class="reference-item"
                           :class="{ selected: selectedImagesForVideo.includes(img.id) }" style="position: relative;"
                           @click="handleImageSelect(img.id)">
-                          <el-image :src="img.image_url" fit="cover"
-                            style="max-width: 120px; width: 100%; display: block; pointer-events: none;" />
+                          <el-image :src="fixMediaUrl(img.image_url)" fit="cover"
+                            class="reference-image" />
                           <div class="preview-icon" @click.stop="previewImage(img.image_url)"
                             style="position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10;">
                             <el-icon :size="14" color="#fff">
@@ -521,8 +538,8 @@
                       <div style="display: inline-block;">
                         <div class="image-slot"
                           @click="selectedImagesForVideo.length > 0 && removeSelectedImage(selectedImagesForVideo[0])">
-                          <img v-if="selectedImageObjects[0]" :src="selectedImageObjects[0].image_url" alt=""
-                            style="width: 100%; height: 100%; object-fit: cover;" />
+                          <img v-if="selectedImageObjects[0]" :src="fixMediaUrl(selectedImageObjects[0].image_url)" alt=""
+                            style="width: 100%; height: 100%; object-fit: contain;" />
                           <div v-else class="image-slot-placeholder">
                             <el-icon :size="32" color="#c0c4cc">
                               <Plus />
@@ -546,8 +563,8 @@
                           <div class="frame-label">首帧</div>
                           <div class="image-slot"
                             @click="firstFrameSlotImage && removeSelectedImage(firstFrameSlotImage.id)">
-                            <img v-if="firstFrameSlotImage" :src="firstFrameSlotImage.image_url" alt=""
-                              style="width: 100%; height: 100%; object-fit: cover;" />
+                            <img v-if="firstFrameSlotImage" :src="fixMediaUrl(firstFrameSlotImage.image_url)" alt=""
+                              style="width: 100%; height: 100%; object-fit: contain;" />
                             <div v-else class="image-slot-placeholder">
                               <el-icon :size="32" color="#c0c4cc">
                                 <Plus />
@@ -568,8 +585,8 @@
                           <div class="frame-label">尾帧</div>
                           <div class="image-slot"
                             @click="lastFrameSlotImage && removeSelectedImage(lastFrameSlotImage.id)">
-                            <img v-if="lastFrameSlotImage" :src="lastFrameSlotImage.image_url" alt=""
-                              style="width: 100%; height: 100%; object-fit: cover;" />
+                            <img v-if="lastFrameSlotImage" :src="fixMediaUrl(lastFrameSlotImage.image_url)" alt=""
+                              style="width: 100%; height: 100%; object-fit: contain;" />
                             <div v-else class="image-slot-placeholder">
                               <el-icon :size="32" color="#c0c4cc">
                                 <Plus />
@@ -596,8 +613,8 @@
                           class="image-slot image-slot-small"
                           style="position: relative; width: 80px; height: 52px; border: 2px dashed #dcdfe6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff;"
                           @click="selectedImageObjects[index - 1] && removeSelectedImage(selectedImageObjects[index - 1].id)">
-                          <img v-if="selectedImageObjects[index - 1]" :src="selectedImageObjects[index - 1].image_url"
-                            alt="" style="width: 100%; height: 100%; object-fit: cover;" />
+                          <img v-if="selectedImageObjects[index - 1]" :src="fixMediaUrl(selectedImageObjects[index - 1].image_url)"
+                            alt="" style="width: 100%; height: 100%; object-fit: contain;" />
                           <div v-else class="image-slot-placeholder">
                             <el-icon :size="20" color="#c0c4cc">
                               <Plus />
@@ -637,10 +654,12 @@
                       style="position: relative; border-radius: 8px; overflow: hidden; background: #fff; border: 1px solid #e8e8e8; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06); cursor: pointer; transition: all 0.2s ease;">
                       <div class="video-thumbnail" v-if="video.video_url"
                         style="position: relative; width: 100%; aspect-ratio: 16/9; overflow: hidden; cursor: pointer;"
-                        @mouseenter="(e) => e.currentTarget.querySelector('.play-overlay').style.opacity = '1'"
-                        @mouseleave="(e) => e.currentTarget.querySelector('.play-overlay').style.opacity = '0'"
+                    @mouseenter="(e) => ((e.currentTarget as HTMLElement).querySelector('.play-overlay') as HTMLElement).style.opacity = '1'"
+                    @mouseleave="(e) => ((e.currentTarget as HTMLElement).querySelector('.play-overlay') as HTMLElement).style.opacity = '0'"
                         @click="playVideo(video)">
-                        <video :src="video.video_url" preload="metadata"
+                        <video :src="resolveVideoUrl(video.video_url)"
+                          :poster="video.first_frame_url ? fixMediaUrl(video.first_frame_url) : undefined"
+                          preload="metadata"
                           style="width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;" />
                         <div class="play-overlay"
                           style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); opacity: 0; transition: opacity 0.2s;">
@@ -651,10 +670,15 @@
                       </div>
                       <div v-else class="image-placeholder"
                         style="width: 100%; aspect-ratio: 16/9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf0 100%); color: #909399;">
-                        <el-icon :size="32">
+                        <el-icon v-if="video.status === 'failed'" :size="32" color="#f56c6c">
+                          <WarningFilled />
+                        </el-icon>
+                        <el-icon v-else :size="32">
                           <VideoCamera />
                         </el-icon>
-                        <p style="margin: 0; font-size: 11px;">生成中...</p>
+                        <p style="margin: 0; font-size: 11px;">
+                          {{ video.status === 'failed' ? '生成失败' : '生成中...' }}
+                        </p>
                       </div>
                       <div class="image-info"
                         style="position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 8px; background: linear-gradient(to top, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.2) 70%, transparent); display: flex; justify-content: space-between; align-items: center; gap: 4px;">
@@ -680,14 +704,16 @@
 
           <!-- 音效与配乐标签 -->
           <el-tab-pane :label="$t('video.soundAndMusicTab')" name="audio">
-            <div class="tab-content">
+            <div class="tab-content sound-music-tab-content">
               <div class="sound-music-panel">
                 <div class="sound-music-header">
                   <div class="sound-music-title">{{ $t('video.soundMusicTitle') }}</div>
                   <div class="sound-music-subtitle">{{ $t('video.soundMusicDesc') }}</div>
+                  <!--
                   <div v-if="douyinMusicUpdatedAt" class="sound-music-meta">
                     {{ $t('video.soundMusicUpdatedAt') }} {{ douyinMusicUpdatedAt }}
                   </div>
+                  -->
                 </div>
 
                 <div class="sound-music-filters">
@@ -702,6 +728,25 @@
                     :placeholder="$t('video.soundMusicSearchPlaceholder')"
                     class="audio-search"
                   />
+                  <div v-if="audioMode === 'sfx'" class="sfx-categories">
+                    <el-radio-group v-model="sfxCategory" size="small">
+                      <el-radio-button v-for="cat in sfxCategories" :key="cat" :label="cat">{{ cat }}</el-radio-button>
+                    </el-radio-group>
+                  </div>
+                  <div v-if="audioMode === 'sfx'" class="sfx-ai-generate">
+                    <el-input
+                      v-model="sfxPrompt"
+                      size="small"
+                      clearable
+                      class="sfx-ai-input"
+                      placeholder="输入想要生成的音效，如：开门、爆炸"
+                      @keyup.enter="generateSfx"
+                    />
+                    <el-button type="primary" size="small" :loading="generatingSfx" @click="generateSfx">
+                      生成音效
+                    </el-button>
+                  </div>
+                  <!--
                   <el-select
                     v-model="audioCategory"
                     size="small"
@@ -714,40 +759,57 @@
                       :value="option.value"
                     />
                   </el-select>
+                  -->
+                  <!--
                   <el-switch
                     v-model="audioHotOnly"
                     :active-text="$t('video.soundMusicHotOnly')"
                   />
+                  -->
                 </div>
 
                 <div class="audio-list" v-loading="audioListLoading">
+                  <div v-if="audioSearch.trim() && loadingNeteaseSearch" class="audio-search-status">
+                    <el-icon class="rotating"><Loading /></el-icon>
+                    <span>正在加载中...</span>
+                  </div>
                   <el-empty
-                    v-if="filteredAudioAssets.length === 0"
+                    v-if="filteredAudioAssets.length === 0 && !loadingNeteaseSearch"
                     :description="$t('video.soundMusicEmpty')"
                   />
                   <div v-else class="audio-grid">
-                    <div v-for="asset in filteredAudioAssets" :key="asset.id" class="audio-card">
+                    <div
+                      v-for="asset in pagedAudioAssets"
+                      :key="asset.id"
+                      class="audio-card"
+                      :class="{
+                        previewing: previewingAudioId === asset.id,
+                        'preview-loading': previewLoadingAudioId === asset.id
+                      }"
+                    >
                       <div class="audio-card-main">
                         <div class="audio-icon">
-                          <el-icon><Headset /></el-icon>
+                          <img v-if="asset.cover" :src="asset.cover" alt="cover" class="audio-cover" />
+                          <el-icon v-else><Headset /></el-icon>
                         </div>
                         <div class="audio-info">
                           <div class="audio-name">{{ asset.name }}</div>
+                          <div v-if="asset.artist" class="audio-artist">{{ asset.artist }}</div>
                           <div class="audio-meta">
                             <el-tag v-if="asset.category" size="small">{{ asset.category }}</el-tag>
                             <el-tag v-if="isDouyinHot(asset)" size="small" type="danger">抖音热门</el-tag>
-                            <span v-if="asset.duration" class="audio-duration">{{ asset.duration.toFixed(1) }}s</span>
+                            <span v-if="asset.duration" class="audio-duration">{{ formatDuration(asset.duration) }}</span>
                             <span v-if="asset.view_count" class="audio-views">🔥 {{ asset.view_count }}</span>
                           </div>
                         </div>
                       </div>
                       <div class="audio-actions">
-                        <el-button size="small" @click="toggleAudioPreview(asset)">
-                          <el-icon>
-                            <VideoPause v-if="previewingAudioId === asset.id" />
+                        <el-button size="small" :loading="previewLoadingAudioId === asset.id" @click="toggleAudioPreview(asset)">
+                          <el-icon v-if="previewLoadingAudioId !== asset.id">
+                            <VideoPause v-if="previewingAudioId === asset.id && previewLoadingAudioId !== asset.id" />
                             <VideoPlay v-else />
                           </el-icon>
-                          {{ previewingAudioId === asset.id ? $t('video.soundMusicStop') : $t('video.soundMusicPreview') }}
+                          {{ previewLoadingAudioId === asset.id ? '加载中...' : (previewingAudioId === asset.id ? $t('video.soundMusicStop') : $t('video.soundMusicPreview')) }}
                         </el-button>
                         <el-button type="primary" size="small" @click="addAudioToTimeline(asset)">
                           <el-icon><Plus /></el-icon>
@@ -755,6 +817,16 @@
                         </el-button>
                       </div>
                     </div>
+                  </div>
+                  <div v-if="audioSearch.trim() && neteaseSearchTotal > 0" class="audio-pagination">
+                    <span class="audio-total">共搜索到 {{ neteaseSearchTotal }} 条</span>
+                    <el-pagination
+                      v-model:current-page="audioSearchPage"
+                      :page-size="audioSearchPageSize"
+                      :total="neteaseSearchTotal"
+                      layout="prev, pager, next"
+                      @current-change="handleAudioSearchPageChange"
+                    />
                   </div>
                 </div>
               </div>
@@ -878,7 +950,7 @@
     <!-- 角色选择器对话框 -->
     <el-dialog v-model="showCharacterImagePreview" :title="previewCharacter?.name" width="600px">
       <div class="character-image-preview" v-if="previewCharacter">
-        <img v-if="previewCharacter.image_url" :src="previewCharacter.image_url" :alt="previewCharacter.name" />
+        <img v-if="previewCharacter.image_url" :src="fixMediaUrl(previewCharacter.image_url)" :alt="previewCharacter.name" />
         <el-empty v-else description="暂无图片" />
       </div>
       <!-- ... -->
@@ -889,7 +961,7 @@
       :title="currentStoryboard?.background ? `${currentStoryboard.background.location} · ${currentStoryboard.background.time}` : '场景预览'"
       width="800px">
       <div class="scene-image-preview" v-if="currentStoryboard?.background?.image_url">
-        <img :src="currentStoryboard.background.image_url" alt="场景" />
+        <img :src="fixMediaUrl(currentStoryboard.background.image_url)" alt="场景" />
       </div>
     </el-dialog>
 
@@ -899,7 +971,7 @@
         <div v-for="char in availableCharacters" :key="char.id" class="character-card"
           :class="{ selected: isCharacterInCurrentShot(char.id) }" @click="toggleCharacterInShot(char.id)">
           <div class="character-avatar-large">
-            <img v-if="char.image_url" :src="char.image_url" :alt="char.name" />
+            <img v-if="char.image_url" :src="fixMediaUrl(char.image_url)" :alt="char.name" />
             <span v-else>{{ char.name?.[0] || '?' }}</span>
           </div>
           <div class="character-info">
@@ -927,7 +999,7 @@
         <div v-for="scene in availableScenes" :key="scene.id" class="scene-card"
           :class="{ selected: currentStoryboard?.scene_id === scene.id }" @click="selectScene(scene.id)">
           <div class="scene-image">
-            <img v-if="scene.image_url" :src="scene.image_url" :alt="scene.location" />
+            <img v-if="scene.image_url" :src="fixMediaUrl(scene.image_url)" :alt="scene.location" />
             <el-icon v-else :size="48" color="#ccc">
               <Picture />
             </el-icon>
@@ -946,7 +1018,7 @@
     <!-- 视频预览对话框 -->
     <el-dialog v-model="showVideoPreview" title="视频预览" width="800px" :close-on-click-modal="true" destroy-on-close>
       <div class="video-preview-container" v-if="previewVideo">
-        <video v-if="previewVideo.video_url" :src="previewVideo.video_url" controls autoplay
+        <video v-if="previewVideo.video_url" :src="resolveVideoUrl(previewVideo.video_url)" controls autoplay
           style="width: 100%; max-height: 70vh; display: block; background: #000; border-radius: 8px;" />
         <div v-else style="text-align: center; padding: 40px;">
           <el-icon :size="48" color="#ccc">
@@ -964,7 +1036,7 @@
                 }}</span>
             </div>
             <el-button v-if="previewVideo.video_url" size="small"
-              @click="window.open(previewVideo.video_url, '_blank')">
+              @click="openVideoUrl(previewVideo.video_url)">
               {{ $t('professionalEditor.downloadVideo') }}
             </el-button>
           </div>
@@ -978,7 +1050,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -994,6 +1066,7 @@ import { videoAPI } from '@/api/video'
 import { aiAPI } from '@/api/ai'
 import { assetAPI } from '@/api/asset'
 import { videoMergeAPI } from '@/api/videoMerge'
+import request from '@/utils/request'
 import type { ImageGeneration } from '@/types/image'
 import type { VideoGeneration } from '@/types/video'
 import type { AIServiceConfig } from '@/types/ai'
@@ -1009,7 +1082,7 @@ const { t: $t } = useI18n()
 
 const dramaId = Number(route.params.dramaId)
 const episodeNumber = Number(route.params.episodeNumber)
-const episodeId = ref<number>(0)
+const episodeId = ref<string>('')
 
 const drama = ref<Drama | null>(null)
 const episode = ref<Episode | null>(null)
@@ -1017,7 +1090,7 @@ const storyboards = ref<Storyboard[]>([])
 const characters = ref<any[]>([])
 const availableScenes = ref<any[]>([])
 
-const currentStoryboardId = ref<number | null>(null)
+const currentStoryboardId = ref<string | null>(null)
 const activeTab = ref('shot')
 const showSceneSelector = ref(false)
 const showCharacterSelector = ref(false)
@@ -1071,11 +1144,24 @@ const loadingAudioAssets = ref(false)
 const douyinMusicAssets = ref<AudioListItem[]>([])
 const loadingDouyinMusic = ref(false)
 const douyinMusicUpdatedAt = ref<string | null>(null)
+const sfxAssets = ref<AudioListItem[]>([])
+const loadingSfx = ref(false)
+const sfxCategory = ref('热门')
+const sfxPrompt = ref('')
+const generatingSfx = ref(false)
+const sfxGenerateError = ref<string | null>(null)
+const neteaseSearchResults = ref<AudioListItem[]>([])
+const neteaseSearchTotal = ref(0)
+const loadingNeteaseSearch = ref(false)
+const neteaseSearchError = ref<string | null>(null)
 const audioMode = ref<'music' | 'sfx'>('music')
 const audioSearch = ref('')
+const audioSearchPage = ref(1)
+const audioSearchPageSize = ref(10)
 const audioCategory = ref('all')
 const audioHotOnly = ref(true)
 const previewingAudioId = ref<string | null>(null)
+const previewLoadingAudioId = ref<string | null>(null)
 const previewAudioPlayer = ref<HTMLAudioElement | null>(null)
 const timelineEditorRef = ref<InstanceType<typeof VideoTimelineEditor> | null>(null)
 const videoReferenceImages = ref<ImageGeneration[]>([])
@@ -1108,9 +1194,16 @@ type AudioListItem = {
   category?: string
   duration?: number
   view_count?: number
+  artist?: string
+  cover?: string
   description?: string
   tags?: Array<{ name: string }>
-  source?: 'asset' | 'douyin'
+  source?: 'asset' | 'douyin' | 'netease' | 'sfx' | 'qq' | 'kugou' | 'migu' | 'baidu'
+  sourceId?: string
+  sourceSongUrl?: string
+  sourceMid?: string
+  sourceHash?: string
+  sourceContentId?: string
   assetId?: number
   rank?: number
   updatedAt?: string
@@ -1280,6 +1373,18 @@ const loadVideoModels = async () => {
         ...capability
       }
     })
+
+    // 默认优先选择豆包模型
+    if (videoModelCapabilities.value.length > 0) {
+      const hasCurrent = videoModelCapabilities.value.some(m => m.id === selectedVideoModel.value)
+      if (!selectedVideoModel.value || !hasCurrent) {
+        const preferredModel = videoModelCapabilities.value.find(m => {
+          const id = m.id.toLowerCase()
+          return id.startsWith('doubao') || id.startsWith('seedance') || id.includes('doubao') || id.includes('seedance')
+        })
+        selectedVideoModel.value = (preferredModel || videoModelCapabilities.value[0]).id
+      }
+    }
   } catch (error: any) {
     console.error('加载视频模型配置失败:', error)
     ElMessage.error('加载视频模型失败')
@@ -1291,7 +1396,7 @@ const loadVideoAssets = async () => {
   try {
     const result = await assetAPI.listAssets({
       drama_id: dramaId.toString(),
-      episode_id: episodeId.value,
+      episode_id: episodeId.value ? Number(episodeId.value) : undefined,
       type: 'video',
       page: 1,
       page_size: 100
@@ -1309,7 +1414,7 @@ const loadAudioAssets = async () => {
   try {
     const result = await assetAPI.listAssets({
       drama_id: dramaId.toString(),
-      episode_id: episodeId.value,
+      episode_id: episodeId.value ? Number(episodeId.value) : undefined,
       type: 'audio',
       page: 1,
       page_size: 200
@@ -1323,6 +1428,441 @@ const loadAudioAssets = async () => {
 }
 
 const DOUYIN_MUSIC_SOURCE = 'https://raw.githubusercontent.com/lonnyzhang423/douyin-hot-hub/main/README.md'
+
+const fetchJsonWithTimeout = async (url: string, timeoutMs = 12000) => {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    window.setTimeout(() => reject(new Error('timeout')), timeoutMs)
+  })
+  const fetchPromise = fetch(url, { cache: 'no-store' }).then((response) => {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    return response.json().then((json) => {
+      if (json && typeof json === 'object' && 'success' in json) {
+        if ('data' in json) return json.data
+      }
+      return json
+    })
+  })
+  return Promise.race([fetchPromise, timeoutPromise])
+}
+
+let neteaseSearchRequestId = 0
+const neteaseSearchCache = new Map<string, { items: any[]; total: number }>()
+const neteaseSearchTotalCache = new Map<string, number>()
+const audioPreviewCache = new Map<string, string>()
+const audioPreviewCandidatesCache = new Map<string, string[]>()
+const audioPlayableUrlCache = new Map<string, string>()
+const audioDurationCache = new Map<string, number>()
+const audioDurationLoading = new Set<string>()
+let previewRequestSeq = 0
+const sfxCategories = ['热门', '转场', '笑声', '尴尬', '震惊']
+
+const parseDurationToSeconds = (value: any) => {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === 'number') {
+    return value > 10000 ? Math.round(value / 1000) : value
+  }
+  const text = String(value).trim()
+  if (!text) return undefined
+  if (/^\d+$/.test(text)) return Number(text)
+  const parts = text.split(':').map(p => Number(p))
+  if (parts.some(Number.isNaN)) return undefined
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return undefined
+}
+
+const formatDuration = (seconds?: number) => {
+  if (!seconds || seconds <= 0) return ''
+  const s = Math.round(seconds)
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+const fixMediaUrl = (url?: string | null) => {
+  if (!url) return ''
+  if (url.startsWith('blob:')) return url
+  if (url.startsWith('data:')) return url
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  // If backend stores absolute filesystem-like paths, map them to /static
+  if (url.startsWith('/static/')) return url
+  if (url.startsWith('/data/')) return `/static${url}`
+  if (url.startsWith('data/')) return `/static/${url}`
+  if (url.startsWith('/')) return url
+  return `/static/${url}`
+}
+
+const getApiBase = () => {
+  const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined) || window.location.origin
+  return raw.replace(/\/$/, '')
+}
+
+const toBackendMediaUrl = (url?: string | null) => {
+  if (!url) return ''
+  if (url.startsWith('blob:') || url.startsWith('data:')) return url
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  if (url.startsWith('/')) return `${getApiBase()}${url}`
+  return `${getApiBase()}/${url}`
+}
+
+const resolveVideoUrl = (url?: string | null) => {
+  if (!url) return ''
+  const fixed = fixMediaUrl(url)
+  if (!fixed) return ''
+  if (fixed.startsWith('blob:') || fixed.startsWith('data:')) return fixed
+  if (fixed.startsWith('http://') || fixed.startsWith('https://')) {
+    return `/api/v1/media/proxy?url=${encodeURIComponent(fixed)}`
+  }
+  return toBackendMediaUrl(fixed)
+}
+
+const resolveAudioUrl = (url?: string | null) => {
+  if (!url) return ''
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url
+  if (url.startsWith('/api/v1/music/stream') || url.startsWith('/api/v1/music/netease/stream')) return url
+  if (url.startsWith('/api/v1/media/proxy')) return url
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return `/api/v1/media/proxy?url=${encodeURIComponent(url)}`
+  }
+  return fixMediaUrl(url)
+}
+
+const resolveListPayload = (data: any) => {
+  const candidates = [data, data?.data, data?.data?.data, data?.result]
+  for (const candidate of candidates) {
+    if (candidate && Array.isArray(candidate.items)) {
+      return candidate
+    }
+    if (candidate && Array.isArray(candidate.songs)) {
+      return { items: candidate.songs, total: candidate.songCount || candidate.total || candidate.songs.length }
+    }
+    if (candidate?.result && Array.isArray(candidate.result.songs)) {
+      return { items: candidate.result.songs, total: candidate.result.songCount || candidate.result.total || candidate.result.songs.length }
+    }
+  }
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length }
+  }
+  return { items: [], total: 0 }
+}
+
+const resolveSongSource = (song: any) => {
+  const raw = `${song?.source || song?.platform || ''}`.toLowerCase()
+  if (raw) return raw
+  if (song?.mid || song?.songmid || song?.songMid) return 'qq'
+  if (song?.hash) return 'kugou'
+  if (song?.content_id || song?.contentId) return 'migu'
+  const url = song?.song_url || song?.url || ''
+  if (typeof url === 'string') {
+    if (url.includes('qqmusic') || url.includes('qq.com')) return 'qq'
+    if (url.includes('kugou')) return 'kugou'
+    if (url.includes('migu')) return 'migu'
+    if (url.includes('music.163') || url.includes('music.126')) return 'netease'
+  }
+  return 'netease'
+}
+
+const normalizeSongText = (text?: string) => {
+  if (!text) return ''
+  return text
+    .toLowerCase()
+    .replace(/\([^)]*\)|（[^）]*）|\[[^\]]*]|【[^】]*】/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+const scoreSongMatch = (song: any, targetName: string, targetArtist: string) => {
+  const songName = normalizeSongText(song?.title || song?.name || '')
+  const songArtist = normalizeSongText(song?.artist || '')
+  const expectedName = normalizeSongText(targetName)
+  const expectedArtist = normalizeSongText(targetArtist)
+  let score = 0
+
+  if (songName && expectedName) {
+    if (songName === expectedName) score += 120
+    else if (songName.includes(expectedName) || expectedName.includes(songName)) score += 80
+    else {
+      const overlap = Array.from(new Set(expectedName.split(''))).filter(ch => songName.includes(ch)).length
+      score += overlap
+    }
+  }
+  if (songArtist && expectedArtist) {
+    if (songArtist === expectedArtist) score += 60
+    else if (songArtist.includes(expectedArtist) || expectedArtist.includes(songArtist)) score += 40
+  }
+
+  const source = resolveSongSource(song)
+  if (source !== 'netease') score += 10
+  if (song?.song_url) score += 6
+  return score
+}
+
+const searchNeteaseSongs = async (keywords: string) => {
+  const query = keywords.trim()
+  if (!query || audioMode.value !== 'music') {
+    neteaseSearchResults.value = []
+    neteaseSearchTotal.value = 0
+    return
+  }
+  const currentRequestId = ++neteaseSearchRequestId
+  loadingNeteaseSearch.value = true
+  neteaseSearchError.value = null
+  try {
+    const pageLimit = audioSearchPageSize.value
+    const backendUrl = `/api/v1/music/search?keywords=${encodeURIComponent(query)}&page=${audioSearchPage.value}&page_size=${pageLimit}`
+
+    const cacheKey = `${query}::${audioSearchPage.value}::${pageLimit}`
+    if (neteaseSearchCache.has(cacheKey)) {
+      const cached = neteaseSearchCache.get(cacheKey)!
+      neteaseSearchResults.value = cached.items
+      if (neteaseSearchTotalCache.has(query)) {
+        neteaseSearchTotal.value = neteaseSearchTotalCache.get(query) || cached.total
+      } else {
+        neteaseSearchTotal.value = cached.total
+        if (cached.total) {
+          neteaseSearchTotalCache.set(query, cached.total)
+        }
+      }
+      void fillMissingDurations(neteaseSearchResults.value)
+      return
+    }
+
+    const backendData = await fetchJsonWithTimeout(backendUrl, 25000)
+    const { items: backendItems, total: backendTotal } = resolveListPayload(backendData)
+
+    if (currentRequestId !== neteaseSearchRequestId) return
+    const totalCacheKey = query
+    if (audioSearchPage.value === 1 || !neteaseSearchTotalCache.has(totalCacheKey)) {
+      const resolvedTotal = backendTotal || backendItems.length
+      if (resolvedTotal) {
+        neteaseSearchTotalCache.set(totalCacheKey, resolvedTotal)
+      }
+    }
+    neteaseSearchTotal.value = neteaseSearchTotalCache.get(totalCacheKey) || backendTotal || backendItems.length
+    const mappedResults = (backendItems || []).map((song: any) => {
+      const source = resolveSongSource(song)
+      const platformMap: Record<string, string> = {
+        netease: '网易云音乐',
+        qq: 'QQ音乐',
+        kugou: '酷狗音乐',
+        migu: '咪咕音乐',
+        baidu: '百度音乐'
+      }
+      const platform = platformMap[source] || song.platform || '网易云音乐'
+      const artist = song.artist || (song.ar ? (song.ar || []).map((a: any) => a.name).filter(Boolean).join('/') : '')
+      const album = song.album || song.al?.name || ''
+      const cover = song.cover || song.cover_url || song.al?.picUrl || song.album?.picUrl || ''
+      const meta = [artist, album].filter(Boolean).join(' · ')
+      const streamUrl = buildMusicStreamUrl(song, song.title || '')
+      const rawDuration = song.duration
+        ?? song.dt
+        ?? song.interval
+        ?? song.time
+        ?? song.timelength
+        ?? song.timeLength
+        ?? song.time_length
+        ?? song.length
+        ?? song.length_ms
+        ?? song.play_time
+        ?? song.playTime
+      return {
+        id: `${source || 'music'}-${song.id || song.mid || song.hash || Math.random()}`,
+        sourceId: song.id ? String(song.id) : (song.song_id ? String(song.song_id) : (song.songId ? String(song.songId) : undefined)),
+        name: song.title || song.name || '',
+        url: streamUrl,
+        category: platform,
+        duration: parseDurationToSeconds(rawDuration),
+        view_count: song.view_count || 0,
+        artist: artist || undefined,
+        cover: cover || undefined,
+        description: meta || undefined,
+        tags: [{ name: platform }],
+        source: (source || 'netease') as AudioListItem['source'],
+        sourceSongUrl: song.song_url || undefined,
+        sourceMid: song.mid ? String(song.mid) : (song.songmid ? String(song.songmid) : (song.songMid ? String(song.songMid) : undefined)),
+        sourceHash: song.hash ? String(song.hash) : (song.fileHash ? String(song.fileHash) : undefined),
+        sourceContentId: song.content_id ? String(song.content_id) : (song.contentId ? String(song.contentId) : undefined)
+      }
+    })
+    mappedResults.sort((a, b) => {
+      const scoreA = scoreSongMatch(
+        { title: a.name, artist: a.artist, source: a.source, song_url: a.sourceSongUrl },
+        query,
+        ''
+      )
+      const scoreB = scoreSongMatch(
+        { title: b.name, artist: b.artist, source: b.source, song_url: b.sourceSongUrl },
+        query,
+        ''
+      )
+      return scoreB - scoreA
+    })
+    neteaseSearchResults.value = mappedResults
+    void fillMissingDurations(neteaseSearchResults.value)
+    neteaseSearchCache.set(cacheKey, { items: neteaseSearchResults.value, total: neteaseSearchTotal.value })
+  } catch (error: any) {
+    if (currentRequestId !== neteaseSearchRequestId) return
+    console.error('网易云搜索失败:', error)
+    neteaseSearchError.value = error?.message || '搜索失败'
+    neteaseSearchResults.value = []
+    neteaseSearchTotal.value = 0
+  } finally {
+    if (currentRequestId === neteaseSearchRequestId) {
+      loadingNeteaseSearch.value = false
+    }
+  }
+}
+
+const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] => {
+  const mapped: AudioListItem[] = items.map((item: any, index: number) => {
+    const category = item.category || fallbackCategory
+    return {
+      id: item.id || `sfx-${category}-${index}-${Date.now()}`,
+      name: item.name || item.title || `${category}-${index + 1}`,
+      url: resolveAudioUrl(item.url || item.audio_url || item.file_url || item.file_path),
+      category,
+      duration: parseDurationToSeconds(item.duration),
+      view_count: item.view_count || 0,
+      artist: item.artist || '',
+      cover: item.cover || '',
+      description: item.description || '',
+      tags: [{ name: category }],
+      source: 'sfx' as const
+    }
+  })
+
+  mapped.forEach(asset => {
+    if (!asset.url) return
+    const audio = new Audio(asset.url)
+    audio.preload = 'metadata'
+    audio.onloadedmetadata = () => {
+      if (!asset.duration && audio.duration) {
+        asset.duration = Math.round(audio.duration)
+      }
+    }
+  })
+
+  return mapped
+}
+
+const loadSfx = async () => {
+  loadingSfx.value = true
+  try {
+    const url = `/api/v1/sfx?category=${encodeURIComponent(sfxCategory.value)}&limit=20`
+    const data = await fetchJsonWithTimeout(url, 8000)
+    const { items } = resolveListPayload(data)
+    sfxAssets.value = mapSfxItems(items, sfxCategory.value)
+  } catch (error) {
+    sfxAssets.value = []
+  } finally {
+    loadingSfx.value = false
+  }
+}
+
+const generateSfx = async () => {
+  const prompt = sfxPrompt.value.trim()
+  if (!prompt) {
+    ElMessage.warning('请输入想要生成的音效')
+    return
+  }
+  generatingSfx.value = true
+  sfxGenerateError.value = null
+  try {
+    const data = await request.post('/sfx/generate', { prompt, count: 3 })
+    const { items } = resolveListPayload(data)
+    if (!items.length) {
+      sfxGenerateError.value = '未生成音效'
+      ElMessage.warning('未生成音效，请重试')
+      sfxAssets.value = []
+      return
+    }
+    sfxAssets.value = mapSfxItems(items, 'AI生成')
+    ElMessage.success('已生成 3 条音效')
+  } catch (error: any) {
+    console.error('生成音效失败:', error)
+    sfxGenerateError.value = error?.message || '生成失败'
+    ElMessage.error('生成音效失败')
+  } finally {
+    generatingSfx.value = false
+  }
+}
+
+const buildNeteaseStreamUrl = (id: string) => {
+  return `/api/v1/music/netease/stream?id=${encodeURIComponent(id)}`
+}
+
+const buildResolverStreamUrl = (song: any, fallbackTitle?: string) => {
+  const source = resolveSongSource(song)
+  if (!source || source === 'netease') return ''
+  return `/api/v1/music/stream?source=${encodeURIComponent(source)}&id=${encodeURIComponent(song.id || '')}&mid=${encodeURIComponent(song.mid || '')}&hash=${encodeURIComponent(song.hash || '')}&content_id=${encodeURIComponent(song.content_id || '')}&title=${encodeURIComponent(song.title || fallbackTitle || '')}&artist=${encodeURIComponent(song.artist || '')}`
+}
+
+const buildMusicStreamUrl = (song: any, fallbackTitle?: string) => {
+  if (!song) return ''
+  const source = resolveSongSource(song)
+  if (source === 'netease') {
+    return buildNeteaseStreamUrl(String(song.id || ''))
+  }
+  const resolverUrl = buildResolverStreamUrl(song, fallbackTitle)
+  if (song.song_url) {
+    return `/api/v1/music/stream?url=${encodeURIComponent(song.song_url)}`
+  }
+  if (resolverUrl) {
+    return resolverUrl
+  }
+  return ''
+}
+
+const resolveSearchPreviewCandidates = async (asset: AudioListItem) => {
+  const cacheKey = asset.id || asset.name || ''
+  if (cacheKey && audioPreviewCandidatesCache.has(cacheKey)) {
+    return audioPreviewCandidatesCache.get(cacheKey) || []
+  }
+  const keyword = `${asset.name || ''} ${asset.artist || ''}`.trim()
+  if (!keyword) return []
+  const searchUrl = `/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=20`
+  const data = await fetchJsonWithTimeout(searchUrl, 15000)
+  const { items } = resolveListPayload(data)
+  if (!items.length) return []
+
+  const sorted = [...items].sort((a: any, b: any) => {
+    const scoreA = scoreSongMatch(a, asset.name || '', asset.artist || '')
+      + (a.song_url ? 40 : 0)
+      + (resolveSongSource(a) !== 'netease' ? 15 : 0)
+    const scoreB = scoreSongMatch(b, asset.name || '', asset.artist || '')
+      + (b.song_url ? 40 : 0)
+      + (resolveSongSource(b) !== 'netease' ? 15 : 0)
+    return scoreB - scoreA
+  })
+  const candidates: string[] = []
+  sorted.slice(0, 20).forEach((song: any) => {
+    if (song.song_url) {
+      candidates.push(`/api/v1/music/stream?url=${encodeURIComponent(song.song_url)}`)
+    }
+    const primary = buildMusicStreamUrl(song, keyword)
+    if (primary) candidates.push(primary)
+    if (resolveSongSource(song) === 'netease' && song.id) {
+      candidates.push(buildNeteaseStreamUrl(String(song.id)))
+    }
+  })
+  const deduped = [...new Set(candidates.filter(Boolean))]
+  if (cacheKey && deduped.length > 0) {
+    audioPreviewCandidatesCache.set(cacheKey, deduped)
+  }
+  return deduped
+}
+
+const resolveSearchPreviewUrl = async (asset: AudioListItem) => {
+  const cacheKey = asset.id || asset.name || ''
+  if (cacheKey && audioPreviewCache.has(cacheKey)) {
+    return audioPreviewCache.get(cacheKey) || ''
+  }
+  const candidates = await resolveSearchPreviewCandidates(asset)
+  return candidates[0] || ''
+}
 
 const parseDouyinMusic = (content: string) => {
   const lines = content.split('\n')
@@ -1409,6 +1949,7 @@ const parseDouyinMusic = (content: string) => {
       url,
       category: listLabel,
       view_count: hotNumber || Math.max(0, 1000 - index),
+      artist: artist || undefined,
       description: artist ? `歌手: ${artist}` : (dateValue ? `更新: ${dateValue}` : undefined),
       tags,
       source: 'douyin',
@@ -1421,6 +1962,46 @@ const parseDouyinMusic = (content: string) => {
   })
 
   return { items, updatedAt }
+}
+
+const loadFallbackHotMusic = async () => {
+  if (douyinMusicAssets.value.length > 0) return
+
+  const keywords = ['抖音热歌', '热门歌曲', '热歌榜']
+  for (const keyword of keywords) {
+    try {
+      const data = await fetchJsonWithTimeout(`/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=30`, 20000)
+      const { items } = resolveListPayload(data)
+      if (!items.length) continue
+
+      douyinMusicAssets.value = items.map((song: any, index: number) => {
+        const source = resolveSongSource(song)
+        const name = song.title || song.name || ''
+        const artist = song.artist || ''
+        return {
+          id: `fallback-hot-${source}-${song.id || song.mid || song.hash || index}`,
+          name,
+          url: buildMusicStreamUrl(song, name),
+          category: '热门配乐',
+          duration: parseDurationToSeconds(song.duration),
+          view_count: Math.max(0, 1000 - index),
+          artist: artist || undefined,
+          description: '热门推荐',
+          tags: [{ name: '热门配乐' }],
+          source: (source || 'netease') as AudioListItem['source'],
+          sourceId: song.id ? String(song.id) : undefined,
+          sourceSongUrl: song.song_url || undefined,
+          sourceMid: song.mid ? String(song.mid) : undefined,
+          sourceHash: song.hash ? String(song.hash) : undefined,
+          sourceContentId: song.content_id ? String(song.content_id) : undefined,
+          rank: index + 1
+        }
+      })
+      return
+    } catch (error) {
+      console.warn('加载热门配乐兜底失败:', keyword, error)
+    }
+  }
 }
 
 const loadDouyinMusic = async () => {
@@ -1442,8 +2023,12 @@ const loadDouyinMusic = async () => {
       }, '')
       douyinMusicUpdatedAt.value = latest || null
     }
+    if (parsed.items.length === 0) {
+      await loadFallbackHotMusic()
+    }
   } catch (error) {
     console.error('加载抖音音乐榜失败:', error)
+    await loadFallbackHotMusic()
   } finally {
     loadingDouyinMusic.value = false
   }
@@ -1474,6 +2059,9 @@ const isDouyinHot = (asset: AudioListItem) => {
 }
 
 const audioList = computed<AudioListItem[]>(() => {
+  if (audioMode.value === 'sfx') {
+    return sfxAssets.value
+  }
   const localItems = audioAssets.value.map((asset) => ({
     id: `asset-${asset.id}`,
     name: asset.name,
@@ -1488,10 +2076,14 @@ const audioList = computed<AudioListItem[]>(() => {
     isFavorite: asset.is_favorite
   }))
 
-  return [...localItems, ...douyinMusicAssets.value]
+  const neteaseItems = audioSearch.value.trim() ? neteaseSearchResults.value : []
+  return [...localItems, ...douyinMusicAssets.value, ...neteaseItems]
 })
 
 const audioCategoryOptions = computed(() => {
+  if (audioMode.value === 'sfx') {
+    return []
+  }
   const categories = new Set<string>()
   audioList.value.forEach(asset => {
     if (getAudioGroup(asset) !== audioMode.value) return
@@ -1503,14 +2095,17 @@ const audioCategoryOptions = computed(() => {
   ]
 })
 
-const audioListLoading = computed(() => loadingAudioAssets.value || loadingDouyinMusic.value)
+const audioListLoading = computed(() => loadingAudioAssets.value || loadingDouyinMusic.value || loadingSfx.value || generatingSfx.value)
 
 const filteredAudioAssets = computed(() => {
   const query = audioSearch.value.trim().toLowerCase()
+  if (query) {
+    return neteaseSearchResults.value
+  }
   const assets = audioList.value
-    .filter(asset => asset.url)
-    .filter(asset => getAudioGroup(asset) === audioMode.value)
-    .filter(asset => audioCategory.value === 'all' || asset.category === audioCategory.value)
+    .filter(asset => asset.url || asset.source === 'netease')
+    .filter(asset => audioMode.value === 'sfx' || getAudioGroup(asset) === audioMode.value)
+    .filter(asset => audioMode.value !== 'sfx' ? (audioCategory.value === 'all' || asset.category === audioCategory.value) : true)
     .filter(asset => {
       if (!query) return true
       const tagText = (asset.tags || []).map(t => t.name).join(' ')
@@ -1519,7 +2114,7 @@ const filteredAudioAssets = computed(() => {
     })
     .sort((a, b) => getAudioHotScore(b) - getAudioHotScore(a))
 
-  if (audioHotOnly.value) {
+  if (audioMode.value === 'music' && !query && audioHotOnly.value) {
     const douyinHot = assets.filter(asset => isDouyinHot(asset))
     if (douyinHot.length > 0) {
       return douyinHot.slice(0, 30)
@@ -1530,8 +2125,27 @@ const filteredAudioAssets = computed(() => {
   return assets
 })
 
+const pagedAudioAssets = computed(() => {
+  const assets = filteredAudioAssets.value
+  if (!audioSearch.value.trim()) return assets
+  return assets
+})
+
 watch(audioMode, () => {
   audioCategory.value = 'all'
+  audioSearchPage.value = 1
+  if (audioMode.value === 'sfx') {
+    audioSearch.value = ''
+    loadSfx()
+  }
+  if (audioMode.value !== 'music') {
+    neteaseSearchResults.value = []
+    neteaseSearchTotal.value = 0
+  } else if (audioSearch.value.trim()) {
+    searchNeteaseSongs(audioSearch.value)
+  } else if (douyinMusicAssets.value.length === 0) {
+    loadDouyinMusic()
+  }
 })
 
 watch(audioCategoryOptions, (options) => {
@@ -1540,49 +2154,308 @@ watch(audioCategoryOptions, (options) => {
   }
 })
 
-const stopAudioPreview = () => {
+watch(sfxCategory, () => {
+  if (audioMode.value === 'sfx') {
+    loadSfx()
+  }
+})
+
+let neteaseSearchTimer: number | null = null
+watch(audioSearch, (value) => {
+  const query = value.trim()
+  audioSearchPage.value = 1
+  if (neteaseSearchTimer) {
+    window.clearTimeout(neteaseSearchTimer)
+  }
+  if (!query || audioMode.value !== 'music') {
+    neteaseSearchResults.value = []
+    neteaseSearchTotal.value = 0
+    return
+  }
+  neteaseSearchTimer = window.setTimeout(() => {
+    searchNeteaseSongs(query)
+  }, 120)
+})
+
+watch([audioSearchPage, audioSearchPageSize], () => {
+  if (!audioSearch.value.trim() || audioMode.value !== 'music') return
+  searchNeteaseSongs(audioSearch.value)
+})
+
+const handleAudioSearchPageChange = () => {
+  if (!audioSearch.value.trim() || audioMode.value !== 'music') return
+  neteaseSearchResults.value = []
+  searchNeteaseSongs(audioSearch.value)
+}
+
+const stopAudioPreview = (resetLoading = true) => {
   if (previewAudioPlayer.value) {
     previewAudioPlayer.value.pause()
     previewAudioPlayer.value.currentTime = 0
   }
   previewAudioPlayer.value = null
   previewingAudioId.value = null
+  if (resetLoading) {
+    previewLoadingAudioId.value = null
+  }
 }
 
 watch(activeTab, (tab) => {
   if (tab !== 'audio') {
     stopAudioPreview()
+    return
+  }
+  if (audioMode.value === 'sfx') {
+    loadSfx()
+  } else if (douyinMusicAssets.value.length === 0) {
+    loadDouyinMusic()
   }
 })
 
-const toggleAudioPreview = (asset: AudioListItem) => {
-  if (!asset.url) {
-    ElMessage.warning('音频素材地址缺失')
+const buildAssetResolverUrl = (asset: AudioListItem) => {
+  const source = (asset.source || '').toLowerCase()
+  if (!source || source === 'netease' || source === 'douyin' || source === 'asset' || source === 'sfx') {
+    return ''
+  }
+  return `/api/v1/music/stream?source=${encodeURIComponent(source)}&id=${encodeURIComponent(asset.sourceId || '')}&mid=${encodeURIComponent(asset.sourceMid || '')}&hash=${encodeURIComponent(asset.sourceHash || '')}&content_id=${encodeURIComponent(asset.sourceContentId || '')}&title=${encodeURIComponent(asset.name || '')}&artist=${encodeURIComponent(asset.artist || '')}`
+}
+
+const buildAssetCandidateUrls = (asset: AudioListItem) => {
+  const candidates: string[] = []
+  if (asset.source === 'netease' && asset.sourceId) {
+    candidates.push(buildNeteaseStreamUrl(asset.sourceId))
+  }
+  const resolverUrl = buildAssetResolverUrl(asset)
+  if (resolverUrl) candidates.push(resolverUrl)
+  if (asset.sourceSongUrl) {
+    candidates.push(`/api/v1/music/stream?url=${encodeURIComponent(asset.sourceSongUrl)}`)
+  }
+  if (asset.url) {
+    candidates.push(asset.url)
+  }
+  return [...new Set(candidates.filter(Boolean))]
+}
+
+const probeAudioUrl = async (url: string) => {
+  try {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 8000)
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-2048' },
+      cache: 'no-store',
+      signal: controller.signal
+    })
+    window.clearTimeout(timer)
+    if (!response.ok) return false
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase()
+    const contentLength = Number(response.headers.get('content-length') || 0)
+    if (contentType.includes('application/json') || contentType.includes('text/html') || contentType.includes('text/plain')) {
+      return false
+    }
+    const isBackendMusicProxy = url.includes('/api/v1/music/stream') || url.includes('/api/v1/music/netease/stream')
+    const chunk = new Uint8Array(await response.arrayBuffer())
+    if (isBackendMusicProxy && contentType.includes('audio/wav')) {
+      // 后端兜底静音 wav：RIFF 头 + 大量 0 字节，直接判定为不可播放候选。
+      const payload = chunk.slice(44)
+      const sample = payload.length > 0 ? payload : chunk
+      const zeroCount = sample.reduce((count, b) => count + (b === 0 ? 1 : 0), 0)
+      const zeroRatio = sample.length > 0 ? zeroCount / sample.length : 1
+      if ((contentLength > 0 && contentLength <= 90000) || zeroRatio > 0.98) {
+        return false
+      }
+    }
+    if (contentType.startsWith('audio/') || contentType.includes('octet-stream')) {
+      return true
+    }
+    if (chunk.length < 4) return false
+    const header = Array.from(chunk.slice(0, 4)).map(b => String.fromCharCode(b)).join('')
+    return header === 'RIFF' || header === 'ID3' || header === 'OggS' || header === 'fLaC'
+  } catch {
+    return false
+  }
+}
+
+const resolvePlayableAudioUrl = async (asset: AudioListItem) => {
+  const cacheKey = asset.id || `${asset.name}-${asset.artist || ''}`
+  const cached = audioPlayableUrlCache.get(cacheKey)
+  if (cached) return cached
+
+  const candidates = buildAssetCandidateUrls(asset)
+  for (const candidate of candidates) {
+    const normalized = resolveAudioUrl(candidate)
+    if (!normalized) continue
+    if (await probeAudioUrl(normalized)) {
+      audioPlayableUrlCache.set(cacheKey, normalized)
+      audioPreviewCache.set(cacheKey, normalized)
+      asset.url = normalized
+      return normalized
+    }
+  }
+
+  const fallbackCandidates = await resolveSearchPreviewCandidates(asset)
+  for (const fallback of fallbackCandidates) {
+    const normalizedFallback = resolveAudioUrl(fallback)
+    if (!normalizedFallback) continue
+    if (await probeAudioUrl(normalizedFallback)) {
+      audioPlayableUrlCache.set(cacheKey, normalizedFallback)
+      audioPreviewCache.set(cacheKey, normalizedFallback)
+      asset.url = normalizedFallback
+      return normalizedFallback
+    }
+  }
+  const fallbackUrl = resolveAudioUrl(candidates[0]) || resolveAudioUrl(fallbackCandidates[0])
+  if (fallbackUrl) {
+    audioPlayableUrlCache.set(cacheKey, fallbackUrl)
+    audioPreviewCache.set(cacheKey, fallbackUrl)
+    asset.url = fallbackUrl
+    return fallbackUrl
+  }
+  return ''
+}
+
+const getAudioDurationFromUrl = (url: string): Promise<number | undefined> => {
+  return new Promise((resolve) => {
+    const audio = document.createElement('audio')
+    let timeoutId: number | null = null
+    const cleanup = () => {
+      audio.onloadedmetadata = null
+      audio.onerror = null
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
+      }
+      audio.src = ''
+      audio.remove()
+    }
+
+    timeoutId = window.setTimeout(() => {
+      cleanup()
+      resolve(undefined)
+    }, 10000)
+
+    audio.preload = 'metadata'
+    audio.onloadedmetadata = () => {
+      const duration = Number(audio.duration)
+      cleanup()
+      if (Number.isFinite(duration) && duration > 0) {
+        resolve(duration)
+      } else {
+        resolve(undefined)
+      }
+    }
+    audio.onerror = () => {
+      cleanup()
+      resolve(undefined)
+    }
+    audio.src = url
+  })
+}
+
+const fillMissingDurations = async (assets: AudioListItem[]) => {
+  const tasks = assets.map(async (asset) => {
+    if (asset.duration && asset.duration > 0) return
+    const cacheKey = asset.id || `${asset.name}-${asset.artist || ''}`
+    if (!cacheKey) return
+
+    if (audioDurationCache.has(cacheKey)) {
+      asset.duration = audioDurationCache.get(cacheKey)
+      return
+    }
+    if (audioDurationLoading.has(cacheKey)) return
+
+    audioDurationLoading.add(cacheKey)
+    try {
+      const playableUrl = await resolvePlayableAudioUrl(asset)
+      if (!playableUrl) return
+      const duration = await getAudioDurationFromUrl(playableUrl)
+      if (duration && duration > 0) {
+        const seconds = Math.round(duration)
+        audioDurationCache.set(cacheKey, seconds)
+        asset.duration = seconds
+      }
+    } finally {
+      audioDurationLoading.delete(cacheKey)
+    }
+  })
+
+  await Promise.allSettled(tasks)
+}
+
+const toggleAudioPreview = async (asset: AudioListItem) => {
+  if (previewLoadingAudioId.value === asset.id) {
     return
   }
 
-  if (previewingAudioId.value === asset.id) {
+  if (previewingAudioId.value === asset.id && !previewLoadingAudioId.value) {
     stopAudioPreview()
     return
   }
 
-  stopAudioPreview()
-  const audio = new Audio(asset.url)
-  previewAudioPlayer.value = audio
-  previewingAudioId.value = asset.id
-  audio.play().catch(err => {
-    console.warn('音频播放失败:', err)
+  const requestId = ++previewRequestSeq
+  previewLoadingAudioId.value = asset.id
+
+  try {
+    const url = await resolvePlayableAudioUrl(asset)
+    if (requestId !== previewRequestSeq) return
+
+    if (!url) {
+      ElMessage.error('音频播放失败')
+      previewingAudioId.value = null
+      return
+    }
+
+    stopAudioPreview(false)
+    const audio = new Audio(url)
+    previewAudioPlayer.value = audio
+    previewingAudioId.value = asset.id
+
+    try {
+      await audio.play()
+      audio.onended = () => {
+        if (previewingAudioId.value === asset.id) {
+          previewingAudioId.value = null
+        }
+      }
+      return
+    } catch (err) {
+      console.warn('音频播放失败:', err)
+    }
+
+    audioPlayableUrlCache.delete(asset.id)
+    const retryUrl = await resolvePlayableAudioUrl(asset)
+    if (requestId !== previewRequestSeq) return
+
+    if (retryUrl && retryUrl !== url) {
+      const retryAudio = new Audio(retryUrl)
+      previewAudioPlayer.value = retryAudio
+      previewingAudioId.value = asset.id
+      try {
+        await retryAudio.play()
+        retryAudio.onended = () => {
+          if (previewingAudioId.value === asset.id) {
+            previewingAudioId.value = null
+          }
+        }
+        return
+      } catch (retryErr) {
+        console.warn('音频重试失败:', retryErr)
+      }
+    }
+
     ElMessage.error('音频播放失败')
     previewingAudioId.value = null
-  })
-  audio.onended = () => {
-    previewingAudioId.value = null
+  } finally {
+    if (requestId === previewRequestSeq && previewLoadingAudioId.value === asset.id) {
+      previewLoadingAudioId.value = null
+    }
   }
 }
 
 const addAudioToTimeline = async (asset: AudioListItem) => {
-  if (!asset.url) {
-    ElMessage.warning('音频素材地址缺失')
+  const url = await resolvePlayableAudioUrl(asset)
+  if (!url) {
+    ElMessage.error('音频素材不可用')
     return
   }
   const editor = timelineEditorRef.value as any
@@ -1593,7 +2466,7 @@ const addAudioToTimeline = async (asset: AudioListItem) => {
   const assetId = asset.assetId ?? asset.id
   await editor.addAudioClipFromAsset({
     id: assetId,
-    url: asset.url,
+    url,
     duration: asset.duration,
     name: asset.name
   })
@@ -1628,7 +2501,7 @@ const availableReferenceModes = computed(() => {
 })
 
 // 帧提示词存储key生成函数
-const getPromptStorageKey = (storyboardId: number | undefined, frameType: FrameType) => {
+const getPromptStorageKey = (storyboardId: number | string | undefined, frameType: FrameType) => {
   if (!storyboardId) return null
   return `frame_prompt_${storyboardId}_${frameType}`
 }
@@ -1670,7 +2543,7 @@ const loadPreviousStoryboardLastFrame = async () => {
   }
   try {
     const result = await imageAPI.listImages({
-      storyboard_id: previousStoryboard.value.id,
+      storyboard_id: Number(previousStoryboard.value.id),
       frame_type: 'last',
       page: 1,
       page_size: 10
@@ -1740,7 +2613,7 @@ watch(selectedFrameType, (newType) => {
   }
 
   // 重新加载该帧类型的图片
-  loadStoryboardImages(currentStoryboard.value.id, newType)
+  loadStoryboardImages(Number(currentStoryboard.value.id), newType)
 
   // 重置切换标志
   setTimeout(() => {
@@ -1777,13 +2650,13 @@ watch(currentStoryboard, async (newStoryboard) => {
   }, 0)
 
   // 加载该分镜的图片列表（根据当前选择的帧类型）
-  await loadStoryboardImages(newStoryboard.id, selectedFrameType.value)
+  await loadStoryboardImages(Number(newStoryboard.id), selectedFrameType.value)
 
   // 加载视频参考图片（所有帧类型）
-  await loadVideoReferenceImages(newStoryboard.id)
+  await loadVideoReferenceImages(Number(newStoryboard.id))
 
   // 加载该分镜的视频列表
-  await loadStoryboardVideos(newStoryboard.id)
+  await loadStoryboardVideos(Number(newStoryboard.id))
 
   // 加载上一镜头的尾帧
   await loadPreviousStoryboardLastFrame()
@@ -1911,7 +2784,7 @@ const extractFramePrompt = async () => {
       params.panel_count = panelCount.value
     }
 
-    const result = await generateFramePrompt(currentStoryboard.value.id, params)
+    const result = await generateFramePrompt(Number(currentStoryboard.value.id), params)
 
     // 根据记录的帧类型提取prompt，确保更新到正确的位置
     let extractedPrompt = ''
@@ -2002,7 +2875,7 @@ const startPolling = () => {
 
     try {
       const params: any = {
-        storyboard_id: currentStoryboard.value.id,
+        storyboard_id: Number(currentStoryboard.value.id),
         page: 1,
         page_size: 50
       }
@@ -2025,7 +2898,7 @@ const startPolling = () => {
         stopPolling()
         // 刷新视频参考图片列表
         if (currentStoryboard.value) {
-          loadVideoReferenceImages(currentStoryboard.value.id)
+          loadVideoReferenceImages(Number(currentStoryboard.value.id))
         }
       }
     } catch (error) {
@@ -2070,7 +2943,7 @@ const generateFrameImage = async () => {
     const result = await imageAPI.generateImage({
       drama_id: dramaId.toString(),
       prompt: currentFramePrompt.value,
-      storyboard_id: currentStoryboard.value.id,
+      storyboard_id: Number(currentStoryboard.value.id),
       image_type: 'storyboard',
       frame_type: selectedFrameType.value,
       reference_images: referenceImages.length > 0 ? referenceImages : undefined
@@ -2104,10 +2977,35 @@ const getStatusType = (status: string) => {
   return statusMap[status] || 'info'
 }
 
+const normalizeVideo = (video: VideoGeneration) => {
+  const normalized: VideoGeneration = { ...video }
+  const derivedUrl = normalized.video_url || normalized.minio_url || normalized.local_path || ''
+  const statusText = String(normalized.status || '')
+  if (statusText === 'success') {
+    normalized.status = 'completed'
+  }
+  if (derivedUrl && !normalized.video_url) {
+    normalized.video_url = derivedUrl
+  }
+  if (derivedUrl && (normalized.status === 'failed' || !normalized.status)) {
+    normalized.status = 'completed'
+  } else if (!normalized.status) {
+    normalized.status = 'processing'
+  }
+  return normalized
+}
+
 // 播放视频
 const playVideo = (video: VideoGeneration) => {
   previewVideo.value = video
   showVideoPreview.value = true
+}
+
+const openVideoUrl = (url?: string | null) => {
+  if (!url) return
+  const resolved = resolveVideoUrl(url)
+  if (!resolved) return
+  window.open(resolved, '_blank')
 }
 
 // 添加视频到素材库
@@ -2155,7 +3053,7 @@ const addVideoToAssets = async (video: VideoGeneration) => {
       if (timelineEditorRef.value) {
         timelineEditorRef.value.updateClipsByStoryboardId(
           video.storyboard_id,
-          video.video_url
+          resolveVideoUrl(video.video_url)
         )
       } else {
         console.warn('⚠️ timelineEditorRef.value 为空，无法更新时间线')
@@ -2355,21 +3253,27 @@ const generateVideo = async () => {
     const provider = extractProviderFromModel(selectedVideoModel.value)
 
     // 构建请求参数
+    const promptText = (currentStoryboard.value.video_prompt
+      || currentStoryboard.value.action
+      || currentStoryboard.value.description
+      || currentStoryboard.value.title
+      || '').trim() || '生成视频'
+
+    const referenceMode = selectedReferenceMode.value || (selectedImage ? 'single' : 'none')
     const requestParams: any = {
       drama_id: dramaId.toString(),
-      storyboard_id: currentStoryboard.value.id,
-      prompt: currentStoryboard.value.video_prompt || currentStoryboard.value.action || currentStoryboard.value.description || '',
+      storyboard_id: Number(currentStoryboard.value.id),
+      prompt: promptText,
       duration: videoDuration.value,
       provider: provider,
       model: selectedVideoModel.value,
-      reference_mode: selectedReferenceMode.value
+      reference_mode: referenceMode
     }
 
     // 根据参考图模式设置参数
-    switch (selectedReferenceMode.value) {
+    switch (referenceMode) {
       case 'single':
         // 单图模式
-        requestParams.image_url = selectedImage.image_url
         requestParams.image_gen_id = selectedImage.id
         break
 
@@ -2381,10 +3285,10 @@ const generateVideo = async () => {
           || previousStoryboardLastFrames.value.find(img => img.id === selectedLastImageForVideo.value)
 
         if (firstImage?.image_url) {
-          requestParams.first_frame_url = firstImage.image_url
+          requestParams.first_frame_url = toBackendMediaUrl(firstImage.image_url)
         }
         if (lastImage?.image_url) {
-          requestParams.last_frame_url = lastImage.image_url
+          requestParams.last_frame_url = toBackendMediaUrl(lastImage.image_url)
         }
         break
 
@@ -2393,7 +3297,7 @@ const generateVideo = async () => {
         const selectedImages = selectedImagesForVideo.value
           .map(id => videoReferenceImages.value.find(img => img.id === id))
           .filter(img => img?.image_url)
-          .map(img => img!.image_url)
+          .map(img => toBackendMediaUrl(img!.image_url))
         requestParams.reference_image_urls = selectedImages
         break
 
@@ -2404,7 +3308,7 @@ const generateVideo = async () => {
 
     const result = await videoAPI.generateVideo(requestParams)
 
-    generatedVideos.value.unshift(result)
+    generatedVideos.value.unshift(normalizeVideo(result))
     ElMessage.success('视频生成任务已提交')
 
     // 启动视频轮询
@@ -2439,7 +3343,7 @@ const loadStoryboardVideos = async (storyboardId: number) => {
       page: 1,
       page_size: 50
     })
-    generatedVideos.value = result.items || []
+    generatedVideos.value = (result.items || []).map(normalizeVideo)
 
     // 如果有进行中的任务，启动轮询
     const hasPendingOrProcessing = generatedVideos.value.some(
@@ -2471,7 +3375,7 @@ const startVideoPolling = () => {
         page: 1,
         page_size: 50
       })
-      generatedVideos.value = result.items || []
+      generatedVideos.value = (result.items || []).map(normalizeVideo)
 
       // 如果没有进行中的任务，停止轮询
       const hasPendingOrProcessing = generatedVideos.value.some(
@@ -2614,8 +3518,14 @@ const loadData = async () => {
     // 加载角色列表
     characters.value = dramaRes.characters || []
 
-    // 加载可用场景列表
-    availableScenes.value = dramaRes.scenes || []
+    // 加载可用场景列表（从后台获取场景/背景列表）
+    try {
+      const scenes = await dramaAPI.getBackgrounds(ep.id.toString())
+      availableScenes.value = scenes || []
+    } catch (sceneError: any) {
+      console.warn('加载场景列表失败，回退到剧集数据:', sceneError)
+      availableScenes.value = dramaRes.scenes || []
+    }
 
     // 加载视频素材库
     await loadVideoAssets()
@@ -2647,12 +3557,21 @@ const selectScene = async (sceneId: number) => {
   }
 }
 
-const selectStoryboard = (id: number) => {
-  currentStoryboardId.value = id
+const selectStoryboard = (id: string | number) => {
+  currentStoryboardId.value = String(id)
+}
+
+const refreshCurrentStoryboardMedia = async () => {
+  if (!currentStoryboard.value) return
+  const storyboardId = Number(currentStoryboard.value.id)
+  await Promise.all([
+    loadVideoReferenceImages(storyboardId),
+    loadStoryboardVideos(storyboardId)
+  ])
 }
 
 const handleTimelineSelect = (sceneId: number) => {
-  selectStoryboard(sceneId)
+  selectStoryboard(String(sceneId))
 }
 
 const handleAddStoryboard = async () => {
@@ -2681,6 +3600,9 @@ const zoomOut = () => {
   ElMessage.info('时间线缩放功能开发中')
 }
 
+const uploadInputRef = ref<HTMLInputElement | null>(null)
+const uploadingImage = ref(false)
+
 const generateImage = async () => {
   if (!currentStoryboard.value) return
 
@@ -2692,7 +3614,59 @@ const generateImage = async () => {
 }
 
 const uploadImage = () => {
-  ElMessage.info('上传图片功能开发中')
+  uploadInputRef.value?.click()
+}
+
+const handleUploadImage = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!currentStoryboard.value) {
+    ElMessage.warning('请先选择分镜')
+    input.value = ''
+    return
+  }
+
+  uploadingImage.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const uploadResp = await fetch('/api/v1/upload/image', {
+      method: 'POST',
+      body: formData
+    })
+    const uploadJson = await uploadResp.json()
+    if (!uploadResp.ok || uploadJson?.success === false) {
+      throw new Error(uploadJson?.error?.message || '上传失败')
+    }
+    const imageUrl = uploadJson?.data?.url || uploadJson?.url
+    if (!imageUrl) {
+      throw new Error('上传失败：未返回图片地址')
+    }
+
+    const record = await imageAPI.createImageRecord({
+      drama_id: dramaId.toString(),
+      storyboard_id: Number(currentStoryboard.value.id),
+      frame_type: selectedFrameType.value,
+      image_type: 'storyboard',
+      image_url: imageUrl,
+      prompt: currentFramePrompt.value || '手动上传'
+    })
+
+    generatedImages.value.unshift(record)
+    videoReferenceImages.value.unshift(record)
+    if (record.frame_type) {
+      selectedVideoFrameType.value = record.frame_type as FrameType
+    }
+    ElMessage.success('上传成功')
+  } catch (error: any) {
+    ElMessage.error(error.message || '上传失败')
+  } finally {
+    uploadingImage.value = false
+    input.value = ''
+  }
 }
 
 const goBack = () => {
@@ -2875,6 +3849,11 @@ onMounted(async () => {
   await loadData()
   await loadVideoModels()
   await loadVideoMerges()
+})
+
+onActivated(async () => {
+  await loadData()
+  await refreshCurrentStoryboardMedia()
 })
 
 // 组件卸载时停止轮询
@@ -3452,15 +4431,64 @@ onBeforeUnmount(() => {
       width: 200px;
     }
 
+    .audio-search-loading {
+      color: var(--text-muted);
+      animation: rotating 1s linear infinite;
+    }
+
     .audio-category {
       width: 140px;
     }
+
+    .sfx-categories {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .sfx-ai-generate {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .sfx-ai-input {
+      width: 220px;
+    }
   }
 
-  .audio-list {
+    .audio-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .audio-search-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(59, 130, 246, 0.08);
+      color: var(--text-secondary);
+      font-size: 12px;
+      align-self: flex-start;
+    }
+
+  .audio-pagination {
     display: flex;
-    flex-direction: column;
+    justify-content: center;
+    padding: 8px 0 4px;
+    align-items: center;
     gap: 12px;
+  }
+
+  .audio-total {
+    font-size: 12px;
+    color: var(--text-muted);
   }
 
   .audio-grid {
@@ -3485,6 +4513,13 @@ onBeforeUnmount(() => {
       transform: translateY(-1px);
     }
 
+    &.previewing,
+    &.preview-loading {
+      border-color: var(--accent);
+      background: rgba(64, 158, 255, 0.08);
+      box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.18), var(--shadow-md);
+    }
+
     .audio-card-main {
       display: flex;
       align-items: center;
@@ -3502,6 +4537,13 @@ onBeforeUnmount(() => {
       justify-content: center;
       font-size: 20px;
       flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .audio-cover {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .audio-info {
@@ -3521,6 +4563,14 @@ onBeforeUnmount(() => {
       text-overflow: ellipsis;
     }
 
+    .audio-artist {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .audio-meta {
       display: flex;
       align-items: center;
@@ -3528,6 +4578,12 @@ onBeforeUnmount(() => {
       font-size: 11px;
       color: var(--text-muted);
       flex-wrap: wrap;
+    }
+
+    .sfx-categories {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .audio-duration,
@@ -3854,6 +4910,22 @@ onBeforeUnmount(() => {
         flex: 1;
         overflow-y: auto;
         padding: 8px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent) var(--bg-secondary);
+
+        &::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        &::-webkit-scrollbar-track {
+          background: var(--bg-secondary);
+          border-radius: 8px;
+        }
+
+        &::-webkit-scrollbar-thumb {
+          background: var(--accent);
+          border-radius: 8px;
+        }
 
         .storyboard-item {
           display: flex;
@@ -3991,6 +5063,10 @@ onBeforeUnmount(() => {
           padding: 16px;
         }
 
+        .sound-music-tab-content {
+          padding-top: 0px;
+        }
+
         .scene-editor,
         .shot-editor {
           .el-form-item {
@@ -4093,6 +5169,49 @@ onBeforeUnmount(() => {
       grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 10px;
 
+      &.image-grid--generated {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+
+        .image-item {
+          aspect-ratio: 4 / 3;
+          padding: 6px;
+          background: linear-gradient(135deg, #f7f8fa 0%, #eef1f5 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .image-item.has-image::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: var(--image-url);
+          background-size: cover;
+          background-position: center;
+          filter: blur(12px) saturate(1.05);
+          transform: scale(1.08);
+          opacity: 0.5;
+        }
+
+        .image-placeholder {
+          aspect-ratio: 4 / 3;
+        }
+
+        :deep(.el-image) {
+          width: 100%;
+          height: 100%;
+          position: relative;
+          z-index: 1;
+          aspect-ratio: auto;
+        }
+
+        :deep(.el-image__inner) {
+          object-fit: contain;
+          background: transparent;
+        }
+      }
+
       .image-item {
         position: relative;
         border-radius: 8px;
@@ -4112,7 +5231,16 @@ onBeforeUnmount(() => {
         :deep(.el-image) {
           width: 100%;
           aspect-ratio: 16 / 9;
-          background: var(--bg-secondary);
+          background: transparent;
+          display: block;
+          position: relative;
+          z-index: 1;
+        }
+
+        :deep(.el-image__inner) {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
           display: block;
         }
 
@@ -4169,6 +5297,7 @@ onBeforeUnmount(() => {
           justify-content: space-between;
           align-items: center;
           gap: 4px;
+          z-index: 2;
 
           :deep(.el-tag) {
             backdrop-filter: blur(8px);
@@ -4594,12 +5723,11 @@ onBeforeUnmount(() => {
 
     .reference-grid {
       display: grid !important;
-      grid-template-columns: repeat(4, 1fr) !important;
-      gap: 8px !important;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+      gap: 10px !important;
 
       .reference-item {
-        // padding-top: 4px;
-        margin-top: 6px;
+        margin-top: 0;
         position: relative;
         border-radius: 6px;
         overflow: hidden;
@@ -4607,8 +5735,12 @@ onBeforeUnmount(() => {
         border: 2px solid transparent;
         transition: all 0.2s ease;
         width: 100% !important;
-        max-width: 120px !important;
+        max-width: none !important;
+        aspect-ratio: 4 / 3;
         background: var(--bg-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
 
         &:hover {
           transform: translateY(-4px) scale(1.02);
@@ -4621,16 +5753,22 @@ onBeforeUnmount(() => {
           box-shadow: var(--shadow-glow);
         }
 
-        img {
+        :deep(.reference-image) {
           width: 100%;
-          max-width: 180px;
-          aspect-ratio: 16 / 9;
+          height: 100%;
+          display: block;
+          pointer-events: none;
+        }
+
+        :deep(.reference-image .el-image__inner) {
+          width: 100%;
+          height: 100%;
           object-fit: cover;
           display: block;
           transition: transform 0.3s;
         }
 
-        &:hover img {
+        &:hover :deep(.reference-image .el-image__inner) {
           transform: scale(1.05);
         }
 
@@ -4896,15 +6034,16 @@ onBeforeUnmount(() => {
 <style>
 .video-prompt-box {
   margin-bottom: 10px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   background: var(--bg-secondary);
   border-radius: 6px;
   border: 1px solid var(--border-primary);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--text-secondary);
   word-break: break-word;
-  max-height: 80px;
+  min-height: 140px;
+  max-height: 200px;
   overflow-y: auto;
 }
 </style>

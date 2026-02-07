@@ -433,6 +433,21 @@
           <div class="shots-header">
             <h3>{{ $t('workflow.shotList') }}</h3>
           </div>
+
+          <div v-if="generatingShots" class="shots-loading-overlay">
+            <div class="shots-loading-card">
+              <el-icon class="shots-loading-icon"><Loading /></el-icon>
+              <div class="shots-loading-title">{{ $t('workflow.aiSplitting') }}</div>
+              <el-progress :percentage="taskProgress" :status="taskProgress === 100 ? 'success' : undefined">
+                <template #default="{ percentage }">
+                  <span style="font-size: 12px;">{{ percentage }}%</span>
+                </template>
+              </el-progress>
+              <div class="task-message">
+                {{ taskMessage }}
+              </div>
+            </div>
+          </div>
           
           <el-table :data="currentEpisode.storyboards" border stripe style="margin-top: 16px;">
             <el-table-column type="index" :label="$t('storyboard.table.number')" width="60" />
@@ -494,7 +509,7 @@
                 {{ row.duration || '-' }}秒
               </template>
             </el-table-column>
-            <el-table-column :label="$t('storyboard.table.operations')" width="100" fixed="right">
+            <el-table-column :label="$t('storyboard.table.operations')" width="140" fixed="right">
               <template #default="{ row, $index }">
                 <el-button 
                   type="primary" 
@@ -502,6 +517,14 @@
                   @click="editShot(row, $index)"
                 >
                   {{ $t('common.edit') }}
+                </el-button>
+                <el-button
+                  type="danger"
+                  size="small"
+                  style="margin-left: 8px;"
+                  @click="deleteShot(row)"
+                >
+                  删除
                 </el-button>
               </template>
             </el-table-column>
@@ -1520,15 +1543,7 @@ const pollTaskStatus = async (taskId: string) => {
         generatingShots.value = false
         
         ElMessage.success($t('workflow.splitSuccess'))
-        
-        // 跳转到专业编辑器页面
-        router.push({
-          name: 'ProfessionalEditor',
-          params: {
-            dramaId: dramaId,
-            episodeNumber: episodeNumber
-          }
-        })
+        await loadDramaData()
       } else if (task.status === 'failed') {
         // 任务失败
         if (pollTimer) {
@@ -1763,6 +1778,30 @@ const deleteCharacter = async (characterId: number) => {
   }
 }
 
+const deleteShot = async (shot: any) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除该镜头吗？删除后将无法恢复。',
+      '删除确认',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消'
+      }
+    )
+
+    await dramaAPI.deleteStoryboard(shot.id.toString())
+    if (currentEpisode.value?.storyboards) {
+      currentEpisode.value.storyboards = currentEpisode.value.storyboards.filter(item => item.id !== shot.id)
+    }
+    ElMessage.success('镜头已删除')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除失败')
+    }
+  }
+}
+
 const goToProfessionalUI = () => {
   if (!currentEpisode.value?.id) {
     ElMessage.error('章节信息不存在')
@@ -1831,6 +1870,10 @@ onMounted(() => {
 .content-wrapper {
   margin: 0 auto;
   width: 100%;
+}
+
+.episode-info {
+  margin-bottom: 12px;
 }
 
 /* Header styles matching PageHeader component */
@@ -2090,6 +2133,42 @@ onMounted(() => {
 .empty-shots {
   padding: 60px 0;
   text-align: center;
+}
+
+.shots-list {
+  position: relative;
+}
+
+.shots-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.shots-loading-card {
+  width: min(420px, 90%);
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shots-loading-icon {
+  font-size: 28px;
+  color: var(--el-color-primary);
+  animation: rotating 1.2s linear infinite;
+}
+
+.shots-loading-title {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .extracted-title {

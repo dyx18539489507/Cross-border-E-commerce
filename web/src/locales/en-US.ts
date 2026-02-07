@@ -168,6 +168,7 @@ export default {
       noEpisodes: 'No episodes yet',
       clickToCreate: 'Click the button above to create your first episode',
       episodeNumber: 'Episode {number}',
+      shotsCount: 'Shots',
       goToEdit: 'Go to Edit',
       characterList: 'Character List',
       noCharacters: 'No characters yet',
@@ -374,6 +375,16 @@ export default {
     uploadImage: 'Upload Image',
     selectFromLibrary: 'Select from Library',
     shotList: 'Shot List',
+    voiceLibrary: {
+      searchPlaceholder: 'Search voice name',
+      filters: {
+        gender: 'Gender',
+        age: 'Age',
+        language: 'Language',
+        category: 'Voice Traits'
+      },
+      createVoice: 'Create Voice'
+    },
     dragFilesHere: 'Drop files here, or',
     clickToUpload: 'Click to Upload',
     prevStep: 'Previous Step',

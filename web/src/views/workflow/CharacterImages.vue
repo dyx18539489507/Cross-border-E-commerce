@@ -135,7 +135,7 @@ const generateImage = async (character: Character) => {
   
   generatingIds.value.push(character.id)
   try {
-    const result = await characterLibraryAPI.generateCharacterImage(character.id as string)
+    const result = await characterLibraryAPI.generateCharacterImage(String(character.id))
     
     // 更新角色图片
     const index = characters.value.findIndex(c => c.id === character.id)

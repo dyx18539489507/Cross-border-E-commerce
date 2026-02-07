@@ -106,6 +106,7 @@ const showAIConfig = ref(false)
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  font-size: 1.5rem;
 }
 
 .header-right {

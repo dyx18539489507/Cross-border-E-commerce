@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
@@ -43,6 +44,7 @@ type MergeVideoRequest struct {
 	DramaID   string             `json:"drama_id" binding:"required"`
 	Title     string             `json:"title"`
 	Scenes    []models.SceneClip `json:"scenes" binding:"required,min=1"`
+	AudioClips []models.AudioClip `json:"audio_clips,omitempty"`
 	Provider  string             `json:"provider"`
 	Model     string             `json:"model"`
 }
@@ -72,6 +74,15 @@ func (s *VideoMergeService) MergeVideos(req *MergeVideoRequest) (*models.VideoMe
 		return nil, fmt.Errorf("failed to serialize scenes: %w", err)
 	}
 
+	// 序列化音频列表（可选）
+	var audioJSON []byte
+	if len(req.AudioClips) > 0 {
+		audioJSON, err = json.Marshal(req.AudioClips)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize audio clips: %w", err)
+		}
+	}
+
 	s.log.Infow("Serialized scenes to JSON",
 		"scenes_count", len(req.Scenes),
 		"scenes_json", string(scenesJSON))
@@ -86,6 +97,7 @@ func (s *VideoMergeService) MergeVideos(req *MergeVideoRequest) (*models.VideoMe
 		Provider:  provider,
 		Model:     &req.Model,
 		Scenes:    scenesJSON,
+		AudioClips: audioJSON,
 		Status:    models.VideoMergeStatusPending,
 	}
 
@@ -120,8 +132,17 @@ func (s *VideoMergeService) processMergeVideo(mergeID uint) {
 		return
 	}
 
+	// 解析音频列表（可选）
+	var audioClips []models.AudioClip
+	if len(videoMerge.AudioClips) > 0 {
+		if err := json.Unmarshal(videoMerge.AudioClips, &audioClips); err != nil {
+			s.log.Warnw("Failed to parse audio clips, will ignore", "error", err, "merge_id", mergeID)
+			audioClips = nil
+		}
+	}
+
 	// 调用视频合并API
-	result, err := s.mergeVideoClips(client, scenes)
+	result, err := s.mergeVideoClips(client, scenes, audioClips)
 	if err != nil {
 		s.updateMergeError(mergeID, err.Error())
 		return
@@ -139,7 +160,7 @@ func (s *VideoMergeService) processMergeVideo(mergeID uint) {
 	s.completeMerge(mergeID, result)
 }
 
-func (s *VideoMergeService) mergeVideoClips(client video.VideoClient, scenes []models.SceneClip) (*video.VideoResult, error) {
+func (s *VideoMergeService) mergeVideoClips(client video.VideoClient, scenes []models.SceneClip, audioClips []models.AudioClip) (*video.VideoResult, error) {
 	if len(scenes) == 0 {
 		return nil, fmt.Errorf("no scenes to merge")
 	}
@@ -190,6 +211,7 @@ func (s *VideoMergeService) mergeVideoClips(client video.VideoClient, scenes []m
 	mergedPath, err := s.ffmpeg.MergeVideos(&ffmpeg.MergeOptions{
 		OutputPath: outputPath,
 		Clips:      clips,
+		AudioClips: s.buildAudioClips(audioClips),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg merge failed: %w", err)
@@ -209,6 +231,90 @@ func (s *VideoMergeService) mergeVideoClips(client video.VideoClient, scenes []m
 	}
 
 	return result, nil
+}
+
+func (s *VideoMergeService) buildAudioClips(audioClips []models.AudioClip) []ffmpeg.AudioClip {
+	if len(audioClips) == 0 {
+		return nil
+	}
+
+	sort.Slice(audioClips, func(i, j int) bool {
+		return audioClips[i].Position < audioClips[j].Position
+	})
+
+	result := make([]ffmpeg.AudioClip, 0, len(audioClips))
+	for _, clip := range audioClips {
+		audioURL := strings.TrimSpace(clip.AudioURL)
+		if audioURL == "" {
+			continue
+		}
+
+		duration := clip.Duration
+		if duration <= 0 && clip.EndTime > clip.StartTime {
+			duration = clip.EndTime - clip.StartTime
+		}
+		if duration < 0 {
+			duration = 0
+		}
+
+		volume := clip.Volume
+		if volume <= 0 {
+			volume = 1
+		}
+
+		result = append(result, ffmpeg.AudioClip{
+			URL:       s.resolveAudioURL(audioURL),
+			StartTime: clip.StartTime,
+			EndTime:   clip.EndTime,
+			Duration:  duration,
+			Position:  clip.Position,
+			Volume:    volume,
+		})
+	}
+
+	return result
+}
+
+func (s *VideoMergeService) resolveAudioURL(audioURL string) string {
+	trimmed := strings.TrimSpace(audioURL)
+	if trimmed == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(trimmed, "file://") {
+		trimmed = strings.TrimPrefix(trimmed, "file://")
+	}
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+
+	if strings.HasPrefix(trimmed, "/data/") {
+		local := filepath.Join(s.storagePath, strings.TrimPrefix(trimmed, "/data/"))
+		if _, err := os.Stat(local); err == nil {
+			return local
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "/static/") {
+		local := filepath.Join(s.storagePath, strings.TrimPrefix(trimmed, "/static/"))
+		if _, err := os.Stat(local); err == nil {
+			return local
+		}
+	}
+
+	if filepath.IsAbs(trimmed) {
+		if _, err := os.Stat(trimmed); err == nil {
+			return trimmed
+		}
+	}
+
+	local := filepath.Join(s.storagePath, strings.TrimPrefix(trimmed, "/"))
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+
+	return trimmed
 }
 
 func (s *VideoMergeService) pollMergeStatus(mergeID uint, client video.VideoClient, taskID string) {
@@ -384,6 +490,7 @@ type TimelineClip struct {
 type FinalizeEpisodeRequest struct {
 	EpisodeID string         `json:"episode_id"`
 	Clips     []TimelineClip `json:"clips"`
+	AudioClips []models.AudioClip `json:"audio_clips"`
 }
 
 // FinalizeEpisode 完成集数制作，根据时间线场景顺序合成最终视频
@@ -521,11 +628,17 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 	// 创建视频合成任务
 	title := fmt.Sprintf("%s - 第%d集", episode.Drama.Title, episode.EpisodeNum)
 
+	var audioClips []models.AudioClip
+	if timelineData != nil {
+		audioClips = timelineData.AudioClips
+	}
+
 	finalReq := &MergeVideoRequest{
 		EpisodeID: episodeID,
 		DramaID:   fmt.Sprintf("%d", episode.DramaID),
 		Title:     title,
 		Scenes:    sceneClips,
+		AudioClips: audioClips,
 		Provider:  "doubao", // 默认使用doubao
 	}
 

@@ -31,12 +31,19 @@ request.interceptors.request.use(
 request.interceptors.response.use(
   (response) => {
     const res = response.data
-    if (res.success) {
-      return res.data
-    } else {
+    if (res && typeof res === 'object' && 'success' in res) {
+      if (res.success) {
+        return res.data
+      }
+      // 某些接口会错误地返回 success=false 但仍带有 data
+      if (res.data !== undefined && res.data !== null) {
+        return res.data
+      }
       // 不在这里显示错误提示，让业务代码自行处理
       return Promise.reject(new Error(res.error?.message || '请求失败'))
     }
+    // 兼容直接返回数据的接口
+    return res
   },
   (error: AxiosError<any>) => {
     // 不在拦截器中自动显示错误提示，让业务代码根据具体情况处理

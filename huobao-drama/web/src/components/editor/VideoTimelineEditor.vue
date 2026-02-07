@@ -1704,9 +1704,19 @@ const handleExport = async () => {
       duration: clip.end_time - clip.start_time,
       transition: clip.transition
     }))
+    const audioTracks = audioClips.value
+      .filter(audio => audio.audio_url)
+      .map(audio => ({
+        url: audio.audio_url,
+        startTime: audio.start_time,
+        endTime: audio.end_time,
+        duration: audio.duration,
+        position: audio.position,
+        volume: audio.volume
+      }))
 
     // 执行合并
-    const mergedBlob = await videoMerger.mergeVideos(clips)
+    const mergedBlob = await videoMerger.mergeVideos(clips, audioTracks)
 
     // 下载合并后的视频
     const url = URL.createObjectURL(mergedBlob)
@@ -1761,12 +1771,22 @@ const mergeVideoInBrowser = async () => {
       startTime: clip.start_time,
       endTime: clip.end_time
     }))
+    const audioTracks = audioClips.value
+      .filter(audio => audio.audio_url)
+      .map(audio => ({
+        url: audio.audio_url,
+        startTime: audio.start_time,
+        endTime: audio.end_time,
+        duration: audio.duration,
+        position: audio.position,
+        volume: audio.volume
+      }))
 
     // 使用FFmpeg合成
     ElMessage.info('正在合成视频，请稍候...')
     const mergedBlob = await trimAndMergeVideos(clips, (progress) => {
       mergeProgress.value = Math.round(progress)
-    })
+    }, audioTracks)
 
     // 创建下载链接
     const url = URL.createObjectURL(mergedBlob)
@@ -1830,7 +1850,17 @@ const submitTimelineForMerge = async () => {
           duration: clip.duration,
           transition: clip.transition || { type: 'none', duration: 0 }
         }
-      })
+      }),
+      audio_clips: audioClips.value.map((audio, index) => ({
+        audio_url: audio.audio_url,
+        start_time: audio.start_time,
+        end_time: audio.end_time,
+        duration: audio.duration,
+        position: audio.position,
+        order: audio.order ?? index,
+        volume: audio.volume,
+        title: audio.title
+      }))
     }
     console.log('📤 提交时间线数据:', JSON.stringify(timelineData, null, 2))
 

@@ -12,6 +12,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Storage  StorageConfig  `mapstructure:"storage"`
 	AI       AIConfig       `mapstructure:"ai"`
+	Volcengine VolcengineConfig `mapstructure:"volcengine"`
 }
 
 type AppConfig struct {
@@ -46,12 +47,26 @@ type StorageConfig struct {
 	Type      string `mapstructure:"type"`       // local, minio
 	LocalPath string `mapstructure:"local_path"` // 本地存储路径
 	BaseURL   string `mapstructure:"base_url"`   // 访问URL前缀
+	R2AccountID     string `mapstructure:"r2_account_id"`
+	R2AccessKeyID   string `mapstructure:"r2_access_key_id"`
+	R2SecretKey     string `mapstructure:"r2_secret_access_key"`
+	R2Bucket        string `mapstructure:"r2_bucket"`
+	R2Endpoint      string `mapstructure:"r2_endpoint"`
+	R2Region        string `mapstructure:"r2_region"`
 }
 
 type AIConfig struct {
 	DefaultTextProvider  string `mapstructure:"default_text_provider"`
 	DefaultImageProvider string `mapstructure:"default_image_provider"`
 	DefaultVideoProvider string `mapstructure:"default_video_provider"`
+}
+
+type VolcengineConfig struct {
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	Region          string `mapstructure:"region"`
+	Service         string `mapstructure:"service"`
+	VisualHost      string `mapstructure:"visual_host"`
 }
 
 func LoadConfig() (*Config, error) {

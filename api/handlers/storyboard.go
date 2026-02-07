@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"sync"
+
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -59,13 +61,41 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model string) {
 	h.log.Infow("Starting storyboard generation", "task_id", taskID, "episode_id", episodeID, "model", model)
 
-	// 更新任务状态为处理中
-	if err := h.taskService.UpdateTaskStatus(taskID, "processing", 10, "开始生成分镜..."); err != nil {
-		h.log.Errorw("Failed to update task status", "error", err)
+	var (
+		lastProgress = -1
+		lastMessage  = ""
+		mu           sync.Mutex
+	)
+	reportProgress := func(progress int, message string) {
+		if message == "" {
+			message = "处理中..."
+		}
+		if progress < 0 {
+			progress = 0
+		}
+		if progress > 99 {
+			progress = 99
+		}
+
+		mu.Lock()
+		if progress < lastProgress || (progress == lastProgress && message == lastMessage) {
+			mu.Unlock()
+			return
+		}
+		lastProgress = progress
+		lastMessage = message
+		mu.Unlock()
+
+		if err := h.taskService.UpdateTaskStatus(taskID, "processing", progress, message); err != nil {
+			h.log.Errorw("Failed to update task status", "error", err, "task_id", taskID)
+		}
 	}
 
+	// 更新任务状态为处理中
+	reportProgress(10, "开始生成分镜...")
+
 	// 调用实际的生成逻辑
-	result, err := h.storyboardService.GenerateStoryboard(episodeID, model)
+	result, err := h.storyboardService.GenerateStoryboardWithProgress(episodeID, model, reportProgress)
 	if err != nil {
 		h.log.Errorw("Failed to generate storyboard", "error", err, "task_id", taskID)
 		if updateErr := h.taskService.UpdateTaskError(taskID, err); updateErr != nil {
@@ -102,4 +132,17 @@ func (h *StoryboardHandler) UpdateStoryboard(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "Storyboard updated successfully"})
+}
+
+// DeleteStoryboard 删除分镜
+func (h *StoryboardHandler) DeleteStoryboard(c *gin.Context) {
+	storyboardID := c.Param("id")
+
+	if err := h.storyboardService.DeleteStoryboard(storyboardID); err != nil {
+		h.log.Errorw("Failed to delete storyboard", "error", err)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "Storyboard deleted successfully"})
 }

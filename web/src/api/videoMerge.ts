@@ -9,11 +9,23 @@ export interface SceneClip {
   order: number
 }
 
+export interface AudioClip {
+  audio_url: string
+  start_time: number
+  end_time: number
+  duration: number
+  position: number
+  volume?: number
+  order?: number
+  title?: string
+}
+
 export interface MergeVideoRequest {
   episode_id: string
   drama_id: string
   title: string
   scenes: SceneClip[]
+  audio_clips?: AudioClip[]
   provider?: string
   model?: string
 }
@@ -27,6 +39,7 @@ export interface VideoMerge {
   model?: string
   status: 'pending' | 'processing' | 'completed' | 'failed'
   scenes: SceneClip[]
+  audio_clips?: AudioClip[]
   merged_url?: string
   duration?: number
   task_id?: string

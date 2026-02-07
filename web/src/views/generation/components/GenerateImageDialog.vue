@@ -25,12 +25,12 @@
           clearable
           @change="onSceneChange"
         >
-          <el-option
-            v-for="scene in scenes"
-            :key="scene.id"
-:label="$t('imageDialog.sceneLabel', { number: scene.storyboard_number, title: scene.title })"
-            :value="scene.id"
-          />
+        <el-option
+          v-for="scene in scenes"
+          :key="scene.id"
+          :label="$t('imageDialog.sceneLabel', { number: scene.storyboard_number, title: scene.title })"
+          :value="Number(scene.id)"
+        />
         </el-select>
       </el-form-item>
 
@@ -232,7 +232,7 @@ const onDramaChange = (dramaId: string) => {
 const onSceneChange = (sceneId: number | undefined) => {
   if (!sceneId) return
   
-  const scene = scenes.value.find(s => s.id === sceneId)
+  const scene = scenes.value.find(s => Number(s.id) === sceneId)
   if (scene && scene.prompt) {
     form.prompt = scene.prompt
   }

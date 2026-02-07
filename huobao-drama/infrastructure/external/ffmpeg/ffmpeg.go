@@ -36,9 +36,19 @@ type VideoClip struct {
 	Transition map[string]interface{}
 }
 
+type AudioClip struct {
+	URL       string
+	StartTime float64
+	EndTime   float64
+	Duration  float64
+	Position  float64
+	Volume    float64
+}
+
 type MergeOptions struct {
 	OutputPath string
 	Clips      []VideoClip
+	AudioClips []AudioClip
 }
 
 func (f *FFmpeg) MergeVideos(opts *MergeOptions) (string, error) {
@@ -98,6 +108,17 @@ func (f *FFmpeg) MergeVideos(opts *MergeOptions) (string, error) {
 
 	if err != nil {
 		return "", fmt.Errorf("failed to concatenate videos: %w", err)
+	}
+
+	// 叠加音频轨道（可选）
+	if len(opts.AudioClips) > 0 {
+		mixedPath := filepath.Join(f.tempDir, fmt.Sprintf("mixed_%d.mp4", time.Now().Unix()))
+		if err := f.mixAudioWithVideo(opts.OutputPath, opts.AudioClips, mixedPath); err != nil {
+			return "", fmt.Errorf("failed to mix audio: %w", err)
+		}
+		if err := f.replaceFile(mixedPath, opts.OutputPath); err != nil {
+			return "", fmt.Errorf("failed to replace output after mixing audio: %w", err)
+		}
 	}
 
 	f.log.Infow("Video merge completed", "output", opts.OutputPath)
@@ -739,6 +760,151 @@ func (f *FFmpeg) GetVideoDuration(videoPath string) (float64, error) {
 	}
 
 	return duration, nil
+}
+
+func (f *FFmpeg) mixAudioWithVideo(videoPath string, audioClips []AudioClip, outputPath string) error {
+	if len(audioClips) == 0 {
+		return f.copyFile(videoPath, outputPath)
+	}
+
+	args := []string{"-i", videoPath}
+	filterParts := make([]string, 0)
+	mixInputs := make([]string, 0)
+	cleanupPaths := make([]string, 0)
+
+	validClips := make([]AudioClip, 0, len(audioClips))
+	for i, clip := range audioClips {
+		if strings.TrimSpace(clip.URL) == "" {
+			continue
+		}
+		localPath, isTemp, err := f.prepareMediaInput(clip.URL, fmt.Sprintf("audio_%d", i))
+		if err != nil {
+			f.cleanup(cleanupPaths)
+			return err
+		}
+		if isTemp {
+			cleanupPaths = append(cleanupPaths, localPath)
+		}
+		args = append(args, "-i", localPath)
+		validClips = append(validClips, clip)
+	}
+
+	if len(validClips) == 0 {
+		f.cleanup(cleanupPaths)
+		return f.copyFile(videoPath, outputPath)
+	}
+
+	if f.hasAudioStream(videoPath) {
+		filterParts = append(filterParts, "[0:a]asetpts=PTS-STARTPTS[basea]")
+		mixInputs = append(mixInputs, "[basea]")
+	}
+
+	for i, clip := range validClips {
+		inputIndex := i + 1
+		label := fmt.Sprintf("a%d", i)
+
+		startTime := clip.StartTime
+		duration := clip.Duration
+		if duration <= 0 && clip.EndTime > clip.StartTime {
+			duration = clip.EndTime - clip.StartTime
+		}
+
+		filter := fmt.Sprintf("[%d:a]", inputIndex)
+		if startTime > 0 || duration > 0 {
+			filter += fmt.Sprintf("atrim=start=%.2f", startTime)
+			if duration > 0 {
+				filter += fmt.Sprintf(":duration=%.2f", duration)
+			}
+			filter += ","
+		}
+
+		filter += "asetpts=PTS-STARTPTS"
+
+		volume := clip.Volume
+		if volume <= 0 {
+			volume = 1
+		}
+		if volume != 1 {
+			filter += fmt.Sprintf(",volume=%.2f", volume)
+		}
+
+		delayMs := int(clip.Position * 1000)
+		if delayMs > 0 {
+			filter += fmt.Sprintf(",adelay=%d:all=1", delayMs)
+		}
+
+		filter += fmt.Sprintf("[%s]", label)
+		filterParts = append(filterParts, filter)
+		mixInputs = append(mixInputs, fmt.Sprintf("[%s]", label))
+	}
+
+	if len(mixInputs) == 0 {
+		f.cleanup(cleanupPaths)
+		return f.copyFile(videoPath, outputPath)
+	}
+
+	mixFilter := fmt.Sprintf("%samix=inputs=%d:normalize=0,apad[aout]", strings.Join(mixInputs, ""), len(mixInputs))
+	filterParts = append(filterParts, mixFilter)
+	filterComplex := strings.Join(filterParts, ";")
+
+	args = append(args,
+		"-filter_complex", filterComplex,
+		"-map", "0:v",
+		"-map", "[aout]",
+		"-c:v", "copy",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-shortest",
+		"-y",
+		outputPath,
+	)
+
+	f.log.Infow("Running FFmpeg audio mix", "filter", filterComplex)
+	cmd := exec.Command("ffmpeg", args...)
+	output, err := cmd.CombinedOutput()
+	f.cleanup(cleanupPaths)
+	if err != nil {
+		f.log.Errorw("FFmpeg audio mix failed", "error", err, "output", string(output))
+		return fmt.Errorf("ffmpeg audio mix failed: %w, output: %s", err, string(output))
+	}
+
+	return nil
+}
+
+func (f *FFmpeg) prepareMediaInput(source, prefix string) (string, bool, error) {
+	trimmed := strings.TrimSpace(source)
+	if strings.HasPrefix(trimmed, "file://") {
+		trimmed = strings.TrimPrefix(trimmed, "file://")
+	}
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		ext := filepath.Ext(strings.Split(trimmed, "?")[0])
+		if ext == "" || len(ext) > 8 {
+			ext = ".mp3"
+		}
+		destPath := filepath.Join(f.tempDir, fmt.Sprintf("%s_%d%s", prefix, time.Now().UnixNano(), ext))
+		localPath, err := f.downloadVideo(trimmed, destPath)
+		if err != nil {
+			return "", false, err
+		}
+		return localPath, true, nil
+	}
+
+	if _, err := os.Stat(trimmed); err == nil {
+		return trimmed, false, nil
+	}
+
+	return "", false, fmt.Errorf("media source not found: %s", source)
+}
+
+func (f *FFmpeg) replaceFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	if err := f.copyFile(src, dst); err != nil {
+		return err
+	}
+	return os.Remove(src)
 }
 
 func (f *FFmpeg) copyFile(src, dst string) error {

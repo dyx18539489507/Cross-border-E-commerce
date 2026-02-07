@@ -26,10 +26,12 @@
           <ThemeToggle v-if="showTheme" />
           
           <!-- AI Config (Model Switch) | AI 配置（模型切换） -->
+          <!--
           <el-button v-if="showAIConfig" @click="handleOpenAIConfig" class="header-btn">
             <el-icon><Setting /></el-icon>
             <span class="btn-text">{{ $t('drama.aiConfig') }}</span>
           </el-button>
+          -->
           <!-- Right slot for business content (before actions) | 右侧插槽（在操作按钮前） -->
           <slot name="right" />
         </div>
@@ -149,7 +151,7 @@ defineExpose({
 .header-right {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-4);
   flex-shrink: 0;
 }
 
@@ -160,7 +162,7 @@ defineExpose({
   text-decoration: none;
   color: var(--text-primary);
   font-weight: 700;
-  font-size: 1.125rem;
+  font-size: 2.25rem;
   transition: opacity var(--transition-fast);
 }
 

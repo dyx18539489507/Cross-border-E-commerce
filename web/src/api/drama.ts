@@ -95,6 +95,10 @@ export const dramaAPI = {
     return request.put(`/storyboards/${storyboardId}`, data)
   },
 
+  deleteStoryboard(storyboardId: string) {
+    return request.delete(`/storyboards/${storyboardId}`)
+  },
+
   updateScene(sceneId: string, data: { 
     background_id?: string; 
     characters?: string[];
@@ -104,6 +108,7 @@ export const dramaAPI = {
     dialogue?: string;
     description?: string;
     duration?: number;
+    scene_id?: number;
   }) {
     return request.put(`/scenes/${sceneId}`, data)
   },

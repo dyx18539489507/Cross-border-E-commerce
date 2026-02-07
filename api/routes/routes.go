@@ -46,6 +46,14 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	if err != nil {
 		log.Fatalw("Failed to create upload handler", "error", err)
 	}
+	digitalHumanHandler, err := handlers2.NewDigitalHumanHandler(cfg, log)
+	if err != nil {
+		log.Fatalw("Failed to create digital human handler", "error", err)
+	}
+	voiceLibraryHandler, err := handlers2.NewVoiceLibraryHandler(cfg, log)
+	if err != nil {
+		log.Fatalw("Failed to create voice library handler", "error", err)
+	}
 	storyboardHandler := handlers2.NewStoryboardHandler(db, cfg, log)
 	sceneHandler := handlers2.NewSceneHandler(db, log, imageGenService)
 	taskHandler := handlers2.NewTaskHandler(db, log)
@@ -53,6 +61,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	framePromptHandler := handlers2.NewFramePromptHandler(framePromptService, log)
 	audioExtractionHandler := handlers2.NewAudioExtractionHandler(log, cfg.Storage.LocalPath)
 	settingsHandler := handlers2.NewSettingsHandler(cfg, log)
+	musicHandler := handlers2.NewMusicHandler(log)
+	sfxHandler := handlers2.NewSFXHandler(cfg, log)
 
 	api := r.Group("/api/v1")
 	{
@@ -116,6 +126,18 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			upload.POST("/image", uploadHandler.UploadImage)
 		}
 
+		// 数字人生成
+		digitalHumans := api.Group("/digital-humans")
+		{
+			digitalHumans.POST("", digitalHumanHandler.Generate)
+		}
+
+		// 音色库
+		voiceLibrary := api.Group("/voice-library")
+		{
+			voiceLibrary.GET("", voiceLibraryHandler.List)
+		}
+
 		// 分镜头路由
 		episodes := api.Group("/episodes")
 		{
@@ -146,6 +168,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		{
 			images.GET("", imageGenHandler.ListImageGenerations)
 			images.POST("", imageGenHandler.GenerateImage)
+			images.POST("/manual", imageGenHandler.CreateImageRecord)
 			images.GET("/:id", imageGenHandler.GetImageGeneration)
 			images.DELETE("/:id", imageGenHandler.DeleteImageGeneration)
 			images.POST("/scene/:scene_id", imageGenHandler.GenerateImagesForScene)
@@ -186,6 +209,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		storyboards := api.Group("/storyboards")
 		{
 			storyboards.PUT("/:id", storyboardHandler.UpdateStoryboard)
+			storyboards.DELETE("/:id", storyboardHandler.DeleteStoryboard)
 			storyboards.POST("/:id/frame-prompt", framePromptHandler.GenerateFramePrompt)
 			storyboards.GET("/:id/frame-prompts", handlers2.GetStoryboardFramePrompts(db, log))
 		}
@@ -194,6 +218,21 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		{
 			audio.POST("/extract", audioExtractionHandler.ExtractAudio)
 			audio.POST("/extract/batch", audioExtractionHandler.BatchExtractAudio)
+		}
+
+		music := api.Group("/music")
+		{
+			music.GET("/netease/search", musicHandler.SearchNetease)
+			music.GET("/netease/song-url", musicHandler.GetNeteaseSongURL)
+			music.GET("/netease/stream", musicHandler.StreamNeteaseSong)
+			music.GET("/search", musicHandler.SearchAll)
+			music.GET("/stream", musicHandler.StreamMusic)
+		}
+
+		sfx := api.Group("/sfx")
+		{
+			sfx.GET("", sfxHandler.ListSFX)
+			sfx.POST("/generate", sfxHandler.GenerateSFX)
 		}
 
 		settings := api.Group("/settings")

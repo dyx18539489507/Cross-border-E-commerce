@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -366,6 +368,17 @@ func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImag
 		}
 		s.log.Infow("Using scene prompt", "scene_id", req.SceneID, "prompt", prompt)
 	}
+	if scene.Location != "" || scene.Time != "" {
+		sceneMeta := []string{}
+		if scene.Location != "" {
+			sceneMeta = append(sceneMeta, "地点："+scene.Location)
+		}
+		if scene.Time != "" {
+			sceneMeta = append(sceneMeta, "时间："+scene.Time)
+		}
+		prompt = strings.TrimSpace(prompt)
+		prompt = fmt.Sprintf("%s\n场景信息：%s", prompt, strings.Join(sceneMeta, "，"))
+	}
 
 	// 使用imageGen服务直接生成
 	if s.imageGen != nil {
@@ -378,6 +391,8 @@ func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImag
 			Size:      "2560x1440", // 3,686,400像素，满足doubao模型最低要求（16:9比例）
 			Quality:   "standard",
 		}
+		seed := time.Now().UnixNano() + int64(req.SceneID)
+		genReq.Seed = &seed
 		imageGen, err := s.imageGen.GenerateImage(genReq)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate image: %w", err)

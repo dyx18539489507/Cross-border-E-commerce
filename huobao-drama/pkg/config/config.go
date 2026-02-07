@@ -12,6 +12,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Storage  StorageConfig  `mapstructure:"storage"`
 	AI       AIConfig       `mapstructure:"ai"`
+	Volcengine VolcengineConfig `mapstructure:"volcengine"`
 }
 
 type AppConfig struct {
@@ -52,6 +53,14 @@ type AIConfig struct {
 	DefaultTextProvider  string `mapstructure:"default_text_provider"`
 	DefaultImageProvider string `mapstructure:"default_image_provider"`
 	DefaultVideoProvider string `mapstructure:"default_video_provider"`
+}
+
+type VolcengineConfig struct {
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	Region          string `mapstructure:"region"`
+	Service         string `mapstructure:"service"`
+	VisualHost      string `mapstructure:"visual_host"`
 }
 
 func LoadConfig() (*Config, error) {

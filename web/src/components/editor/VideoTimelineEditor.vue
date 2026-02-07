@@ -400,14 +400,16 @@ interface Scene {
   description?: string
   location?: string
   time?: string
-  video_url: string
+  video_url?: string
   duration?: number
+  storyboard_id?: string | number
 }
 
 interface TimelineClip {
   id: string
   storyboard_id: string
   storyboard_number: number
+  scene_id?: string | number
   video_url: string
   start_time: number
   end_time: number
@@ -896,9 +898,10 @@ const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
   
   const newClip: TimelineClip = {
     id: `clip_${Date.now()}_${scene.id}`,
-    storyboard_id: scene.storyboard_id,
-    storyboard_number: scene.storyboard_number,
-    video_url: scene.video_url,
+    storyboard_id: String(scene.storyboard_id ?? scene.id),
+    storyboard_number: scene.storyboard_number || 0,
+    video_url: scene.video_url || '',
+    scene_id: scene.id,
     start_time: 0,
     end_time: videoDuration,
     duration: videoDuration,
@@ -1450,7 +1453,7 @@ const handleResizeMove = (event: MouseEvent, clip: TimelineClip) => {
     }
   } else {
     // 调整结束时间
-    const scene = props.scenes.find(s => s.id === clip.scene_id)
+    const scene = props.scenes.find(s => String(s.id) === String(clip.scene_id))
     const maxDuration = scene?.duration || 10
     const maxEndTime = clip.start_time + maxDuration
     
@@ -1752,7 +1755,8 @@ const handleExport = async () => {
 
     // 初始化FFmpeg
     await videoMerger.initialize((progress) => {
-      mergeProgress.value = progress
+      mergeProgressDetail.value = progress
+      mergeProgress.value = progress.progress
     })
 
     // 准备视频片段数据（包含转场信息）
@@ -1763,9 +1767,19 @@ const handleExport = async () => {
       duration: clip.end_time - clip.start_time,
       transition: clip.transition
     }))
+    const audioTracks = audioClips.value
+      .filter(audio => audio.audio_url)
+      .map(audio => ({
+        url: audio.audio_url,
+        startTime: audio.start_time,
+        endTime: audio.end_time,
+        duration: audio.duration,
+        position: audio.position,
+        volume: audio.volume
+      }))
 
     // 执行合并
-    const mergedBlob = await videoMerger.mergeVideos(clips)
+    const mergedBlob = await videoMerger.mergeVideos(clips, audioTracks)
 
     // 下载合并后的视频
     const url = URL.createObjectURL(mergedBlob)
@@ -1820,12 +1834,22 @@ const mergeVideoInBrowser = async () => {
       startTime: clip.start_time,
       endTime: clip.end_time
     }))
+    const audioTracks = audioClips.value
+      .filter(audio => audio.audio_url)
+      .map(audio => ({
+        url: audio.audio_url,
+        startTime: audio.start_time,
+        endTime: audio.end_time,
+        duration: audio.duration,
+        position: audio.position,
+        volume: audio.volume
+      }))
 
     // 使用FFmpeg合成
     ElMessage.info('正在合成视频，请稍候...')
     const mergedBlob = await trimAndMergeVideos(clips, (progress) => {
       mergeProgress.value = Math.round(progress)
-    })
+    }, audioTracks)
 
     // 创建下载链接
     const url = URL.createObjectURL(mergedBlob)
@@ -1889,7 +1913,17 @@ const submitTimelineForMerge = async () => {
           duration: clip.duration,
           transition: clip.transition || { type: 'none', duration: 0 }
         }
-      })
+      }),
+      audio_clips: audioClips.value.map((audio, index) => ({
+        audio_url: audio.audio_url,
+        start_time: audio.start_time,
+        end_time: audio.end_time,
+        duration: audio.duration,
+        position: audio.position,
+        order: audio.order ?? index,
+        volume: audio.volume,
+        title: audio.title
+      }))
     }
     console.log('📤 提交时间线数据:', JSON.stringify(timelineData, null, 2))
 

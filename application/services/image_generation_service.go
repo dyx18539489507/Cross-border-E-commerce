@@ -84,6 +84,67 @@ type GenerateImageRequest struct {
 	ReferenceImages []string `json:"reference_images"` // 参考图片URL列表
 }
 
+type CreateImageRecordRequest struct {
+	DramaID      string  `json:"drama_id" binding:"required"`
+	StoryboardID *uint   `json:"storyboard_id"`
+	SceneID      *uint   `json:"scene_id"`
+	FrameType    *string `json:"frame_type"`
+	ImageType    string  `json:"image_type"`
+	ImageURL     string  `json:"image_url" binding:"required"`
+	Prompt       *string `json:"prompt"`
+}
+
+func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordRequest) (*models.ImageGeneration, error) {
+	dramaIDParsed, err := strconv.ParseUint(request.DramaID, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("invalid drama id")
+	}
+
+	if request.StoryboardID != nil {
+		var storyboard models.Storyboard
+		if err := s.db.Preload("Episode").Where("id = ?", *request.StoryboardID).First(&storyboard).Error; err != nil {
+			return nil, fmt.Errorf("storyboard not found")
+		}
+		if fmt.Sprintf("%d", storyboard.Episode.DramaID) != request.DramaID {
+			return nil, fmt.Errorf("storyboard does not belong to drama")
+		}
+	}
+
+	imageType := request.ImageType
+	if imageType == "" {
+		imageType = string(models.ImageTypeStoryboard)
+	}
+
+	prompt := "manual upload"
+	if request.Prompt != nil && *request.Prompt != "" {
+		prompt = *request.Prompt
+	}
+
+	imageGen := &models.ImageGeneration{
+		StoryboardID: request.StoryboardID,
+		SceneID:      request.SceneID,
+		DramaID:      uint(dramaIDParsed),
+		ImageType:    imageType,
+		FrameType:    request.FrameType,
+		Provider:     "upload",
+		Prompt:       prompt,
+		Model:        "upload",
+		Size:         "",
+		Quality:      "",
+		Status:       models.ImageStatusCompleted,
+	}
+
+	imageGen.ImageURL = &request.ImageURL
+	now := time.Now()
+	imageGen.CompletedAt = &now
+
+	if err := s.db.Create(imageGen).Error; err != nil {
+		return nil, fmt.Errorf("failed to create image record: %w", err)
+	}
+
+	return imageGen, nil
+}
+
 func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest) (*models.ImageGeneration, error) {
 	var drama models.Drama
 	if err := s.db.Where("id = ? ", request.DramaID).First(&drama).Error; err != nil {
@@ -215,7 +276,15 @@ func (s *ImageGenerationService) ProcessImageGeneration(imageGenID uint) {
 	}
 	// 添加参考图片
 	if len(referenceImages) > 0 {
-		opts = append(opts, image.WithReferenceImages(referenceImages))
+		providerKey := strings.ToLower(imageGen.Provider)
+		if providerKey == "openai" || providerKey == "dalle" || providerKey == "dall-e" {
+			s.log.Warnw("Reference images are not supported by this provider, skipping",
+				"id", imageGenID,
+				"provider", imageGen.Provider,
+				"reference_count", len(referenceImages))
+		} else {
+			opts = append(opts, image.WithReferenceImages(referenceImages))
+		}
 	}
 
 	result, err := client.GenerateImage(imageGen.Prompt, opts...)

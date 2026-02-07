@@ -444,8 +444,10 @@ interface Storyboard {
   atmosphere?: string
   dialogue?: string
   duration?: number
+  background_id?: string | number
   background_url?: string
   video_url?: string
+  composed_url?: string
   scene_id?: string | number
   title?: string
   bgm_prompt?: string
@@ -757,7 +759,8 @@ const handleGenerateVideo = async () => {
     ElMessage.info('正在生成视频...')
     
     await videoAPI.generateVideo({
-      scene_id: parseInt(currentShot.value.id),
+      scene_id: String(currentShot.value.id),
+      drama_id: props.dramaId ? String(props.dramaId) : '',
       prompt: currentShot.value.action
     })
     
@@ -788,7 +791,7 @@ const handleComposeScene = async () => {
     return
   }
   
-  if (selectedCharacters.length === 0) {
+  if (selectedCharacters.value.length === 0) {
     ElMessage.warning('请先选择场景角色')
     return
   }

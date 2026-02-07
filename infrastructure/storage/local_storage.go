@@ -58,6 +58,14 @@ func (s *LocalStorage) GetURL(path string) string {
 	return fmt.Sprintf("%s/%s", s.baseURL, path)
 }
 
+func (s *LocalStorage) BaseURL() string {
+	return s.baseURL
+}
+
+func (s *LocalStorage) BasePath() string {
+	return s.basePath
+}
+
 // DownloadFromURL 从远程URL下载文件到本地存储
 func (s *LocalStorage) DownloadFromURL(url, category string) (string, error) {
 	// 发送HTTP请求下载文件

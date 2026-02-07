@@ -1,0 +1,7 @@
+{
+  "items": [
+    {"id": "gaudio-intro", "name": "转场-Intro", "file": "intro.wav", "category": "转场"},
+    {"id": "gaudio-trek12", "name": "震惊-Trek", "file": "trek12.wav", "category": "震惊"},
+    {"id": "gaudio-hurnscald", "name": "尴尬-Hurn", "file": "hurnscald.ogg", "category": "尴尬"}
+  ]
+}

@@ -32,6 +32,7 @@ export interface ParsedEpisode {
   description: string
   script_content: string
   duration: number
+  scenes?: any[]
   chapter_start?: number
   chapter_end?: number
   start_marker?: string

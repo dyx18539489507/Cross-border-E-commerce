@@ -32,7 +32,7 @@
         <el-input 
           v-model="form.description" 
           type="textarea" 
-          :rows="4"
+          :rows="8"
           :placeholder="$t('drama.projectDescPlaceholder')"
           maxlength="500"
           show-word-limit
@@ -169,7 +169,7 @@ const handleSubmit = async () => {
 }
 
 .dialog-desc {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.9rem;
   font-size: 0.875rem;
   color: var(--text-secondary);
 }
@@ -177,6 +177,10 @@ const handleSubmit = async () => {
 /* ========================================
    Form Styles / 表单样式
    ======================================== */
+.create-form {
+  margin-top: -0.5rem;
+}
+
 .create-form :deep(.el-form-item) {
   margin-bottom: 1.25rem;
 }

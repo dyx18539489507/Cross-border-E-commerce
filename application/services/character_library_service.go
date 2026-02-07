@@ -313,6 +313,7 @@ func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, ima
 
 	// 添加角色画像和风格要求
 	prompt += ", character portrait, full body or upper body shot"
+	prompt += ", face clearly visible, looking at camera, eyes visible, head and shoulders fully in frame, upright composition"
 
 	// 添加干净背景要求 - 确保背景简洁不干扰主体
 	prompt += ", simple clean background, plain solid color background, white or light gray background"
@@ -322,18 +323,21 @@ func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, ima
 	prompt += ", high quality, detailed, anime style, character design"
 	prompt += ", no complex background, no scenery, focus on character"
 
+	negativePrompt := "face out of frame, cropped face, hidden face, back view, side view, profile, looking away, eyes closed, occluded face, hands covering face, mask covering face, blurry face"
+
 	// 调用图片生成服务
 	dramaIDStr := fmt.Sprintf("%d", character.DramaID)
 	imageType := "character"
 	req := &GenerateImageRequest{
-		DramaID:     dramaIDStr,
-		CharacterID: &character.ID,
-		ImageType:   imageType,
-		Prompt:      prompt,
-		Provider:    "openai",    // 或从配置读取
-		Model:       modelName,   // 使用用户指定的模型
-		Size:        "2560x1440", // 3,686,400像素，满足API最低要求（16:9比例）
-		Quality:     "standard",
+		DramaID:        dramaIDStr,
+		CharacterID:    &character.ID,
+		ImageType:      imageType,
+		Prompt:         prompt,
+		NegativePrompt: &negativePrompt,
+		Provider:       "openai",    // 或从配置读取
+		Model:          modelName,   // 使用用户指定的模型
+		Size:           "2560x1440", // 3,686,400像素，满足API最低要求（16:9比例）
+		Quality:        "standard",
 	}
 
 	imageGen, err := imageService.GenerateImage(req)

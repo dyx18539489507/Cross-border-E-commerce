@@ -10,6 +10,18 @@ export const imageAPI = {
     return request.post<ImageGeneration>('/images', data)
   },
 
+  createImageRecord(data: {
+    drama_id: string
+    storyboard_id?: number
+    scene_id?: number
+    frame_type?: string
+    image_type?: string
+    image_url: string
+    prompt?: string
+  }) {
+    return request.post<ImageGeneration>('/images/manual', data)
+  },
+
   generateForScene(sceneId: number) {
     return request.post<ImageGeneration[]>(`/images/scene/${sceneId}`)
   },

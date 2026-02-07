@@ -25,6 +25,7 @@ type VideoMerge struct {
 	Model       *string          `gorm:"type:varchar(100)" json:"model,omitempty"`
 	Status      VideoMergeStatus `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
 	Scenes      datatypes.JSON   `gorm:"type:json;not null" json:"scenes"`
+	AudioClips  datatypes.JSON   `gorm:"type:json" json:"audio_clips,omitempty"`
 	MergedURL   *string          `gorm:"type:varchar(500)" json:"merged_url,omitempty"`
 	Duration    *int             `gorm:"type:int" json:"duration,omitempty"`
 	TaskID      *string          `gorm:"type:varchar(100)" json:"task_id,omitempty"`
@@ -45,6 +46,17 @@ type SceneClip struct {
 	Duration   float64                `json:"duration"`
 	Order      int                    `json:"order"`
 	Transition map[string]interface{} `json:"transition"`
+}
+
+type AudioClip struct {
+	AudioURL string  `json:"audio_url"`
+	StartTime float64 `json:"start_time"`
+	EndTime   float64 `json:"end_time"`
+	Duration  float64 `json:"duration"`
+	Position  float64 `json:"position"`
+	Volume    float64 `json:"volume"`
+	Order     int     `json:"order"`
+	Title     *string `json:"title,omitempty"`
 }
 
 func (v *VideoMerge) TableName() string {

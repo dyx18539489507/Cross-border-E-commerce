@@ -85,6 +85,9 @@ export interface Storyboard {
   image_url?: string
   video_url?: string
   composed_image?: string
+  composed_url?: string
+  background_id?: string | number
+  background_url?: string
   scene_id?: string
   scene?: Scene
   created_at: string
@@ -102,6 +105,7 @@ export interface Scene {
   title?: string
   storyboard_number?: number
   storyboard_count?: number
+  storyboard_id?: string
   image_url?: string
   video_url?: string
   status: string

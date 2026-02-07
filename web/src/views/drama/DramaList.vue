@@ -57,7 +57,7 @@
             <el-input v-model="editForm.title" :placeholder="$t('drama.projectNamePlaceholder')" size="large" />
           </el-form-item>
           <el-form-item :label="$t('drama.projectDesc')">
-            <el-input v-model="editForm.description" type="textarea" :rows="4"
+            <el-input v-model="editForm.description" type="textarea" :rows="6"
               :placeholder="$t('drama.projectDescPlaceholder')" resize="none" />
           </el-form-item>
         </el-form>

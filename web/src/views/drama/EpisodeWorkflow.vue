@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container" v-loading="pageLoading">
     <div class="content-wrapper animate-fade-in">
       <AppHeader :fixed="false" :show-logo="false">
         <template #left>
@@ -28,14 +28,14 @@
           </div>
         </template>
         <template #right>
-          <el-button :icon="Setting" @click="showModelConfigDialog" :title="$t('workflow.modelConfig')">
+          <!-- <el-button :icon="Setting" @click="showModelConfigDialog" :title="$t('workflow.modelConfig')">
             图文配置
-          </el-button>
+          </el-button> -->
         </template>
       </AppHeader>
 
     <!-- 阶段 0: 章节内容 + 提取角色场景 -->
-    <el-card v-show="currentStep === 0" shadow="never" class="stage-card stage-card-fullscreen">
+    <el-card v-show="currentStep === 0" shadow="never" class="stage-card stage-card-fullscreen" v-loading="loadingDramaData">
       <div class="stage-body stage-body-fullscreen">
         <!-- 未保存时显示输入框 -->
         <div v-if="!hasScript" class="generation-form">
@@ -56,6 +56,15 @@
               <el-icon><Check /></el-icon>
               <span>{{ $t('workflow.saveChapter') }}</span>
             </el-button>
+            <el-button
+              type="success"
+              plain
+              size="default"
+              @click="openDigitalHumanDialog"
+            >
+              <el-icon><VideoCamera /></el-icon>
+              <span>试试数字人？</span>
+            </el-button>
           </div>
         </div>
 
@@ -67,12 +76,32 @@
           </div>
           <div class="overview-content">
             <el-input 
-              v-model="currentEpisode.script_content"
+              v-model="scriptContent"
               type="textarea"
               :rows="15"
-              readonly
               class="script-display"
             />
+            <div class="action-buttons-inline" style="margin-top: 12px;">
+              <el-button
+                type="primary"
+                size="default"
+                @click="saveChapterScript"
+                :loading="generatingScript"
+                :disabled="!scriptContent.trim() || !scriptDirty"
+              >
+                <el-icon><Check /></el-icon>
+                <span>{{ $t('workflow.saveChapter') }}</span>
+              </el-button>
+              <el-button
+                type="success"
+                plain
+                size="default"
+                @click="openDigitalHumanDialog"
+              >
+                <el-icon><VideoCamera /></el-icon>
+                <span>试试数字人？</span>
+              </el-button>
+            </div>
           </div>
 
           <el-divider />
@@ -159,7 +188,7 @@
     </el-card>
 
     <!-- 阶段 1: 生成图片 -->
-    <el-card v-show="currentStep === 1" class="workflow-card">
+    <el-card v-show="currentStep === 1" class="workflow-card" v-loading="loadingDramaData">
       <div class="stage-body">
         <!-- 角色图片生成 -->
         <div class="image-gen-section">
@@ -222,7 +251,7 @@
                 
                 <div class="card-image-container">
                   <div v-if="char.image_url" class="char-image">
-                    <el-image :src="char.image_url" fit="cover" />
+                    <el-image :src="char.image_url" fit="contain" />
                   </div>
                   <div v-else-if="char.image_generation_status === 'pending' || char.image_generation_status === 'processing' || generatingCharacterImages[char.id]" class="char-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -345,7 +374,7 @@
 
                 <div class="card-image-container">
                   <div v-if="scene.image_url" class="scene-image">
-                    <el-image :src="scene.image_url" fit="cover" />
+                    <el-image :src="scene.image_url" fit="contain" />
                   </div>
                   <div v-else-if="scene.image_generation_status === 'pending' || scene.image_generation_status === 'processing' || generatingSceneImages[scene.id]" class="scene-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -426,12 +455,27 @@
     </el-card>
 
     <!-- 阶段 2: 拆分分镜 -->
-    <el-card v-show="currentStep === 2" shadow="never" class="stage-card">
+    <el-card v-show="currentStep === 2" shadow="never" class="stage-card" v-loading="loadingDramaData">
       <div class="stage-body">
         <!-- 分镜列表 -->
         <div v-if="currentEpisode?.storyboards && currentEpisode.storyboards.length > 0" class="shots-list">
           <div class="shots-header">
             <h3>{{ $t('workflow.shotList') }}</h3>
+          </div>
+
+          <div v-if="generatingShots" class="shots-loading-overlay">
+            <div class="shots-loading-card">
+              <el-icon class="shots-loading-icon"><Loading /></el-icon>
+              <div class="shots-loading-title">{{ $t('workflow.aiSplitting') }}</div>
+              <el-progress :percentage="taskProgress" :status="taskProgress === 100 ? 'success' : undefined">
+                <template #default="{ percentage }">
+                  <span style="font-size: 12px;">{{ percentage }}%</span>
+                </template>
+              </el-progress>
+              <div class="task-message">
+                {{ taskMessage }}
+              </div>
+            </div>
           </div>
           
           <el-table :data="currentEpisode.storyboards" border stripe style="margin-top: 16px;">
@@ -494,7 +538,7 @@
                 {{ row.duration || '-' }}秒
               </template>
             </el-table-column>
-            <el-table-column :label="$t('storyboard.table.operations')" width="100" fixed="right">
+            <el-table-column :label="$t('storyboard.table.operations')" width="140" fixed="right">
               <template #default="{ row, $index }">
                 <el-button 
                   type="primary" 
@@ -502,6 +546,14 @@
                   @click="editShot(row, $index)"
                 >
                   {{ $t('common.edit') }}
+                </el-button>
+                <el-button
+                  type="danger"
+                  size="small"
+                  style="margin-left: 8px;"
+                  @click="deleteShot(row)"
+                >
+                  删除
                 </el-button>
               </template>
             </el-table-column>
@@ -787,15 +839,268 @@
         </template>
       </el-upload>
     </el-dialog>
+
+    <el-dialog
+      v-model="digitalHumanDialogVisible"
+      title="数字人制作"
+      width="560px"
+      class="digital-human-dialog"
+      :lock-scroll="true"
+      :append-to-body="true"
+      @close="resetDigitalHumanForm"
+    >
+        <el-form label-position="top" class="digital-human-form">
+        <el-form-item label="上传角色">
+          <el-upload
+            class="digital-human-upload"
+            :auto-upload="false"
+            :limit="1"
+            accept="image/*"
+            :show-file-list="false"
+            :file-list="digitalHumanImageList"
+            :before-upload="beforeDigitalHumanImageUpload"
+            :on-change="handleDigitalHumanImageChange"
+            :on-remove="handleDigitalHumanImageRemove"
+          >
+            <el-button
+              v-if="digitalHumanImageList.length"
+              type="primary"
+              class="digital-human-upload-btn digital-human-role-btn"
+              :title="digitalHumanImageList[0].name"
+              @click.stop.prevent="openDigitalHumanImagePreview"
+            >
+              <span class="digital-human-role-btn-label">{{ digitalHumanImageList[0].name }}</span>
+              <el-icon
+                class="digital-human-role-btn-clear"
+                @click.stop.prevent="handleDigitalHumanImageRemove"
+              >
+                <Close />
+              </el-icon>
+            </el-button>
+            <el-button v-else type="primary" class="digital-human-upload-btn digital-human-role-btn" :icon="Upload">
+              选择角色
+            </el-button>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="上传音色">
+          <div class="digital-human-audio-row">
+            <el-popover
+              v-model:visible="voiceLibraryVisible"
+              trigger="click"
+              placement="bottom-start"
+              width="680"
+              popper-class="voice-library-popover"
+              :teleported="true"
+              @show="handleVoicePopoverShow"
+            >
+              <div class="voice-library-panel">
+                <div class="voice-library-toolbar">
+                  <el-input
+                    v-model="voiceLibrarySearch"
+                    :placeholder="$t('workflow.voiceLibrary.searchPlaceholder')"
+                    clearable
+                  />
+                </div>
+                <div class="voice-library-filters">
+                  <el-select
+                    v-model="voiceGenderFilter"
+                    :placeholder="$t('workflow.voiceLibrary.filters.gender')"
+                    size="small"
+                    class="voice-filter"
+                    clearable
+                    :teleported="false"
+                  >
+                    <el-option v-for="g in voiceGenderOptions" :key="g" :label="g" :value="g" />
+                  </el-select>
+                  <el-select
+                    v-model="voiceAgeFilter"
+                    :placeholder="$t('workflow.voiceLibrary.filters.age')"
+                    size="small"
+                    class="voice-filter"
+                    clearable
+                    :teleported="false"
+                  >
+                    <el-option v-for="a in voiceAgeOptions" :key="a" :label="a" :value="a" />
+                  </el-select>
+                  <el-select
+                    v-model="voiceLanguageFilter"
+                    :placeholder="$t('workflow.voiceLibrary.filters.language')"
+                    size="small"
+                    class="voice-filter"
+                    clearable
+                    :teleported="false"
+                  >
+                    <el-option v-for="l in voiceLanguageOptions" :key="l" :label="l" :value="l" />
+                  </el-select>
+                  <el-select
+                    v-model="voiceCategoryFilter"
+                    :placeholder="$t('workflow.voiceLibrary.filters.category')"
+                    size="small"
+                    class="voice-filter"
+                    clearable
+                    :teleported="false"
+                  >
+                    <el-option v-for="c in voiceCategoryOptions" :key="c" :label="c" :value="c" />
+                  </el-select>
+                </div>
+                <div v-if="voiceLibraryLoading" class="voice-library-loading">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  <span>{{ $t('common.loading') }}</span>
+                </div>
+                <div v-else-if="voiceLibraryError" class="voice-library-error">{{ voiceLibraryError }}</div>
+                <el-scrollbar v-else height="320">
+                  <div class="voice-library-grid">
+                    <button class="voice-card voice-card-create" type="button" @click="openCreateVoice">
+                      <el-icon><Plus /></el-icon>
+                      <span>{{ $t('workflow.voiceLibrary.createVoice') }}</span>
+                    </button>
+                    <button
+                      v-for="voice in filteredVoiceLibrary"
+                      :key="voice.id"
+                      class="voice-card"
+                      :class="{
+                        'is-trial-playing': voiceTrialPlayingId === voice.id,
+                        'is-selected': !!selectedVoice && selectedVoice.id === voice.id
+                      }"
+                      type="button"
+                      @click="selectVoice(voice)"
+                    >
+                      <span
+                        class="voice-card-play"
+                        :class="{ 'is-playing': voiceTrialPlayingId === voice.id }"
+                        @click.stop="toggleVoiceTrial(voice)"
+                      >
+                        <el-icon v-if="voiceTrialPlayingId === voice.id"><VideoPause /></el-icon>
+                        <el-icon v-else><VideoPlay /></el-icon>
+                      </span>
+                      <div class="voice-card-text">
+                        <div class="voice-card-name">{{ voice.name }}</div>
+                      </div>
+                    </button>
+                  </div>
+                </el-scrollbar>
+                <audio
+                  ref="voiceTrialAudioRef"
+                  class="voice-trial-audio"
+                  :src="voiceTrialUrl"
+                  preload="none"
+                  @ended="stopVoiceTrial"
+                />
+              </div>
+              <template #reference>
+                <el-button
+                  type="primary"
+                  class="digital-human-upload-btn digital-human-voice-btn"
+                  :title="selectedVoice ? `${selectedVoice.name}${selectedVoice.voice_type ? ` (${selectedVoice.voice_type})` : ''}` : ''"
+                >
+                  <el-icon v-if="!selectedVoice" class="digital-human-voice-btn-icon"><Upload /></el-icon>
+                  <span class="digital-human-voice-btn-label">
+                    {{ selectedVoice ? selectedVoice.name : '选择音色' }}
+                  </span>
+                  <el-icon
+                    v-if="selectedVoice"
+                    class="digital-human-voice-btn-clear"
+                    @click.stop.prevent="clearSelectedVoice"
+                  >
+                    <Close />
+                  </el-icon>
+                </el-button>
+              </template>
+            </el-popover>
+            <!--
+            <div class="digital-human-hint-inline">音频时长需小于60秒，支持 mp3/wav/m4a 等格式</div>
+            -->
+          </div>
+          <!--
+          <el-upload
+            class="digital-human-upload"
+            :auto-upload="false"
+            :limit="1"
+            accept="audio/*"
+            :show-file-list="false"
+            :file-list="digitalHumanAudioList"
+            :before-upload="beforeDigitalHumanAudioUpload"
+            :on-change="handleDigitalHumanAudioChange"
+            :on-remove="handleDigitalHumanAudioRemove"
+          >
+            <el-button type="info" plain class="digital-human-upload-btn digital-human-upload-secondary" :icon="Upload">
+              上传音频
+            </el-button>
+          </el-upload>
+          <div
+            v-if="digitalHumanAudioList.length"
+            class="digital-human-file-name"
+            role="button"
+            tabindex="0"
+            @click="openDigitalHumanAudioPreview"
+          >
+            {{ digitalHumanAudioList[0].name }}
+          </div>
+          <div v-if="digitalHumanAudioPreviewVisible && digitalHumanAudioPreview" class="digital-human-audio">
+            <audio
+              ref="digitalHumanAudioRef"
+              :key="digitalHumanAudioPreview"
+              :src="digitalHumanAudioPreview"
+              controls
+              preload="metadata"
+            />
+          </div>
+          -->
+        </el-form-item>
+        <el-form-item label="说话内容">
+          <el-input
+            v-model="digitalHumanForm.speechText"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 3 }"
+            placeholder="请输入你希望角色说出的内容"
+            class="digital-human-textarea"
+          />
+        </el-form-item>
+        <el-form-item label="动作描述（可选）">
+          <el-input
+            v-model="digitalHumanForm.motionText"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 3 }"
+            placeholder="添加动作描述和镜头语言，如人物微笑平视镜头"
+            class="digital-human-textarea"
+          />
+        </el-form-item>
+      </el-form>
+
+      <div v-if="digitalHumanResultUrl" class="digital-human-result">
+        <div class="digital-human-result-title">生成结果</div>
+        <video :src="digitalHumanResultUrl" controls preload="metadata" />
+        <el-link :href="digitalHumanResultUrl" target="_blank">打开视频链接</el-link>
+      </div>
+
+      <template #footer>
+        <el-button @click="digitalHumanDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="digitalHumanLoading"
+          :disabled="!digitalHumanCanGenerate"
+          @click="submitDigitalHuman"
+        >
+          开始生成
+        </el-button>
+      </template>
+    </el-dialog>
+    <el-image-viewer
+      v-if="digitalHumanImagePreviewVisible && digitalHumanImagePreview"
+      :url-list="[digitalHumanImagePreview]"
+      :teleported="true"
+      @close="digitalHumanImagePreviewVisible = false"
+    />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, reactive, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { UploadProps, UploadUserFile } from 'element-plus'
 import { 
   User, 
   Location, 
@@ -809,10 +1114,15 @@ import {
   More,
   Upload,
   Delete,
+  Plus,
+  Close,
+  VideoPlay,
+  VideoPause,
   FolderAdd,
   Setting,
   Loading,
-  WarningFilled
+  WarningFilled,
+  VideoCamera
 } from '@element-plus/icons-vue'
 import { dramaAPI } from '@/api/drama'
 import { generationAPI } from '@/api/generation'
@@ -820,6 +1130,9 @@ import { characterLibraryAPI } from '@/api/character-library'
 import { aiAPI } from '@/api/ai'
 import type { AIServiceConfig } from '@/types/ai'
 import { imageAPI } from '@/api/image'
+import { voiceLibraryAPI } from '@/api/voice-library'
+import type { VoiceLibraryItem } from '@/api/voice-library'
+import { digitalHumanAPI } from '@/api/digital-human'
 import type { Drama } from '@/types/drama'
 import { AppHeader } from '@/components/common'
 
@@ -838,13 +1151,59 @@ const getStepStorageKey = () => `episode_workflow_step_${dramaId}_${episodeNumbe
 const savedStep = localStorage.getItem(getStepStorageKey())
 const currentStep = ref(savedStep ? parseInt(savedStep) : 0)
 const scriptContent = ref('')
+const scriptInitialized = ref(false)
 const generatingScript = ref(false)
 const generatingShots = ref(false)
+const loadingDramaData = ref(false)
 const extractingCharactersAndBackgrounds = ref(false)
 const batchGeneratingCharacters = ref(false)
 const batchGeneratingScenes = ref(false)
 const generatingCharacterImages = ref<Record<number, boolean>>({})
 const generatingSceneImages = ref<Record<string, boolean>>({})
+const digitalHumanDialogVisible = ref(false)
+const digitalHumanLoading = ref(false)
+const digitalHumanResultUrl = ref('')
+const digitalHumanImageList = ref<UploadUserFile[]>([])
+const digitalHumanAudioList = ref<UploadUserFile[]>([])
+const digitalHumanImagePreview = ref('')
+const digitalHumanAudioPreview = ref('')
+const digitalHumanImagePreviewVisible = ref(false)
+const digitalHumanAudioPreviewVisible = ref(false)
+const digitalHumanAudioRef = ref<HTMLAudioElement | null>(null)
+const voiceLibraryVisible = ref(false)
+const voiceLibraryLoading = ref(false)
+const voiceLibraryList = ref<VoiceLibraryItem[]>([])
+const voiceLibrarySearch = ref('')
+const voiceLibraryError = ref('')
+const selectedVoice = ref<VoiceLibraryItem | null>(null)
+const voiceGenderFilter = ref<string | null>(null)
+const voiceAgeFilter = ref<string | null>(null)
+const voiceLanguageFilter = ref<string | null>(null)
+const voiceCategoryFilter = ref<string | null>(null)
+const voiceTrialAudioRef = ref<HTMLAudioElement | null>(null)
+const voiceTrialUrl = ref('')
+const voiceTrialPlayingId = ref('')
+const digitalHumanForm = reactive({
+  imageFile: null as File | null,
+  audioFile: null as File | null,
+  speechText: '',
+  motionText: ''
+})
+
+const getUploadRawFile = (file: any): File | null => {
+  const raw = file?.raw ?? file?.originFileObj ?? null
+  return raw instanceof File ? raw : null
+}
+
+const selectedDigitalHumanImageFile = computed(() => {
+  return digitalHumanForm.imageFile || getUploadRawFile(digitalHumanImageList.value?.[0])
+})
+
+const digitalHumanCanGenerate = computed(() => {
+  if (!selectedDigitalHumanImageFile.value) return false
+  if (digitalHumanForm.audioFile) return true
+  return !!selectedVoice.value && !!selectedVoice.value.trial_url
+})
 
 // 选择状态
 const selectedCharacterIds = ref<number[]>([])
@@ -867,6 +1226,29 @@ const uploadHeaders = computed(() => ({
   Authorization: `Bearer ${localStorage.getItem('token')}`
 }))
 
+watch(digitalHumanDialogVisible, (visible) => {
+  if (typeof document === 'undefined') return
+  if (visible) {
+    document.body.classList.add('digital-human-dialog-open')
+    document.documentElement.classList.add('digital-human-dialog-open')
+  } else {
+    document.body.classList.remove('digital-human-dialog-open')
+    document.documentElement.classList.remove('digital-human-dialog-open')
+  }
+})
+
+watch(voiceLibraryVisible, (visible) => {
+  if (!visible) {
+    stopVoiceTrial()
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof document === 'undefined') return
+  document.body.classList.remove('digital-human-dialog-open')
+  document.documentElement.classList.remove('digital-human-dialog-open')
+})
+
 // AI模型配置
 interface ModelOption {
   modelName: string
@@ -884,6 +1266,82 @@ const hasScript = computed(() => {
   const currentEp = currentEpisode.value
   return currentEp && currentEp.script_content && currentEp.script_content.length > 0
 })
+
+const scriptDirty = computed(() => {
+  const current = currentEpisode.value?.script_content || ''
+  return scriptContent.value.trim() !== current.trim()
+})
+
+const getVoiceLanguage = (voiceType?: string) => {
+  const vt = (voiceType || '').toLowerCase()
+  if (vt.startsWith('zh_') || vt.includes('_zh_')) return '中文'
+  if (vt.startsWith('en_') || vt.includes('_en_')) return '英语'
+  if (vt.startsWith('jp_') || vt.includes('_jp_')) return '日语'
+  if (vt.startsWith('kr_') || vt.includes('_kr_')) return '韩语'
+  return '其他'
+}
+
+const voiceGenderOptions = computed(() => {
+  const set = new Set<string>()
+  for (const item of voiceLibraryList.value) {
+    if (item.gender) set.add(item.gender)
+  }
+  return Array.from(set)
+})
+
+const voiceAgeOptions = computed(() => {
+  const set = new Set<string>()
+  for (const item of voiceLibraryList.value) {
+    if (item.age) set.add(item.age)
+  }
+  return Array.from(set)
+})
+
+const voiceLanguageOptions = computed(() => {
+  const set = new Set<string>()
+  for (const item of voiceLibraryList.value) {
+    set.add(getVoiceLanguage(item.voice_type))
+  }
+  // Put common languages first.
+  const ordered = ['中文', '英语', '日语', '韩语']
+  const list = Array.from(set)
+  return [
+    ...ordered.filter(v => list.includes(v)),
+    ...list.filter(v => !ordered.includes(v) && v !== '其他'),
+    ...((list.includes('其他') ? ['其他'] : []) as string[])
+  ]
+})
+
+const voiceCategoryOptions = computed(() => {
+  const set = new Set<string>()
+  for (const item of voiceLibraryList.value) {
+    for (const cat of item.categories || []) set.add(cat)
+  }
+  return Array.from(set)
+})
+
+const filteredVoiceLibrary = computed(() => {
+  const keyword = voiceLibrarySearch.value.trim().toLowerCase()
+  return voiceLibraryList.value.filter(item => {
+    if (keyword) {
+      const matched =
+        item.name?.toLowerCase().includes(keyword) ||
+        item.voice_type?.toLowerCase().includes(keyword) ||
+        item.gender?.toLowerCase().includes(keyword) ||
+        item.age?.toLowerCase().includes(keyword)
+      if (!matched) return false
+    }
+
+    if (voiceGenderFilter.value && item.gender !== voiceGenderFilter.value) return false
+    if (voiceAgeFilter.value && item.age !== voiceAgeFilter.value) return false
+    if (voiceLanguageFilter.value && getVoiceLanguage(item.voice_type) !== voiceLanguageFilter.value) return false
+    if (voiceCategoryFilter.value && !(item.categories || []).includes(voiceCategoryFilter.value)) return false
+
+    return true
+  })
+})
+
+const pageLoading = computed(() => loadingDramaData.value || extractingCharactersAndBackgrounds.value)
 
 const currentEpisode = computed(() => {
   if (!drama.value?.episodes) return null
@@ -1060,6 +1518,7 @@ const loadSavedModelConfig = () => {
 }
 
 const loadDramaData = async () => {
+  loadingDramaData.value = true
   try {
     const data = await dramaAPI.get(dramaId)
     drama.value = data
@@ -1074,8 +1533,19 @@ const loadDramaData = async () => {
     await checkAndStartPolling()
   } catch (error: any) {
     ElMessage.error(error.message || '加载项目数据失败')
+  } finally {
+    loadingDramaData.value = false
   }
 }
+
+watch(currentEpisode, (episode) => {
+  if (!episode) return
+  const content = episode.script_content || ''
+  if (!scriptInitialized.value || !scriptDirty.value) {
+    scriptContent.value = content
+    scriptInitialized.value = true
+  }
+}, { immediate: true })
 
 // 检查并启动轮询
 const checkAndStartPolling = async () => {
@@ -1145,6 +1615,8 @@ const checkAndStartPolling = async () => {
 }
 
 const saveChapterScript = async () => {
+  if (generatingScript.value) return
+  generatingScript.value = true
   try {
     const existingEpisodes = drama.value?.episodes || []
     
@@ -1176,6 +1648,275 @@ const saveChapterScript = async () => {
     await loadDramaData()
   } catch (error: any) {
     ElMessage.error(error.message || '保存失败')
+  } finally {
+    generatingScript.value = false
+  }
+}
+
+const openDigitalHumanDialog = () => {
+  digitalHumanDialogVisible.value = true
+}
+
+const loadVoiceLibrary = async () => {
+  voiceLibraryLoading.value = true
+  voiceLibraryError.value = ''
+  try {
+    const data = await voiceLibraryAPI.list()
+    voiceLibraryList.value = data || []
+  } catch (error: any) {
+    voiceLibraryError.value = error?.message || '获取音色库失败'
+    ElMessage.error(voiceLibraryError.value)
+  } finally {
+    voiceLibraryLoading.value = false
+  }
+}
+
+const handleVoicePopoverShow = async () => {
+  // Always start from the full list when opening the panel.
+  voiceLibrarySearch.value = ''
+  voiceGenderFilter.value = null
+  voiceAgeFilter.value = null
+  voiceLanguageFilter.value = null
+  voiceCategoryFilter.value = null
+  if (!voiceLibraryList.value.length) {
+    await loadVoiceLibrary()
+  }
+}
+
+const selectVoice = (voice: VoiceLibraryItem) => {
+  selectedVoice.value = voice
+  stopVoiceTrial()
+  voiceLibraryVisible.value = false
+}
+
+const openCreateVoice = () => {
+  window.open('https://console.volcengine.com/speech/tts', '_blank')
+}
+
+const stopVoiceTrial = () => {
+  voiceTrialPlayingId.value = ''
+  voiceTrialUrl.value = ''
+  const audioEl = voiceTrialAudioRef.value
+  if (audioEl) {
+    audioEl.pause()
+    audioEl.currentTime = 0
+  }
+}
+
+const toggleVoiceTrial = async (voice: VoiceLibraryItem) => {
+  if (!voice.trial_url) {
+    ElMessage.warning('该音色暂无试听')
+    return
+  }
+
+  const audioEl = voiceTrialAudioRef.value
+  if (!audioEl) {
+    window.open(voice.trial_url, '_blank')
+    return
+  }
+
+  try {
+    if (voiceTrialPlayingId.value === voice.id && !audioEl.paused) {
+      audioEl.pause()
+      voiceTrialPlayingId.value = ''
+      return
+    }
+
+    // Stop any previous trial before switching.
+    audioEl.pause()
+
+    voiceTrialPlayingId.value = voice.id
+    voiceTrialUrl.value = voice.trial_url
+    await nextTick()
+    audioEl.currentTime = 0
+    await audioEl.play()
+  } catch (error) {
+    // If autoplay is blocked or cross-origin fails, fall back to opening the URL.
+    stopVoiceTrial()
+    window.open(voice.trial_url, '_blank')
+  }
+}
+
+const clearSelectedVoice = () => {
+  selectedVoice.value = null
+}
+
+const resetDigitalHumanForm = () => {
+  digitalHumanForm.imageFile = null
+  digitalHumanForm.audioFile = null
+  digitalHumanForm.speechText = ''
+  digitalHumanForm.motionText = ''
+  digitalHumanImageList.value = []
+  digitalHumanAudioList.value = []
+  digitalHumanResultUrl.value = ''
+  digitalHumanImagePreviewVisible.value = false
+  digitalHumanAudioPreviewVisible.value = false
+  selectedVoice.value = null
+  if (digitalHumanImagePreview.value && digitalHumanImagePreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(digitalHumanImagePreview.value)
+    digitalHumanImagePreview.value = ''
+  }
+  if (digitalHumanAudioPreview.value && digitalHumanAudioPreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(digitalHumanAudioPreview.value)
+    digitalHumanAudioPreview.value = ''
+  }
+}
+
+const beforeDigitalHumanImageUpload: UploadProps['beforeUpload'] = (file) => {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('请上传图片文件')
+    return false
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.error('图片大小不能超过10MB')
+    return false
+  }
+  return true
+}
+
+const beforeDigitalHumanAudioUpload: UploadProps['beforeUpload'] = (file) => {
+  if (!(file.type.startsWith('audio/') || file.type === 'video/mp4')) {
+    ElMessage.error('请上传音频文件')
+    return false
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('音频大小不能超过20MB')
+    return false
+  }
+  return true
+}
+
+const handleDigitalHumanImageChange: UploadProps['onChange'] = (file, fileList) => {
+  digitalHumanImageList.value = fileList.slice(-1)
+  const rawFile = getUploadRawFile(file) || getUploadRawFile(digitalHumanImageList.value?.[0])
+  digitalHumanForm.imageFile = rawFile
+  digitalHumanImagePreviewVisible.value = false
+  if (digitalHumanImagePreview.value && digitalHumanImagePreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(digitalHumanImagePreview.value)
+  }
+  if (rawFile) {
+    digitalHumanImagePreview.value = URL.createObjectURL(rawFile)
+  } else if (file.url) {
+    digitalHumanImagePreview.value = file.url
+  } else {
+    digitalHumanImagePreview.value = ''
+  }
+}
+
+const handleDigitalHumanAudioChange: UploadProps['onChange'] = (file, fileList) => {
+  digitalHumanAudioList.value = fileList.slice(-1)
+  const rawFile = (file.raw ?? (file as any).originFileObj) as File | undefined
+  digitalHumanForm.audioFile = rawFile || null
+  digitalHumanAudioPreviewVisible.value = false
+  if (digitalHumanAudioPreview.value && digitalHumanAudioPreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(digitalHumanAudioPreview.value)
+  }
+  if (rawFile) {
+    digitalHumanAudioPreview.value = URL.createObjectURL(rawFile)
+  } else if (file.url) {
+    digitalHumanAudioPreview.value = file.url
+  } else {
+    digitalHumanAudioPreview.value = ''
+  }
+}
+
+const handleDigitalHumanImageRemove: UploadProps['onRemove'] = () => {
+  digitalHumanForm.imageFile = null
+  digitalHumanImageList.value = []
+  digitalHumanImagePreviewVisible.value = false
+  if (digitalHumanImagePreview.value && digitalHumanImagePreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(digitalHumanImagePreview.value)
+    digitalHumanImagePreview.value = ''
+  }
+}
+
+const handleDigitalHumanAudioRemove: UploadProps['onRemove'] = () => {
+  digitalHumanForm.audioFile = null
+  digitalHumanAudioList.value = []
+  digitalHumanAudioPreviewVisible.value = false
+  if (digitalHumanAudioPreview.value && digitalHumanAudioPreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(digitalHumanAudioPreview.value)
+    digitalHumanAudioPreview.value = ''
+  }
+}
+
+const openDigitalHumanImagePreview = () => {
+  if (!digitalHumanImagePreview.value) {
+    return
+  }
+  digitalHumanImagePreviewVisible.value = true
+}
+
+const openDigitalHumanAudioPreview = async () => {
+  if (!digitalHumanAudioPreview.value) {
+    return
+  }
+  digitalHumanAudioPreviewVisible.value = true
+  await nextTick()
+  const audioEl = digitalHumanAudioRef.value
+  if (!audioEl) {
+    return
+  }
+  try {
+    audioEl.currentTime = 0
+    await audioEl.play()
+  } catch (error) {
+    ElMessage.warning('浏览器阻止了自动播放，请手动点击播放')
+  }
+}
+
+const submitDigitalHuman = async () => {
+  const speechText = digitalHumanForm.speechText.trim()
+  const motionText = digitalHumanForm.motionText.trim()
+  const hasAudio = !!digitalHumanForm.audioFile
+  const hasVoiceAudio = !!selectedVoice.value && !!selectedVoice.value.trial_url
+  const imageFile = selectedDigitalHumanImageFile.value
+  if (!imageFile || (!hasAudio && !hasVoiceAudio)) {
+    ElMessage.warning('请先上传角色图片，并选择音色（或上传音频）')
+    return
+  }
+
+  const formatDigitalHumanError = (raw: string) => {
+    if (!raw) return '生成失败'
+    if (raw.includes('内容安全审核未通过')) return raw
+    if (raw.includes('"code":50218') || raw.includes('Resource exists risk')) {
+      return '内容安全审核未通过，请更换角色图片/文案/音色后重试'
+    }
+    if (raw.includes('"code":50430') || raw.includes('API Concurrent Limit')) {
+      return '请求过于频繁，请稍后重试'
+    }
+    return raw
+  }
+
+  digitalHumanLoading.value = true
+  digitalHumanResultUrl.value = ''
+  try {
+    ElMessage.info('数字人视频生成中，请稍候...')
+    const formData = new FormData()
+    formData.append('image', imageFile)
+    if (digitalHumanForm.audioFile) {
+      formData.append('audio', digitalHumanForm.audioFile)
+    }
+    if (speechText) formData.append('speech_text', speechText)
+    if (motionText) formData.append('motion_text', motionText)
+    if (selectedVoice.value) {
+      formData.append('voice_id', selectedVoice.value.id)
+      formData.append('voice_type', selectedVoice.value.voice_type)
+      if (!digitalHumanForm.audioFile && selectedVoice.value.trial_url) {
+        formData.append('audio_url', selectedVoice.value.trial_url)
+      }
+    }
+
+    const result = await digitalHumanAPI.generate(formData)
+    if (!result.video_url) {
+      throw new Error('未获取到视频链接')
+    }
+    digitalHumanResultUrl.value = result.video_url
+    ElMessage.success('数字人视频生成完成')
+  } catch (error: any) {
+    ElMessage.error(formatDigitalHumanError(String(error?.message || '')))
+  } finally {
+    digitalHumanLoading.value = false
   }
 }
 
@@ -1184,6 +1925,9 @@ const editCurrentEpisodeScript = () => {
 }
 
 const handleExtractCharactersAndBackgrounds = async () => {
+  if (scriptDirty.value && scriptContent.value.trim()) {
+    await saveChapterScript()
+  }
   // 如果已经提取过，显示确认对话框
   if (hasExtractedData.value) {
     try {
@@ -1257,7 +2001,7 @@ const extractCharactersAndBackgrounds = async () => {
     const [characterTask, backgroundTask] = await Promise.all([
       generationAPI.generateCharacters({
         drama_id: dramaId.toString(),
-        episode_id: episodeId,
+        episode_id: Number(episodeId),
         outline: currentEpisode.value.script_content || '',
         count: 0,
         model: selectedTextModel.value  // 传递用户选择的文本模型
@@ -1363,7 +2107,7 @@ const generateCharacterImage = async (characterId: number) => {
 
 const toggleSelectAllCharacters = () => {
   if (selectAllCharacters.value) {
-    selectedCharacterIds.value = currentEpisode.value?.characters?.map(char => char.id) || []
+    selectedCharacterIds.value = currentEpisode.value?.characters?.map(char => Number(char.id)) || []
   } else {
     selectedCharacterIds.value = []
   }
@@ -1371,7 +2115,7 @@ const toggleSelectAllCharacters = () => {
 
 const toggleSelectAllScenes = () => {
   if (selectAllScenes.value) {
-    selectedSceneIds.value = currentEpisode.value?.scenes?.map(scene => scene.id) || []
+    selectedSceneIds.value = currentEpisode.value?.scenes?.map(scene => Number(scene.id)) || []
   } else {
     selectedSceneIds.value = []
   }
@@ -1464,6 +2208,25 @@ const batchGenerateSceneImages = async () => {
 const taskProgress = ref(0)
 const taskMessage = ref('')
 let pollTimer: any = null
+let smoothProgressTimer: number | null = null
+const smoothProgressCap = 99
+const smoothProgressStepMs = 3000
+
+const startSmoothProgress = () => {
+  if (smoothProgressTimer) return
+  smoothProgressTimer = window.setInterval(() => {
+    if (!generatingShots.value) return
+    if (taskProgress.value >= smoothProgressCap) return
+    taskProgress.value = Math.min(taskProgress.value + 1, smoothProgressCap)
+  }, smoothProgressStepMs)
+}
+
+const stopSmoothProgress = () => {
+  if (smoothProgressTimer) {
+    clearInterval(smoothProgressTimer)
+    smoothProgressTimer = null
+  }
+}
 
 const generateShots = async () => {
   if (!currentEpisode.value?.id) {
@@ -1473,7 +2236,8 @@ const generateShots = async () => {
   
   generatingShots.value = true
   taskProgress.value = 0
-  taskMessage.value = '初始化任务...'
+  taskMessage.value = '生成分镜中'
+  startSmoothProgress()
   
   try {
     const episodeId = currentEpisode.value.id.toString()
@@ -1492,7 +2256,7 @@ const generateShots = async () => {
     // 创建异步任务
     const response = await generationAPI.generateStoryboard(episodeId, selectedTextModel.value)
     
-    taskMessage.value = response.message || '任务已创建'
+    taskMessage.value = '生成分镜中'
     
     // 开始轮询任务状态
     await pollTaskStatus(response.task_id)
@@ -1500,6 +2264,7 @@ const generateShots = async () => {
   } catch (error: any) {
     ElMessage.error(error.message || '拆分失败')
     generatingShots.value = false
+    stopSmoothProgress()
   }
 }
 
@@ -1507,9 +2272,15 @@ const pollTaskStatus = async (taskId: string) => {
   const checkStatus = async () => {
     try {
       const task = await generationAPI.getTaskStatus(taskId)
-      
-      taskProgress.value = task.progress
-      taskMessage.value = task.message || `处理中... ${task.progress}%`
+
+      const rawProgress = Number(task.progress)
+      const serverProgress = Number.isFinite(rawProgress) ? rawProgress : 0
+      if (task.status === 'processing') {
+        taskProgress.value = Math.max(taskProgress.value, serverProgress)
+      } else {
+        taskProgress.value = serverProgress
+      }
+      taskMessage.value = task.message || '生成分镜中'
       
       if (task.status === 'completed') {
         // 任务完成
@@ -1517,24 +2288,18 @@ const pollTaskStatus = async (taskId: string) => {
           clearInterval(pollTimer)
           pollTimer = null
         }
+        stopSmoothProgress()
         generatingShots.value = false
         
         ElMessage.success($t('workflow.splitSuccess'))
-        
-        // 跳转到专业编辑器页面
-        router.push({
-          name: 'ProfessionalEditor',
-          params: {
-            dramaId: dramaId,
-            episodeNumber: episodeNumber
-          }
-        })
+        await loadDramaData()
       } else if (task.status === 'failed') {
         // 任务失败
         if (pollTimer) {
           clearInterval(pollTimer)
           pollTimer = null
         }
+        stopSmoothProgress()
         generatingShots.value = false
         ElMessage.error(task.error || '分镜拆分失败')
       }
@@ -1544,6 +2309,7 @@ const pollTaskStatus = async (taskId: string) => {
         clearInterval(pollTimer)
         pollTimer = null
       }
+      stopSmoothProgress()
       generatingShots.value = false
       ElMessage.error('查询任务状态失败: ' + error.message)
     }
@@ -1763,6 +2529,30 @@ const deleteCharacter = async (characterId: number) => {
   }
 }
 
+const deleteShot = async (shot: any) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除该镜头吗？删除后将无法恢复。',
+      '删除确认',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消'
+      }
+    )
+
+    await dramaAPI.deleteStoryboard(shot.id.toString())
+    if (currentEpisode.value?.storyboards) {
+      currentEpisode.value.storyboards = currentEpisode.value.storyboards.filter(item => item.id !== shot.id)
+    }
+    ElMessage.success('镜头已删除')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除失败')
+    }
+  }
+}
+
 const goToProfessionalUI = () => {
   if (!currentEpisode.value?.id) {
     ElMessage.error('章节信息不存在')
@@ -1831,6 +2621,10 @@ onMounted(() => {
 .content-wrapper {
   margin: 0 auto;
   width: 100%;
+}
+
+.episode-info {
+  margin-bottom: 12px;
 }
 
 /* Header styles matching PageHeader component */
@@ -2029,6 +2823,352 @@ onMounted(() => {
   gap: 12px;
 }
 
+.digital-human-dialog {
+  :global(body.digital-human-dialog-open),
+  :global(html.digital-human-dialog-open) {
+    overflow: hidden !important;
+    padding-right: 0 !important;
+    height: 100% !important;
+    overscroll-behavior: none;
+  }
+
+  :global(body.digital-human-dialog-open #app) {
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+
+    :global(body.digital-human-dialog-open .el-overlay),
+    :global(body.digital-human-dialog-open .el-overlay-dialog),
+    :global(body.digital-human-dialog-open .el-dialog__wrapper) {
+      overflow: hidden !important;
+    }
+
+    :deep(.el-dialog) {
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    :deep(.el-dialog__body) {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    .digital-human-form {
+      :deep(.el-form-item__label) {
+        font-weight: 600;
+      }
+  }
+
+  .digital-human-upload {
+    width: 100%;
+  }
+
+  .digital-human-audio-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .digital-human-audio-row .digital-human-upload {
+    width: auto;
+  }
+
+  .digital-human-audio-row :deep(.el-upload) {
+    display: inline-flex;
+  }
+
+  .digital-human-upload-btn {
+    width: auto;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1px;
+    box-shadow: 0 3px 8px rgba(64, 158, 255, 0.16);
+  }
+
+  .digital-human-role-btn {
+    max-width: 240px;
+  }
+
+  .digital-human-role-btn-label {
+    display: inline-block;
+    max-width: 170px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  .digital-human-role-btn-clear {
+    margin-left: 6px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .digital-human-voice-btn {
+    max-width: 240px;
+  }
+
+  .digital-human-voice-btn-icon {
+    margin-right: 6px;
+    font-size: 12px;
+  }
+
+  .digital-human-voice-btn-label {
+    display: inline-block;
+    max-width: 160px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  .digital-human-voice-btn-clear {
+    margin-left: 6px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .digital-human-upload-secondary {
+    box-shadow: none;
+  }
+
+  .digital-human-file-name {
+    margin-top: 8px;
+    font-size: 8px;
+    color: #606266;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    border-radius: 6px;
+    border: 1px solid #dcdfe6;
+    background: #f5f7fa;
+    transition: all 0.2s ease;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .digital-human-clear-icon {
+    margin-left: 6px;
+    font-size: 12px;
+    color: #c0c4cc;
+  }
+
+  .digital-human-file-name:hover {
+    color: #409eff;
+    border-color: #409eff;
+    background: #ecf5ff;
+  }
+
+  .digital-human-preview {
+    margin-top: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e4e7ed;
+    background: #f5f7fa;
+
+    :deep(.el-image) {
+      width: 100%;
+      height: 200px;
+    }
+  }
+
+  .digital-human-audio {
+    margin-top: 10px;
+    max-width: 100%;
+    audio {
+      width: 100%;
+      max-width: 100%;
+      display: block;
+    }
+  }
+
+  .digital-human-hint {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #909399;
+  }
+
+  .digital-human-hint-inline {
+    font-size: 11px;
+    color: #909399;
+  }
+
+  .digital-human-result {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f5f7fa;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .digital-human-result-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .digital-human-result video {
+    width: 100%;
+    border-radius: 8px;
+    background: #000;
+  }
+
+  .digital-human-textarea :deep(textarea) {
+    resize: none;
+    overflow: auto;
+  }
+}
+
+.voice-library-popover {
+  padding: 12px;
+}
+
+.voice-library-panel {
+  width: 100%;
+}
+
+.voice-library-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.voice-library-toolbar :deep(.el-input) {
+  flex: 1;
+}
+
+.voice-library-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.voice-filter {
+  width: 148px;
+  max-width: 100%;
+}
+
+.voice-library-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #909399;
+  padding: 12px 0;
+}
+
+.voice-library-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f56c6c;
+}
+
+.voice-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.voice-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e4e7ed;
+  background: #fafafa;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.voice-card.is-trial-playing {
+  border-color: #409eff;
+  background: #eaf4ff;
+  box-shadow: 0 6px 14px rgba(64, 158, 255, 0.18);
+}
+
+.voice-card.is-selected {
+  border-color: rgba(64, 158, 255, 0.65);
+  background: #f1f8ff;
+}
+
+.voice-card.is-selected.is-trial-playing {
+  border-color: #409eff;
+  background: #eaf4ff;
+  box-shadow: 0 6px 14px rgba(64, 158, 255, 0.18);
+}
+
+.voice-card:hover {
+  border-color: #c6e2ff;
+  background: #ecf5ff;
+}
+
+.voice-card-create {
+  border-style: dashed;
+  color: #409eff;
+  justify-content: center;
+}
+
+.voice-card-play {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef5ff;
+  color: #409eff;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.voice-card-play.is-playing {
+  background: #409eff;
+  color: #ffffff;
+}
+
+.voice-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.voice-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-card-meta {
+  font-size: 11px;
+  color: #909399;
+  display: flex;
+  gap: 6px;
+}
+
+.voice-trial-audio {
+  display: none;
+}
+
 .script-textarea {
   margin: 16px 0;
   
@@ -2090,6 +3230,42 @@ onMounted(() => {
 .empty-shots {
   padding: 60px 0;
   text-align: center;
+}
+
+.shots-list {
+  position: relative;
+}
+
+.shots-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.shots-loading-card {
+  width: min(420px, 90%);
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shots-loading-icon {
+  font-size: 28px;
+  color: var(--el-color-primary);
+  animation: rotating 1.2s linear infinite;
+}
+
+.shots-loading-title {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .extracted-title {

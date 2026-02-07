@@ -10,7 +10,7 @@
           </el-button>
           <div class="page-title">
             <h1>{{ drama?.title || '' }}</h1>
-            <span class="subtitle">{{ drama?.description || $t('drama.management.overview') }}</span>
+            <!-- <span class="subtitle">{{ drama?.description || $t('drama.management.overview') }}</span> -->
           </div>
         </template>
       </AppHeader>
@@ -81,10 +81,31 @@
               <span class="info-value">{{ formatDate(drama?.created_at) }}</span>
             </el-descriptions-item>
             <el-descriptions-item :label="$t('drama.management.projectDesc')" :span="2">
-              <span class="info-desc">{{ drama?.description || $t('drama.management.noDescription') }}</span>
+              <div class="info-desc-row">
+                <span class="info-desc">{{ drama?.description || $t('drama.management.noDescription') }}</span>
+                <span class="info-desc-divider" aria-hidden="true"></span>
+                <el-button type="primary" size="small" class="project-edit-btn" @click="openEditDescription">
+                  {{ $t('common.edit') }}
+                </el-button>
+              </div>
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
+
+        <el-dialog v-model="editDescriptionDialogVisible" title="修改项目描述" width="720px" class="edit-desc-dialog">
+          <el-input
+            v-model="editDescriptionValue"
+            type="textarea"
+            :autosize="{ minRows: 8, maxRows: 16 }"
+            :placeholder="$t('drama.management.projectDesc')"
+          />
+          <template #footer>
+            <el-button @click="editDescriptionDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+            <el-button type="primary" :loading="savingDescription" @click="saveDescription">
+              {{ $t('common.save') }}
+            </el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <!-- 章节管理 -->
@@ -116,9 +137,9 @@
               <el-tag :type="getEpisodeStatusType(row)">{{ getEpisodeStatusText(row) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="Shots" width="100">
+          <el-table-column :label="$t('drama.management.shotsCount')" width="100">
             <template #default="{ row }">
-              {{ row.shots?.length || 0 }}
+              {{ getEpisodeShotCount(row) }}
             </template>
           </el-table-column>
           <el-table-column :label="$t('common.createdAt')" width="180">
@@ -273,6 +294,10 @@ const drama = ref<Drama>()
 const activeTab = ref(route.query.tab as string || 'overview')
 const scenes = ref<any[]>([])
 
+const editDescriptionDialogVisible = ref(false)
+const editDescriptionValue = ref('')
+const savingDescription = ref(false)
+
 const addCharacterDialogVisible = ref(false)
 const addSceneDialogVisible = ref(false)
 
@@ -298,6 +323,16 @@ const sortedEpisodes = computed(() => {
   return [...drama.value.episodes].sort((a, b) => a.episode_number - b.episode_number)
 })
 
+const getEpisodeShotCount = (episode: any) => {
+  return (
+    episode?.storyboards?.length ??
+    episode?.shots?.length ??
+    episode?.storyboard_count ??
+    episode?.shot_count ??
+    0
+  )
+}
+
 const loadDramaData = async () => {
   try {
     const data = await dramaAPI.get(route.params.id as string)
@@ -305,6 +340,28 @@ const loadDramaData = async () => {
     loadScenes()
   } catch (error: any) {
     ElMessage.error(error.message || '加载项目数据失败')
+  }
+}
+
+const openEditDescription = () => {
+  editDescriptionValue.value = drama.value?.description || ''
+  editDescriptionDialogVisible.value = true
+}
+
+const saveDescription = async () => {
+  if (!drama.value) return
+  try {
+    savingDescription.value = true
+    const updated = await dramaAPI.update(String(drama.value.id), {
+      description: editDescriptionValue.value.trim()
+    })
+    drama.value = { ...drama.value, description: updated.description }
+    ElMessage.success('项目描述已更新')
+    editDescriptionDialogVisible.value = false
+  } catch (error: any) {
+    ElMessage.error(error.message || '更新失败')
+  } finally {
+    savingDescription.value = false
   }
 }
 
@@ -844,6 +901,32 @@ onMounted(() => {
 .info-desc {
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+.info-desc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.info-desc-row .info-desc {
+  flex: 1;
+}
+
+.info-desc-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-primary);
+  align-self: center;
+}
+
+.project-edit-btn {
+  border-radius: 6px;
+}
+
+:deep(.edit-desc-dialog .el-textarea__inner) {
+  min-height: 220px;
 }
 
 .dark :deep(.el-dialog) {

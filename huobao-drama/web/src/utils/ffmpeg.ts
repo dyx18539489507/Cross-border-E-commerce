@@ -17,6 +17,15 @@ export interface VideoMergeOptions {
   }>
 }
 
+export interface AudioClip {
+  url: string
+  startTime: number
+  endTime?: number
+  duration?: number
+  position: number
+  volume?: number
+}
+
 export interface ProgressCallback {
   (progress: number): void
 }
@@ -145,7 +154,8 @@ export async function trimAndMergeVideos(
     startTime: number
     endTime: number
   }>,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  audioClips: AudioClip[] = []
 ): Promise<Blob> {
   const ffmpeg = await getFFmpeg()
 
@@ -192,17 +202,131 @@ export async function trimAndMergeVideos(
 
   if (onProgress) onProgress(95)
 
-  const data = await ffmpeg.readFile('final.mp4') as Uint8Array
+  let outputFile = 'final.mp4'
+  if (audioClips.length > 0) {
+    outputFile = await mixAudioWithVideo(ffmpeg, audioClips, outputFile)
+  }
+
+  const data = await ffmpeg.readFile(outputFile) as Uint8Array
 
   for (const file of trimmedFiles) {
     await ffmpeg.deleteFile(file)
   }
   await ffmpeg.deleteFile('filelist.txt')
   await ffmpeg.deleteFile('final.mp4')
+  if (outputFile !== 'final.mp4') {
+    await ffmpeg.deleteFile(outputFile)
+  }
 
   if (onProgress) onProgress(100)
 
   return new Blob([new Uint8Array(data)], { type: 'video/mp4' })
+}
+
+async function hasAudioStream(ffmpeg: FFmpeg, fileName: string): Promise<boolean> {
+  try {
+    await ffmpeg.exec([
+      '-i', fileName,
+      '-map', '0:a:0',
+      '-f', 'null',
+      '-'
+    ])
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function mixAudioWithVideo(
+  ffmpeg: FFmpeg,
+  audioClips: AudioClip[],
+  inputFile: string
+): Promise<string> {
+  const validClips = audioClips.filter(clip => clip.url)
+  if (validClips.length === 0) return inputFile
+
+  const audioInputs: Array<{ fileName: string; clip: AudioClip }> = []
+  for (let i = 0; i < validClips.length; i++) {
+    const clip = validClips[i]
+    const extMatch = clip.url.split('?')[0]?.match(/\.(\w{1,5})$/)
+    const ext = extMatch ? `.${extMatch[1]}` : '.mp3'
+    const audioFileName = `audio_${i}${ext}`
+    await ffmpeg.writeFile(audioFileName, await fetchFile(clip.url))
+    audioInputs.push({ fileName: audioFileName, clip })
+  }
+
+  const inputs: string[] = ['-i', inputFile]
+  audioInputs.forEach(input => {
+    inputs.push('-i', input.fileName)
+  })
+
+  const filterParts: string[] = []
+  const mixInputs: string[] = []
+
+  if (await hasAudioStream(ffmpeg, inputFile)) {
+    filterParts.push('[0:a]asetpts=PTS-STARTPTS[basea]')
+    mixInputs.push('[basea]')
+  }
+
+  audioInputs.forEach((input, index) => {
+    const clip = input.clip
+    const inputIndex = index + 1
+    const label = `a${index}`
+    const startTime = clip.startTime || 0
+    const duration = clip.duration ?? ((clip.endTime ?? 0) - startTime)
+    const volume = clip.volume && clip.volume > 0 ? clip.volume : 1
+    const delayMs = Math.max(0, Math.round((clip.position || 0) * 1000))
+
+    let filter = `[${inputIndex}:a]`
+    if (startTime > 0 || duration > 0) {
+      filter += `atrim=start=${startTime}`
+      if (duration > 0) {
+        filter += `:duration=${duration}`
+      }
+      filter += ','
+    }
+    filter += 'asetpts=PTS-STARTPTS'
+    if (volume !== 1) {
+      filter += `,volume=${volume}`
+    }
+    if (delayMs > 0) {
+      filter += `,adelay=${delayMs}:all=1`
+    }
+    filter += `[${label}]`
+
+    filterParts.push(filter)
+    mixInputs.push(`[${label}]`)
+  })
+
+  if (mixInputs.length === 0) {
+    for (const input of audioInputs) {
+      await ffmpeg.deleteFile(input.fileName)
+    }
+    return inputFile
+  }
+
+  filterParts.push(`${mixInputs.join('')}amix=inputs=${mixInputs.length}:normalize=0,apad[aout]`)
+  const filterComplex = filterParts.join(';')
+
+  const outputFile = 'final_audio.mp4'
+  await ffmpeg.exec([
+    ...inputs,
+    '-filter_complex', filterComplex,
+    '-map', '0:v',
+    '-map', '[aout]',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-shortest',
+    '-y',
+    outputFile
+  ])
+
+  for (const input of audioInputs) {
+    await ffmpeg.deleteFile(input.fileName)
+  }
+
+  return outputFile
 }
 
 export async function isFFmpegLoaded(): Promise<boolean> {

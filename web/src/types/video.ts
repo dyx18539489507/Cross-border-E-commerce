@@ -18,6 +18,7 @@ export interface VideoGeneration {
   camera_motion?: string
   seed?: number
   video_url?: string
+  minio_url?: string
   local_path?: string
   status: VideoStatus
   task_id?: string

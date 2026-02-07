@@ -1,10 +1,11 @@
 package services
 
 import (
-	"strconv"
-
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/ai"
@@ -58,7 +59,46 @@ type GenerateStoryboardResult struct {
 	Total       int          `json:"total"`
 }
 
+type StoryboardProgressFunc func(progress int, message string)
+
 func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, model, nil)
+}
+
+func (s *StoryboardService) GenerateStoryboardWithProgress(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, model, progress)
+}
+
+func (s *StoryboardService) generateStoryboard(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+	var (
+		reportMu     sync.Mutex
+		lastProgress = -1
+		lastMessage  = ""
+	)
+	report := func(p int, msg string) {
+		if progress == nil {
+			return
+		}
+		if msg == "" {
+			msg = "处理中..."
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 99 {
+			p = 99
+		}
+		reportMu.Lock()
+		defer reportMu.Unlock()
+		if p < lastProgress || (p == lastProgress && msg == lastMessage) {
+			return
+		}
+		lastProgress = p
+		lastMessage = msg
+		progress(p, msg)
+	}
+
+	report(12, "准备分镜生成任务...")
 	// 从数据库获取剧集信息
 	var episode struct {
 		ID            string
@@ -86,6 +126,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 	} else {
 		return nil, fmt.Errorf("剧本内容为空，请先生成剧集内容")
 	}
+
+	report(15, "获取剧本内容完成，整理角色与场景信息...")
 
 	// 获取该剧本的所有角色
 	var characters []models.Character
@@ -118,6 +160,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		}
 		sceneList = fmt.Sprintf("[%s]", strings.Join(sceneInfoList, ", "))
 	}
+
+	report(20, "角色与场景信息准备完成，生成提示词...")
 
 	s.log.Infow("Generating storyboard",
 		"episode_id", episodeID,
@@ -218,7 +262,7 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
       "action": "陈峥缓缓转身，目光与身后的李芳对视，李芳手握手电筒，光束在两人之间晃动，眼神中透露疑惑和警惕",
       "dialogue": "陈峥：\"我们被耍了，这里根本没有我们要找的东西。\" 李芳：\"现在怎么办？我们的时间不多了。\"",
       "result": "两人站在昏暗中陷入沉思，手电筒光束照在地面形成圆形光斑，背景传来微弱的金属摩擦声，气氛紧张凝重",
-      "atmosphere": "低调光线·暗部占画面70%，侧面硬光勾勒人物轮廓，冷暖光对比强烈，海风吹过产生呼啸声，营造紧迫感",
+      "atmosphere": "低调光线·暗部占画面70%%，侧面硬光勾勒人物轮廓，冷暖光对比强烈，海风吹过产生呼啸声，营造紧迫感",
       "emotion": "紧张感↑↑·警惕↑↑（悬置）",
       "duration": 7,
       "bgm_prompt": "紧张感逐渐升级的音效，低频持续音",
@@ -324,38 +368,67 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - 包含感官细节：视觉、听觉、触觉、嗅觉
 - 描述光线、色彩、质感、动态
 - 为视频生成AI提供足够的画面构建信息
-- 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, scriptContent, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint)
+- 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, scriptContent, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint, scriptContent)
+
+	report(25, "提示词准备完成，AI生成分镜中...")
+
+	startProgressTicker := func(start int, max int, message string) chan struct{} {
+		if progress == nil {
+			return nil
+		}
+		stop := make(chan struct{})
+		go func() {
+			current := start
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					if current >= max {
+						continue
+					}
+					current++
+					report(current, message)
+				}
+			}
+		}()
+		return stop
+	}
 
 	// 调用AI服务生成（如果指定了模型则使用指定的模型）
 	// 设置较大的max_tokens以确保完整返回所有分镜的JSON
-	var text string
+	report(30, "AI生成分镜中...")
+	progressStop := startProgressTicker(30, 75, "AI生成分镜中...")
+
+	var (
+		text   string
+		genErr error
+	)
 	if model != "" {
 		s.log.Infow("Using specified model for storyboard generation", "model", model)
 		client, getErr := s.aiService.GetAIClientForModel("text", model)
 		if getErr != nil {
 			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			var err error
-			text, err = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
-			if err != nil {
-				s.log.Errorw("Failed to generate storyboard", "error", err)
-				return nil, fmt.Errorf("生成分镜头失败: %w", err)
-			}
+			text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
 		} else {
-			var err error
-			text, err = client.GenerateText(prompt, "", ai.WithMaxTokens(16000))
-			if err != nil {
-				s.log.Errorw("Failed to generate storyboard", "error", err)
-				return nil, fmt.Errorf("生成分镜头失败: %w", err)
-			}
+			text, genErr = client.GenerateText(prompt, "", ai.WithMaxTokens(16000))
 		}
 	} else {
-		var err error
-		text, err = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
-		if err != nil {
-			s.log.Errorw("Failed to generate storyboard", "error", err)
-			return nil, fmt.Errorf("生成分镜头失败: %w", err)
-		}
+		text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
 	}
+
+	if progressStop != nil {
+		close(progressStop)
+	}
+
+	if genErr != nil {
+		s.log.Errorw("Failed to generate storyboard", "error", genErr)
+		return nil, fmt.Errorf("生成分镜头失败: %w", genErr)
+	}
+
+	report(80, "AI生成完成，解析分镜结果...")
 
 	// 解析JSON结果
 	// AI可能返回两种格式：
@@ -380,6 +453,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		s.log.Infow("Parsed storyboard as object format", "count", len(result.Storyboards))
 	}
 
+	report(85, fmt.Sprintf("解析完成，共 %d 个分镜，保存中...", result.Total))
+
 	// 计算总时长（所有分镜时长之和）
 	totalDuration := 0
 	for _, sb := range result.Storyboards {
@@ -397,6 +472,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		return nil, fmt.Errorf("保存分镜头失败: %w", err)
 	}
 
+	report(92, "分镜保存完成，更新章节时长...")
+
 	// 更新剧集时长（秒转分钟，向上取整）
 	durationMinutes := (totalDuration + 59) / 60
 	if err := s.db.Model(&models.Episode{}).Where("id = ?", episodeID).Update("duration", durationMinutes).Error; err != nil {
@@ -408,6 +485,8 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 			"duration_seconds", totalDuration,
 			"duration_minutes", durationMinutes)
 	}
+
+	report(97, "分镜拆解即将完成...")
 
 	return &result, nil
 }
