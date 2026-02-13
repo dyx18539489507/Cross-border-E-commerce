@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	DefaultOpenAPIHost        = "open.volcengineapi.com"
-	DefaultSpeechSaasService  = "speech_saas_prod"
-	DefaultSpeechSaasRegion   = "cn-north-1"
-	DefaultSpeechSaasVersion  = "2025-05-20"
+	DefaultOpenAPIHost       = "open.volcengineapi.com"
+	DefaultSpeechSaasService = "speech_saas_prod"
+	DefaultSpeechSaasRegion  = "cn-north-1"
+	DefaultSpeechSaasVersion = "2025-05-20"
 )
 
 type OpenAPIClient struct {
@@ -51,6 +51,16 @@ func NewOpenAPIClient(accessKeyID, secretAccessKey, region, service, host string
 		host = DefaultOpenAPIHost
 	}
 
+	// Avoid proxy-related handshake failures in environments with misconfigured
+	// HTTP(S)_PROXY settings. Volcengine OpenAPI endpoints are typically
+	// directly reachable from the service runtime.
+	transport := http.DefaultTransport
+	if baseTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		clonedTransport := baseTransport.Clone()
+		clonedTransport.Proxy = nil
+		transport = clonedTransport
+	}
+
 	return &OpenAPIClient{
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
@@ -58,7 +68,8 @@ func NewOpenAPIClient(accessKeyID, secretAccessKey, region, service, host string
 		Service:         service,
 		Host:            host,
 		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }

@@ -179,14 +179,18 @@ type megaTrainSpeakerStatus struct {
 }
 
 func (s *VoiceLibraryService) ListSpeakers(ctx context.Context) ([]VoiceSpeaker, error) {
-	cloudVoices, err := s.listCloudVoices(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	customVoices, customErr := s.listCustomVoices(ctx)
 	if customErr != nil {
 		s.log.Warnw("Failed to load custom voices", "error", customErr)
+	}
+
+	cloudVoices, err := s.listCloudVoices(ctx)
+	if err != nil {
+		s.log.Warnw("Failed to load cloud voices, fallback to custom voices only", "error", err)
+		if len(customVoices) > 0 {
+			return customVoices, nil
+		}
+		return []VoiceSpeaker{}, nil
 	}
 
 	if len(customVoices) == 0 {
@@ -351,7 +355,7 @@ func (s *VoiceLibraryService) CreateCustomVoice(ctx context.Context, req *Create
 	status, statusErr := s.getSpeakerStatus(ctx, speaker.SpeakerID)
 	if statusErr != nil {
 		s.log.Warnw("Failed to query custom voice status after upload", "speaker_id", speaker.SpeakerID, "error", statusErr)
-		status = &speaker
+		status = speaker
 	}
 
 	name := strings.TrimSpace(req.Name)

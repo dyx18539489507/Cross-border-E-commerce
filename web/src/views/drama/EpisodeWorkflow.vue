@@ -1076,7 +1076,7 @@
             v-model="digitalHumanForm.speechText"
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 3 }"
-            placeholder="请输入你希望角色说出的内容（将自动转语音）"
+            placeholder="请输入你希望角色说出的内容"
             class="digital-human-textarea"
           />
         </el-form-item>
