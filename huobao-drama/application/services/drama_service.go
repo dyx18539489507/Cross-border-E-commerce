@@ -17,6 +17,33 @@ type DramaService struct {
 	log *logger.Logger
 }
 
+func normalizeStaticURL(raw *string) {
+	NormalizeImageURLPtr(raw)
+}
+
+func normalizeDramaImageURLs(drama *models.Drama) {
+	for i := range drama.Characters {
+		normalizeStaticURL(drama.Characters[i].ImageURL)
+	}
+	for i := range drama.Scenes {
+		normalizeStaticURL(drama.Scenes[i].ImageURL)
+	}
+	for i := range drama.Episodes {
+		for j := range drama.Episodes[i].Characters {
+			normalizeStaticURL(drama.Episodes[i].Characters[j].ImageURL)
+		}
+		for j := range drama.Episodes[i].Scenes {
+			normalizeStaticURL(drama.Episodes[i].Scenes[j].ImageURL)
+		}
+		for j := range drama.Episodes[i].Storyboards {
+			normalizeStaticURL(drama.Episodes[i].Storyboards[j].ComposedImage)
+			if drama.Episodes[i].Storyboards[j].Background != nil {
+				normalizeStaticURL(drama.Episodes[i].Storyboards[j].Background.ImageURL)
+			}
+		}
+	}
+}
+
 func NewDramaService(db *gorm.DB, log *logger.Logger) *DramaService {
 	return &DramaService{
 		db:  db,
@@ -88,6 +115,8 @@ func (s *DramaService) GetDrama(dramaID string) (*models.Drama, error) {
 		s.log.Errorw("Failed to get drama", "error", err)
 		return nil, err
 	}
+
+	normalizeDramaImageURLs(&drama)
 
 	// 统计每个剧集的时长（基于场景时长之和）
 	for i := range drama.Episodes {
@@ -226,6 +255,7 @@ func (s *DramaService) ListDramas(query *DramaListQuery) ([]models.Drama, int64,
 
 	// 统计每个剧本的每个剧集的时长（基于场景时长之和）
 	for i := range dramas {
+		normalizeDramaImageURLs(&dramas[i])
 		for j := range dramas[i].Episodes {
 			totalDuration := 0
 			for _, scene := range dramas[i].Episodes[j].Storyboards {
@@ -409,6 +439,7 @@ func (s *DramaService) GetCharacters(dramaID string, episodeID *string) ([]model
 
 	// 查询每个角色的图片生成任务状态
 	for i := range characters {
+		NormalizeImageURLPtr(characters[i].ImageURL)
 		// 查询该角色最新的图片生成任务
 		var imageGen models.ImageGeneration
 		err := s.db.Where("character_id = ?", characters[i].ID).

@@ -76,6 +76,12 @@ func (s *CharacterLibraryService) ListLibraryItems(query *CharacterLibraryQuery)
 		s.log.Errorw("Failed to list character library", "error", err)
 		return nil, 0, err
 	}
+	for i := range items {
+		normalized := NormalizeImageURLForClient(items[i].ImageURL)
+		if normalized != "" {
+			items[i].ImageURL = normalized
+		}
+	}
 
 	return items, total, nil
 }
@@ -87,10 +93,15 @@ func (s *CharacterLibraryService) CreateLibraryItem(req *CreateLibraryItemReques
 		sourceType = "generated"
 	}
 
+	imageURL := NormalizeImageURLForClient(req.ImageURL)
+	if imageURL == "" {
+		imageURL = req.ImageURL
+	}
+
 	item := &models.CharacterLibrary{
 		Name:        req.Name,
 		Category:    req.Category,
-		ImageURL:    req.ImageURL,
+		ImageURL:    imageURL,
 		Description: req.Description,
 		Tags:        req.Tags,
 		SourceType:  sourceType,
@@ -116,6 +127,10 @@ func (s *CharacterLibraryService) GetLibraryItem(itemID string) (*models.Charact
 		}
 		s.log.Errorw("Failed to get library item", "error", err)
 		return nil, err
+	}
+	normalized := NormalizeImageURLForClient(item.ImageURL)
+	if normalized != "" {
+		item.ImageURL = normalized
 	}
 
 	return &item, nil
@@ -168,7 +183,11 @@ func (s *CharacterLibraryService) ApplyLibraryItemToCharacter(characterID string
 	}
 
 	// 更新角色的image_url
-	if err := s.db.Model(&character).Update("image_url", libraryItem.ImageURL).Error; err != nil {
+	imageURL := NormalizeImageURLForClient(libraryItem.ImageURL)
+	if imageURL == "" {
+		imageURL = libraryItem.ImageURL
+	}
+	if err := s.db.Model(&character).Update("image_url", imageURL).Error; err != nil {
 		s.log.Errorw("Failed to update character image", "error", err)
 		return err
 	}
@@ -197,8 +216,13 @@ func (s *CharacterLibraryService) UploadCharacterImage(characterID string, image
 		return err
 	}
 
+	normalizedURL := NormalizeImageURLForClient(imageURL)
+	if normalizedURL == "" {
+		normalizedURL = imageURL
+	}
+
 	// 更新图片URL
-	if err := s.db.Model(&character).Update("image_url", imageURL).Error; err != nil {
+	if err := s.db.Model(&character).Update("image_url", normalizedURL).Error; err != nil {
 		s.log.Errorw("Failed to update character image", "error", err)
 		return err
 	}
@@ -233,9 +257,13 @@ func (s *CharacterLibraryService) AddCharacterToLibrary(characterID string, cate
 	}
 
 	// 创建角色库项
+	imageURL := NormalizeImageURLForClient(*character.ImageURL)
+	if imageURL == "" {
+		imageURL = *character.ImageURL
+	}
 	charLibrary := &models.CharacterLibrary{
 		Name:        character.Name,
-		ImageURL:    *character.ImageURL,
+		ImageURL:    imageURL,
 		Description: character.Description,
 		SourceType:  "character",
 	}
@@ -367,12 +395,16 @@ func (s *CharacterLibraryService) waitAndUpdateCharacterImage(characterID uint, 
 
 		// 检查是否完成
 		if imageGen.Status == models.ImageStatusCompleted && imageGen.ImageURL != nil && *imageGen.ImageURL != "" {
+			imageURL := NormalizeImageURLForClient(*imageGen.ImageURL)
+			if imageURL == "" {
+				imageURL = *imageGen.ImageURL
+			}
 			// 更新角色的image_url
-			if err := s.db.Model(&models.Character{}).Where("id = ?", characterID).Update("image_url", *imageGen.ImageURL).Error; err != nil {
+			if err := s.db.Model(&models.Character{}).Where("id = ?", characterID).Update("image_url", imageURL).Error; err != nil {
 				s.log.Errorw("Failed to update character image_url", "error", err, "character_id", characterID)
 				return
 			}
-			s.log.Infow("Character image updated successfully", "character_id", characterID, "image_url", *imageGen.ImageURL)
+			s.log.Infow("Character image updated successfully", "character_id", characterID, "image_url", imageURL)
 			return
 		}
 

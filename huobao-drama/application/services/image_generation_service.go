@@ -134,7 +134,11 @@ func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordReq
 		Status:       models.ImageStatusCompleted,
 	}
 
-	imageGen.ImageURL = &request.ImageURL
+	normalizedURL := NormalizeImageURLForClient(request.ImageURL)
+	if normalizedURL == "" {
+		normalizedURL = request.ImageURL
+	}
+	imageGen.ImageURL = &normalizedURL
 	now := time.Now()
 	imageGen.CompletedAt = &now
 
@@ -360,10 +364,14 @@ func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result
 		}
 	}
 
-	// 数据库中保持使用原始URL
+	storedImageURL := NormalizeImageURLForClient(result.ImageURL)
+	if storedImageURL == "" {
+		storedImageURL = result.ImageURL
+	}
+
 	updates := map[string]interface{}{
 		"status":       models.ImageStatusCompleted,
-		"image_url":    result.ImageURL,
+		"image_url":    storedImageURL,
 		"completed_at": now,
 	}
 
@@ -386,12 +394,12 @@ func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result
 
 	// 如果关联了storyboard，同步更新storyboard的composed_image
 	if imageGen.StoryboardID != nil {
-		if err := s.db.Model(&models.Storyboard{}).Where("id = ?", *imageGen.StoryboardID).Update("composed_image", result.ImageURL).Error; err != nil {
+		if err := s.db.Model(&models.Storyboard{}).Where("id = ?", *imageGen.StoryboardID).Update("composed_image", storedImageURL).Error; err != nil {
 			s.log.Errorw("Failed to update storyboard composed_image", "error", err, "storyboard_id", *imageGen.StoryboardID)
 		} else {
 			s.log.Infow("Storyboard updated with composed image",
 				"storyboard_id", *imageGen.StoryboardID,
-				"composed_image", truncateImageURL(result.ImageURL))
+				"composed_image", truncateImageURL(storedImageURL))
 		}
 	}
 
@@ -399,25 +407,25 @@ func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result
 	if imageGen.SceneID != nil && imageGen.ImageType == string(models.ImageTypeScene) {
 		sceneUpdates := map[string]interface{}{
 			"status":    "generated",
-			"image_url": result.ImageURL,
+			"image_url": storedImageURL,
 		}
 		if err := s.db.Model(&models.Scene{}).Where("id = ?", *imageGen.SceneID).Updates(sceneUpdates).Error; err != nil {
 			s.log.Errorw("Failed to update scene", "error", err, "scene_id", *imageGen.SceneID)
 		} else {
 			s.log.Infow("Scene updated with generated image",
 				"scene_id", *imageGen.SceneID,
-				"image_url", truncateImageURL(result.ImageURL))
+				"image_url", truncateImageURL(storedImageURL))
 		}
 	}
 
 	// 如果关联了角色，同步更新角色的image_url
 	if imageGen.CharacterID != nil {
-		if err := s.db.Model(&models.Character{}).Where("id = ?", *imageGen.CharacterID).Update("image_url", result.ImageURL).Error; err != nil {
+		if err := s.db.Model(&models.Character{}).Where("id = ?", *imageGen.CharacterID).Update("image_url", storedImageURL).Error; err != nil {
 			s.log.Errorw("Failed to update character image_url", "error", err, "character_id", *imageGen.CharacterID)
 		} else {
 			s.log.Infow("Character updated with generated image",
 				"character_id", *imageGen.CharacterID,
-				"image_url", truncateImageURL(result.ImageURL))
+				"image_url", truncateImageURL(storedImageURL))
 		}
 	}
 }
@@ -549,6 +557,7 @@ func (s *ImageGenerationService) GetImageGeneration(imageGenID uint) (*models.Im
 	if err := s.db.Where("id = ? ", imageGenID).First(&imageGen).Error; err != nil {
 		return nil, err
 	}
+	NormalizeImageURLPtr(imageGen.ImageURL)
 	return &imageGen, nil
 }
 
@@ -584,6 +593,9 @@ func (s *ImageGenerationService) ListImageGenerations(dramaID *uint, sceneID *ui
 	offset := (page - 1) * pageSize
 	if err := query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&images).Error; err != nil {
 		return nil, 0, err
+	}
+	for i := range images {
+		NormalizeImageURLPtr(images[i].ImageURL)
 	}
 
 	return images, total, nil
@@ -712,6 +724,9 @@ func (s *ImageGenerationService) GetScencesForEpisode(episodeID string) ([]*mode
 	var scenes []*models.Scene
 	if err := s.db.Where("drama_id = ?", episode.DramaID).Order("location ASC, time ASC").Find(&scenes).Error; err != nil {
 		return nil, fmt.Errorf("failed to load scenes: %w", err)
+	}
+	for i := range scenes {
+		NormalizeImageURLPtr(scenes[i].ImageURL)
 	}
 
 	return scenes, nil

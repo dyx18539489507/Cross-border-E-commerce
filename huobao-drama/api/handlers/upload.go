@@ -71,8 +71,13 @@ func (h *UploadHandler) UploadImage(c *gin.Context) {
 		return
 	}
 
+	normalizedURL := services2.NormalizeImageURLForClient(fileURL)
+	if normalizedURL == "" {
+		normalizedURL = fileURL
+	}
+
 	response.Success(c, gin.H{
-		"url":      fileURL,
+		"url":      normalizedURL,
 		"filename": header.Filename,
 		"size":     header.Size,
 	})
@@ -124,18 +129,23 @@ func (h *UploadHandler) UploadCharacterImage(c *gin.Context) {
 		return
 	}
 
+	normalizedURL := services2.NormalizeImageURLForClient(fileURL)
+	if normalizedURL == "" {
+		normalizedURL = fileURL
+	}
+
 	// 更新角色的image_url字段到数据库
-	err = h.characterLibraryService.UploadCharacterImage(characterID, fileURL)
+	err = h.characterLibraryService.UploadCharacterImage(characterID, normalizedURL)
 	if err != nil {
 		h.log.Errorw("Failed to update character image_url", "error", err, "character_id", characterID)
 		response.InternalError(c, "更新角色图片失败")
 		return
 	}
 
-	h.log.Infow("Character image uploaded and saved", "character_id", characterID, "url", fileURL)
+	h.log.Infow("Character image uploaded and saved", "character_id", characterID, "url", normalizedURL)
 
 	response.Success(c, gin.H{
-		"url":      fileURL,
+		"url":      normalizedURL,
 		"filename": header.Filename,
 		"size":     header.Size,
 	})

@@ -1196,9 +1196,32 @@ const fixImageUrl = (url?: string | null): string => {
   const value = (url || '').trim()
   if (!value) return ''
   if (value.startsWith('blob:') || value.startsWith('data:')) return value
-  if (value.startsWith('/api/v1/media/proxy')) return value
+  if (value.startsWith('/api/v1/media/proxy')) {
+    try {
+      const parsed = new URL(value, window.location.origin)
+      const raw = parsed.searchParams.get('url')
+      if (raw) return fixImageUrl(decodeURIComponent(raw))
+    } catch {
+      // keep original value
+    }
+    return value
+  }
   if (value.startsWith('http://') || value.startsWith('https://')) {
-    return `/api/v1/media/proxy?url=${encodeURIComponent(value)}`
+    // Tunnel domains may return interstitial/511 for image requests.
+    // If they point to a /static file, prefer the local backend static path.
+    try {
+      const parsed = new URL(value)
+      const isTunnelHost =
+        parsed.hostname.endsWith('.loca.lt') ||
+        parsed.hostname.includes('ngrok') ||
+        parsed.hostname.endsWith('.trycloudflare.com')
+      if (isTunnelHost && parsed.pathname.startsWith('/static/')) {
+        return `${parsed.pathname}${parsed.search}`
+      }
+    } catch {
+      // keep original value
+    }
+    return value
   }
   if (value.startsWith('/static/')) return value
   if (value.startsWith('/data/')) return `/static${value}`
