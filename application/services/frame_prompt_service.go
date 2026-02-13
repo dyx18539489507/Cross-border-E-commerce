@@ -170,20 +170,8 @@ func (s *FramePromptService) generateFirstFrame(sb models.Storyboard, scene *mod
 	systemPrompt := s.promptI18n.GetFirstFramePrompt()
 	userPrompt := s.promptI18n.FormatUserPrompt("frame_info", contextInfo)
 
-	// 调用AI生成（如果指定了模型则使用指定的模型）
-	var aiResponse string
-	var err error
-	if model != "" {
-		client, getErr := s.aiService.GetAIClientForModel("text", model)
-		if getErr != nil {
-			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			aiResponse, err = s.aiService.GenerateText(userPrompt, systemPrompt)
-		} else {
-			aiResponse, err = client.GenerateText(userPrompt, systemPrompt)
-		}
-	} else {
-		aiResponse, err = s.aiService.GenerateText(userPrompt, systemPrompt)
-	}
+	// 统一使用默认文本配置，忽略客户端传入模型。
+	aiResponse, err := s.aiService.GenerateText(userPrompt, systemPrompt)
 	if err != nil {
 		s.log.Warnw("AI generation failed, using fallback", "error", err)
 		// 降级方案：使用简单拼接
@@ -218,20 +206,8 @@ func (s *FramePromptService) generateKeyFrame(sb models.Storyboard, scene *model
 	systemPrompt := s.promptI18n.GetKeyFramePrompt()
 	userPrompt := s.promptI18n.FormatUserPrompt("key_frame_info", contextInfo)
 
-	// 调用AI生成（如果指定了模型则使用指定的模型）
-	var aiResponse string
-	var err error
-	if model != "" {
-		client, getErr := s.aiService.GetAIClientForModel("text", model)
-		if getErr != nil {
-			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			aiResponse, err = s.aiService.GenerateText(userPrompt, systemPrompt)
-		} else {
-			aiResponse, err = client.GenerateText(userPrompt, systemPrompt)
-		}
-	} else {
-		aiResponse, err = s.aiService.GenerateText(userPrompt, systemPrompt)
-	}
+	// 统一使用默认文本配置，忽略客户端传入模型。
+	aiResponse, err := s.aiService.GenerateText(userPrompt, systemPrompt)
 	if err != nil {
 		s.log.Warnw("AI generation failed, using fallback", "error", err)
 		fallbackPrompt := s.buildFallbackPrompt(sb, scene, "key frame, dynamic action")
@@ -265,20 +241,8 @@ func (s *FramePromptService) generateLastFrame(sb models.Storyboard, scene *mode
 	systemPrompt := s.promptI18n.GetLastFramePrompt()
 	userPrompt := s.promptI18n.FormatUserPrompt("last_frame_info", contextInfo)
 
-	// 调用AI生成（如果指定了模型则使用指定的模型）
-	var aiResponse string
-	var err error
-	if model != "" {
-		client, getErr := s.aiService.GetAIClientForModel("text", model)
-		if getErr != nil {
-			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			aiResponse, err = s.aiService.GenerateText(userPrompt, systemPrompt)
-		} else {
-			aiResponse, err = client.GenerateText(userPrompt, systemPrompt)
-		}
-	} else {
-		aiResponse, err = s.aiService.GenerateText(userPrompt, systemPrompt)
-	}
+	// 统一使用默认文本配置，忽略客户端传入模型。
+	aiResponse, err := s.aiService.GenerateText(userPrompt, systemPrompt)
 	if err != nil {
 		s.log.Warnw("AI generation failed, using fallback", "error", err)
 		fallbackPrompt := s.buildFallbackPrompt(sb, scene, "last frame, final state")

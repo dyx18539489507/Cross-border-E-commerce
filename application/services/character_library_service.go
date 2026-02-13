@@ -280,7 +280,7 @@ func (s *CharacterLibraryService) DeleteCharacter(characterID uint) error {
 }
 
 // GenerateCharacterImage AI生成角色形象
-func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, imageService *ImageGenerationService, modelName string) (*models.ImageGeneration, error) {
+func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, imageService *ImageGenerationService) (*models.ImageGeneration, error) {
 	// 查找角色
 	var character models.Character
 	if err := s.db.Where("id = ?", characterID).First(&character).Error; err != nil {
@@ -334,8 +334,6 @@ func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, ima
 		ImageType:      imageType,
 		Prompt:         prompt,
 		NegativePrompt: &negativePrompt,
-		Provider:       "openai",    // 或从配置读取
-		Model:          modelName,   // 使用用户指定的模型
 		Size:           "2560x1440", // 3,686,400像素，满足API最低要求（16:9比例）
 		Quality:        "standard",
 	}
@@ -449,16 +447,15 @@ func (s *CharacterLibraryService) UpdateCharacter(characterID string, req interf
 }
 
 // BatchGenerateCharacterImages 批量生成角色图片（并发执行）
-func (s *CharacterLibraryService) BatchGenerateCharacterImages(characterIDs []string, imageService *ImageGenerationService, modelName string) {
+func (s *CharacterLibraryService) BatchGenerateCharacterImages(characterIDs []string, imageService *ImageGenerationService) {
 	s.log.Infow("Starting batch character image generation",
-		"count", len(characterIDs),
-		"model", modelName)
+		"count", len(characterIDs))
 
 	// 使用 goroutine 并发生成所有角色图片
 	for _, characterID := range characterIDs {
 		// 为每个角色启动单独的 goroutine
 		go func(charID string) {
-			imageGen, err := s.GenerateCharacterImage(charID, imageService, modelName)
+			imageGen, err := s.GenerateCharacterImage(charID, imageService)
 			if err != nil {
 				s.log.Errorw("Failed to generate character image in batch",
 					"character_id", charID,

@@ -71,8 +71,8 @@ export const dramaAPI = {
     return request.get(`/images/episode/${episodeId}/backgrounds`)
   },
 
-  extractBackgrounds(episodeId: string, model?: string) {
-    return request.post<{ task_id: string; status: string; message: string }>(`/images/episode/${episodeId}/backgrounds/extract`, { model })
+  extractBackgrounds(episodeId: string) {
+    return request.post<{ task_id: string; status: string; message: string }>(`/images/episode/${episodeId}/backgrounds/extract`)
   },
 
   batchGenerateBackgrounds(episodeId: string) {
@@ -113,7 +113,7 @@ export const dramaAPI = {
     return request.put(`/scenes/${sceneId}`, data)
   },
 
-  generateSceneImage(data: { scene_id: number; prompt?: string; model?: string }) {
+  generateSceneImage(data: { scene_id: number; prompt?: string }) {
     return request.post<{ image_generation: { id: number } }>('/scenes/generate-image', data)
   },
 

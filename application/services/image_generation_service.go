@@ -151,12 +151,21 @@ func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest) (*
 		return nil, fmt.Errorf("drama not found")
 	}
 
-	// 注意：SceneID可能指向Scene或Storyboard表，调用方已经做过权限验证，这里不再重复验证
-
-	provider := request.Provider
+	// 统一使用默认图片配置，忽略请求中的 provider/model。
+	config, err := s.aiService.GetDefaultConfig("image")
+	if err != nil {
+		return nil, fmt.Errorf("no image AI config found: %w", err)
+	}
+	provider := strings.TrimSpace(config.Provider)
 	if provider == "" {
 		provider = "openai"
 	}
+	model := ""
+	if len(config.Model) > 0 {
+		model = config.Model[0]
+	}
+
+	// 注意：SceneID可能指向Scene或Storyboard表，调用方已经做过权限验证，这里不再重复验证
 
 	// 序列化参考图片
 	var referenceImagesJSON []byte
@@ -186,7 +195,7 @@ func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest) (*
 		Provider:        provider,
 		Prompt:          request.Prompt,
 		NegPrompt:       request.NegativePrompt,
-		Model:           request.Model,
+		Model:           model,
 		Size:            request.Size,
 		ReferenceImages: referenceImagesJSON,
 		Quality:         request.Quality,
@@ -226,7 +235,7 @@ func (s *ImageGenerationService) ProcessImageGeneration(imageGenID uint) {
 		}
 	}
 
-	client, err := s.getImageClientWithModel(imageGen.Provider, imageGen.Model)
+	client, err := s.getImageClient(imageGen.Provider)
 	if err != nil {
 		s.log.Errorw("Failed to get image client", "error", err, "provider", imageGen.Provider, "model", imageGen.Model)
 		s.updateImageGenError(imageGenID, err.Error())
@@ -493,72 +502,6 @@ func (s *ImageGenerationService) getImageClient(provider string) (image.ImageCli
 	}
 }
 
-// getImageClientWithModel 根据模型名称获取图片客户端
-func (s *ImageGenerationService) getImageClientWithModel(provider string, modelName string) (image.ImageClient, error) {
-	var config *models.AIServiceConfig
-	var err error
-
-	// 如果指定了模型，尝试获取对应的配置
-	if modelName != "" {
-		config, err = s.aiService.GetConfigForModel("image", modelName)
-		if err != nil {
-			s.log.Warnw("Failed to get config for model, using default", "model", modelName, "error", err)
-			config, err = s.aiService.GetDefaultConfig("image")
-			if err != nil {
-				return nil, fmt.Errorf("no image AI config found: %w", err)
-			}
-		}
-	} else {
-		config, err = s.aiService.GetDefaultConfig("image")
-		if err != nil {
-			return nil, fmt.Errorf("no image AI config found: %w", err)
-		}
-	}
-
-	// 使用指定的模型或配置中的第一个模型
-	model := modelName
-	if model == "" && len(config.Model) > 0 {
-		model = config.Model[0]
-	}
-
-	// 使用配置中的 provider，如果没有则使用传入的 provider
-	actualProvider := config.Provider
-	if actualProvider == "" {
-		actualProvider = provider
-	}
-
-	// 根据 provider 自动设置默认端点（优先使用配置里的 endpoint）
-	endpoint := strings.TrimSpace(config.Endpoint)
-	queryEndpoint := strings.TrimSpace(config.QueryEndpoint)
-
-	switch actualProvider {
-	case "openai", "dalle":
-		if endpoint == "" {
-			endpoint = "/images/generations"
-		}
-		return image.NewOpenAIImageClient(config.BaseURL, config.APIKey, model, endpoint), nil
-	case "chatfire":
-		if endpoint == "" {
-			endpoint = "/images/generations"
-		}
-		return image.NewOpenAIImageClient(config.BaseURL, config.APIKey, model, endpoint), nil
-	case "volcengine", "volces", "doubao":
-		endpoint = normalizeVolcesEndpoint(config.BaseURL, endpoint, "/api/v3/images/generations")
-		queryEndpoint = normalizeVolcesEndpoint(config.BaseURL, queryEndpoint, "")
-		return image.NewVolcEngineImageClient(config.BaseURL, config.APIKey, model, endpoint, queryEndpoint), nil
-	case "gemini", "google":
-		if endpoint == "" {
-			endpoint = "/v1beta/models/{model}:generateContent"
-		}
-		return image.NewGeminiImageClient(config.BaseURL, config.APIKey, model, endpoint), nil
-	default:
-		if endpoint == "" {
-			endpoint = "/images/generations"
-		}
-		return image.NewOpenAIImageClient(config.BaseURL, config.APIKey, model, endpoint), nil
-	}
-}
-
 func (s *ImageGenerationService) GetImageGeneration(imageGenID uint) (*models.ImageGeneration, error) {
 	var imageGen models.ImageGeneration
 	if err := s.db.Where("id = ? ", imageGenID).First(&imageGen).Error; err != nil {
@@ -733,7 +676,7 @@ func (s *ImageGenerationService) GetScencesForEpisode(episodeID string) ([]*mode
 }
 
 // ExtractBackgroundsForEpisode 从剧本内容中提取场景并保存到项目级别数据库
-func (s *ImageGenerationService) ExtractBackgroundsForEpisode(episodeID string, model string) ([]*models.Scene, error) {
+func (s *ImageGenerationService) ExtractBackgroundsForEpisode(episodeID string) ([]*models.Scene, error) {
 	var episode models.Episode
 	if err := s.db.Preload("Storyboards").First(&episode, episodeID).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
@@ -744,11 +687,11 @@ func (s *ImageGenerationService) ExtractBackgroundsForEpisode(episodeID string, 
 		return nil, fmt.Errorf("episode has no script content")
 	}
 
-	s.log.Infow("Extracting backgrounds from script", "episode_id", episodeID, "model", model)
+	s.log.Infow("Extracting backgrounds from script", "episode_id", episodeID)
 	dramaID := episode.DramaID
 
 	// 使用AI从剧本内容中提取场景
-	backgroundsInfo, err := s.extractBackgroundsFromScript(*episode.ScriptContent, dramaID, model)
+	backgroundsInfo, err := s.extractBackgroundsFromScript(*episode.ScriptContent, dramaID)
 	if err != nil {
 		s.log.Errorw("Failed to extract backgrounds from script", "error", err)
 		return nil, err
@@ -804,24 +747,13 @@ func (s *ImageGenerationService) ExtractBackgroundsForEpisode(episodeID string, 
 }
 
 // extractBackgroundsFromScript 从剧本内容中使用AI提取场景信息
-func (s *ImageGenerationService) extractBackgroundsFromScript(scriptContent string, dramaID uint, model string) ([]BackgroundInfo, error) {
+func (s *ImageGenerationService) extractBackgroundsFromScript(scriptContent string, dramaID uint) ([]BackgroundInfo, error) {
 	if scriptContent == "" {
 		return []BackgroundInfo{}, nil
 	}
 
-	// 获取AI客户端（如果指定了模型则使用指定的模型）
-	var client ai.AIClient
-	var err error
-	if model != "" {
-		s.log.Infow("Using specified model for background extraction", "model", model)
-		client, err = s.aiService.GetAIClientForModel("text", model)
-		if err != nil {
-			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", err)
-			client, err = s.aiService.GetAIClient("text")
-		}
-	} else {
-		client, err = s.aiService.GetAIClient("text")
-	}
+	// 统一使用默认文本配置，忽略客户端传入模型。
+	client, err := s.aiService.GetAIClient("text")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AI client: %w", err)
 	}

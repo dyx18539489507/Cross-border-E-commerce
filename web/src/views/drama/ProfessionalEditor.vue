@@ -3372,9 +3372,6 @@ const generateVideo = async () => {
 
   generatingVideo.value = true
   try {
-    // 从模型名称提取正确的provider
-    const provider = extractProviderFromModel(selectedVideoModel.value)
-
     // 构建请求参数
     const promptText = (currentStoryboard.value.video_prompt
       || currentStoryboard.value.action
@@ -3388,8 +3385,6 @@ const generateVideo = async () => {
       storyboard_id: Number(currentStoryboard.value.id),
       prompt: promptText,
       duration: videoDuration.value,
-      provider: provider,
-      model: selectedVideoModel.value,
       reference_mode: referenceMode
     }
 

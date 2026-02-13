@@ -36,7 +36,6 @@ type GenerateCharactersRequest struct {
 	Outline     string  `json:"outline"`
 	Count       int     `json:"count"`
 	Temperature float64 `json:"temperature"`
-	Model       string  `json:"model"` // 指定使用的文本模型
 }
 
 func (s *ScriptGenerationService) GenerateCharacters(req *GenerateCharactersRequest) ([]models.Character, error) {
@@ -64,21 +63,8 @@ func (s *ScriptGenerationService) GenerateCharacters(req *GenerateCharactersRequ
 		temperature = 0.7
 	}
 
-	// 如果指定了模型，使用指定的模型；否则使用默认配置
-	var text string
-	var err error
-	if req.Model != "" {
-		s.log.Infow("Using specified model for character generation", "model", req.Model)
-		client, getErr := s.aiService.GetAIClientForModel("text", req.Model)
-		if getErr != nil {
-			s.log.Warnw("Failed to get client for specified model, using default", "model", req.Model, "error", getErr)
-			text, err = s.aiService.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
-		} else {
-			text, err = client.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
-		}
-	} else {
-		text, err = s.aiService.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
-	}
+	// 统一使用默认文本配置，忽略请求中的 model 参数。
+	text, err := s.aiService.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
 
 	if err != nil {
 		s.log.Errorw("Failed to generate characters", "error", err)

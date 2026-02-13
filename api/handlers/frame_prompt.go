@@ -29,7 +29,6 @@ func (h *FramePromptHandler) GenerateFramePrompt(c *gin.Context) {
 	var req struct {
 		FrameType  string `json:"frame_type"`
 		PanelCount int    `json:"panel_count"`
-		Model      string `json:"model"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
@@ -42,7 +41,7 @@ func (h *FramePromptHandler) GenerateFramePrompt(c *gin.Context) {
 		PanelCount:   req.PanelCount,
 	}
 
-	result, err := h.framePromptService.GenerateFramePrompt(serviceReq, req.Model)
+	result, err := h.framePromptService.GenerateFramePrompt(serviceReq, "")
 	if err != nil {
 		h.log.Errorw("Failed to generate frame prompt", "error", err)
 		response.InternalError(c, err.Error())

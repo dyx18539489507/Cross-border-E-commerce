@@ -61,15 +61,15 @@ type GenerateStoryboardResult struct {
 
 type StoryboardProgressFunc func(progress int, message string)
 
-func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (*GenerateStoryboardResult, error) {
-	return s.generateStoryboard(episodeID, model, nil)
+func (s *StoryboardService) GenerateStoryboard(episodeID string) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, nil)
 }
 
-func (s *StoryboardService) GenerateStoryboardWithProgress(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
-	return s.generateStoryboard(episodeID, model, progress)
+func (s *StoryboardService) GenerateStoryboardWithProgress(episodeID string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, progress)
 }
 
-func (s *StoryboardService) generateStoryboard(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+func (s *StoryboardService) generateStoryboard(episodeID string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
 	var (
 		reportMu     sync.Mutex
 		lastProgress = -1
@@ -361,22 +361,8 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 		maxTokens = 16000
 	}
 
-	var (
-		text   string
-		genErr error
-	)
-	if model != "" {
-		s.log.Infow("Using specified model for storyboard generation", "model", model)
-		client, getErr := s.aiService.GetAIClientForModel("text", model)
-		if getErr != nil {
-			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
-		} else {
-			text, genErr = client.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
-		}
-	} else {
-		text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
-	}
+	// 统一使用默认文本配置，忽略客户端传入模型。
+	text, genErr := s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(maxTokens))
 
 	if progressStop != nil {
 		close(progressStop)

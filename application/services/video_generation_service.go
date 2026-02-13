@@ -105,9 +105,19 @@ func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest) (*
 		request.ImageURL = s.normalizeMediaURL(request.ImageURL)
 	}
 
-	provider := request.Provider
+	// 统一使用默认视频配置，忽略请求中的 provider/model。
+	config, err := s.aiService.GetDefaultConfig("video")
+	if err != nil {
+		return nil, fmt.Errorf("no video AI config found: %w", err)
+	}
+
+	provider := strings.TrimSpace(config.Provider)
 	if provider == "" {
 		provider = "doubao"
+	}
+	model := ""
+	if len(config.Model) > 0 {
+		model = config.Model[0]
 	}
 
 	dramaID, _ := strconv.ParseUint(request.DramaID, 10, 32)
@@ -118,7 +128,7 @@ func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest) (*
 		ImageGenID:   request.ImageGenID,
 		Provider:     provider,
 		Prompt:       request.Prompt,
-		Model:        request.Model,
+		Model:        model,
 		Duration:     request.Duration,
 		FPS:          request.FPS,
 		AspectRatio:  request.AspectRatio,
@@ -199,7 +209,7 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 
 	s.db.Model(&videoGen).Update("status", models.VideoStatusProcessing)
 
-	client, err := s.getVideoClient(videoGen.Provider, videoGen.Model)
+	client, err := s.getVideoClient()
 	if err != nil {
 		s.log.Errorw("Failed to get video client", "error", err, "provider", videoGen.Provider, "model", videoGen.Model)
 		s.updateVideoGenError(videoGenID, err.Error())
@@ -278,7 +288,7 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 			"task_id": result.TaskID,
 			"status":  models.VideoStatusProcessing,
 		})
-		go s.pollTaskStatus(videoGenID, result.TaskID, videoGen.Provider, videoGen.Model)
+		go s.pollTaskStatus(videoGenID, result.TaskID)
 		return
 	}
 
@@ -290,8 +300,8 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 	s.updateVideoGenError(videoGenID, "no task ID or video URL returned")
 }
 
-func (s *VideoGenerationService) pollTaskStatus(videoGenID uint, taskID string, provider string, model string) {
-	client, err := s.getVideoClient(provider, model)
+func (s *VideoGenerationService) pollTaskStatus(videoGenID uint, taskID string) {
+	client, err := s.getVideoClient()
 	if err != nil {
 		s.log.Errorw("Failed to get video client for polling", "error", err)
 		s.updateVideoGenError(videoGenID, "failed to get video client")
@@ -447,32 +457,17 @@ func (s *VideoGenerationService) updateVideoGenError(videoGenID uint, errorMsg s
 	}
 }
 
-func (s *VideoGenerationService) getVideoClient(provider string, modelName string) (video.VideoClient, error) {
-	// 根据模型名称获取AI配置
-	var config *models.AIServiceConfig
-	var err error
-
-	if modelName != "" {
-		config, err = s.aiService.GetConfigForModel("video", modelName)
-		if err != nil {
-			s.log.Warnw("Failed to get config for model, using default", "model", modelName, "error", err)
-			config, err = s.aiService.GetDefaultConfig("video")
-			if err != nil {
-				return nil, fmt.Errorf("no video AI config found: %w", err)
-			}
-		}
-	} else {
-		config, err = s.aiService.GetDefaultConfig("video")
-		if err != nil {
-			return nil, fmt.Errorf("no video AI config found: %w", err)
-		}
+func (s *VideoGenerationService) getVideoClient() (video.VideoClient, error) {
+	config, err := s.aiService.GetDefaultConfig("video")
+	if err != nil {
+		return nil, fmt.Errorf("no video AI config found: %w", err)
 	}
 
 	// 使用配置中的信息创建客户端
 	baseURL := config.BaseURL
 	apiKey := config.APIKey
-	model := modelName
-	if model == "" && len(config.Model) > 0 {
+	model := ""
+	if len(config.Model) > 0 {
 		model = config.Model[0]
 	}
 
@@ -499,7 +494,7 @@ func (s *VideoGenerationService) getVideoClient(provider string, modelName strin
 	case "minimax":
 		return video.NewMinimaxClient(baseURL, apiKey, model), nil
 	default:
-		return nil, fmt.Errorf("unsupported video provider: %s", provider)
+		return nil, fmt.Errorf("unsupported video provider: %s", config.Provider)
 	}
 }
 
@@ -657,7 +652,7 @@ func (s *VideoGenerationService) RecoverPendingTasks() {
 	s.log.Infow("Recovering pending video generation tasks", "count", len(pendingVideos))
 
 	for _, videoGen := range pendingVideos {
-		go s.pollTaskStatus(videoGen.ID, *videoGen.TaskID, videoGen.Provider, videoGen.Model)
+		go s.pollTaskStatus(videoGen.ID, *videoGen.TaskID)
 	}
 }
 
@@ -724,7 +719,6 @@ func (s *VideoGenerationService) GenerateVideoFromImage(imageGenID uint) (*model
 		ImageGenID:   &imageGenID,
 		ImageURL:     *imageGen.ImageURL,
 		Prompt:       imageGen.Prompt,
-		Provider:     "doubao",
 		Duration:     duration,
 	}
 

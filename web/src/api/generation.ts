@@ -8,8 +8,8 @@ export const generationAPI = {
     return request.post<{ task_id: string; status: string; message: string }>('/generation/characters', data)
   },
 
-  generateStoryboard(episodeId: string, model?: string) {
-    return request.post<{ task_id: string; status: string; message: string }>(`/episodes/${episodeId}/storyboards`, { model })
+  generateStoryboard(episodeId: string) {
+    return request.post<{ task_id: string; status: string; message: string }>(`/episodes/${episodeId}/storyboards`)
   },
 
   getTaskStatus(taskId: string) {

@@ -4,7 +4,6 @@ export interface GenerateCharactersRequest {
   outline?: string
   count?: number
   temperature?: number
-  model?: string  // 指定使用的文本模型
 }
 
 export interface ParseScriptRequest {

@@ -93,15 +93,6 @@ func (h *ImageGenerationHandler) GetBackgroundsForEpisode(c *gin.Context) {
 func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
 	episodeID := c.Param("episode_id")
 
-	// 接收可选的 model 参数
-	var req struct {
-		Model string `json:"model"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// 如果没有提供body或者解析失败，使用空字符串（使用默认模型）
-		req.Model = ""
-	}
-
 	// 创建异步任务
 	task, err := h.taskService.CreateTask("background_extraction", episodeID)
 	if err != nil {
@@ -111,7 +102,7 @@ func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
 	}
 
 	// 启动后台goroutine处理
-	go h.processBackgroundExtraction(task.ID, episodeID, req.Model)
+	go h.processBackgroundExtraction(task.ID, episodeID)
 
 	// 立即返回任务ID
 	response.Success(c, gin.H{
@@ -122,8 +113,8 @@ func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
 }
 
 // processBackgroundExtraction 后台处理场景提取
-func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID, model string) {
-	h.log.Infow("Starting background extraction", "task_id", taskID, "episode_id", episodeID, "model", model)
+func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID string) {
+	h.log.Infow("Starting background extraction", "task_id", taskID, "episode_id", episodeID)
 
 	// 更新任务状态为处理中
 	if err := h.taskService.UpdateTaskStatus(taskID, "processing", 10, "开始提取场景..."); err != nil {
@@ -131,7 +122,7 @@ func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID, 
 	}
 
 	// 调用实际的提取逻辑
-	backgrounds, err := h.imageService.ExtractBackgroundsForEpisode(episodeID, model)
+	backgrounds, err := h.imageService.ExtractBackgroundsForEpisode(episodeID)
 	if err != nil {
 		h.log.Errorw("Failed to extract backgrounds", "error", err, "task_id", taskID)
 		if updateErr := h.taskService.UpdateTaskError(taskID, err); updateErr != nil {

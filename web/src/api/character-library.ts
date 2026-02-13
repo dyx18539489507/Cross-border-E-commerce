@@ -78,17 +78,14 @@ export const characterLibraryAPI = {
   },
 
   // AI生成角色形象
-  generateCharacterImage(characterId: string, model?: string) {
-    return request.post<{ image_url?: string; image_generation?: { id: number } }>(`/characters/${characterId}/generate-image`, {
-      model
-    })
+  generateCharacterImage(characterId: string) {
+    return request.post<{ image_url?: string; image_generation?: { id: number } }>(`/characters/${characterId}/generate-image`)
   },
 
   // 批量生成角色形象
-  batchGenerateCharacterImages(characterIds: string[], model?: string) {
+  batchGenerateCharacterImages(characterIds: string[]) {
     return request.post<{ message: string; count: number }>('/characters/batch-generate-images', {
-      character_ids: characterIds,
-      model
+      character_ids: characterIds
     })
   },
 

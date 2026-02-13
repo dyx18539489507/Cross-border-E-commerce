@@ -340,7 +340,6 @@ func (s *StoryboardCompositionService) UpdateScene(sceneID string, req *UpdateSc
 type GenerateSceneImageRequest struct {
 	SceneID uint   `json:"scene_id"`
 	Prompt  string `json:"prompt"`
-	Model   string `json:"model"`
 }
 
 func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImageRequest) (*models.ImageGeneration, error) {
@@ -387,7 +386,6 @@ func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImag
 			DramaID:   fmt.Sprintf("%d", scene.DramaID),
 			ImageType: string(models.ImageTypeScene),
 			Prompt:    prompt,
-			Model:     req.Model,   // 使用用户指定的模型
 			Size:      "2560x1440", // 3,686,400像素，满足doubao模型最低要求（16:9比例）
 			Quality:   "standard",
 		}

@@ -27,11 +27,7 @@
             </div>
           </div>
         </template>
-        <template #right>
-          <!-- <el-button :icon="Setting" @click="showModelConfigDialog" :title="$t('workflow.modelConfig')">
-            图文配置
-          </el-button> -->
-        </template>
+        <template #right />
       </AppHeader>
 
     <!-- 阶段 0: 章节内容 + 提取角色场景 -->
@@ -251,7 +247,7 @@
                 
                 <div class="card-image-container">
                   <div v-if="char.image_url" class="char-image">
-                    <el-image :src="char.image_url" fit="contain" />
+                    <el-image :src="fixImageUrl(char.image_url)" fit="contain" />
                   </div>
                   <div v-else-if="char.image_generation_status === 'pending' || char.image_generation_status === 'processing' || generatingCharacterImages[char.id]" class="char-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -374,7 +370,7 @@
 
                 <div class="card-image-container">
                   <div v-if="scene.image_url" class="scene-image">
-                    <el-image :src="scene.image_url" fit="contain" />
+                    <el-image :src="fixImageUrl(scene.image_url)" fit="contain" />
                   </div>
                   <div v-else-if="scene.image_generation_status === 'pending' || scene.image_generation_status === 'processing' || generatingSceneImages[scene.id]" class="scene-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -760,56 +756,13 @@
           class="library-item"
           @click="selectLibraryItem(item)"
         >
-          <el-image :src="item.image_url" fit="cover" />
+          <el-image :src="fixImageUrl(item.image_url)" fit="cover" />
           <div class="library-item-name">{{ item.name }}</div>
         </div>
       </div>
       <div v-if="libraryItems.length === 0" class="empty-library">
         <el-empty :description="$t('workflow.emptyLibrary')" />
       </div>
-    </el-dialog>
-
-    <!-- AI模型配置对话框 -->
-    <el-dialog 
-      v-model="modelConfigDialogVisible" 
-:title="$t('workflow.aiModelConfig')" 
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <el-form label-width="120px">
-        <el-form-item :label="$t('workflow.textGenModel')">
-          <el-select v-model="selectedTextModel" :placeholder="$t('workflow.selectTextModel')" style="width: 100%">
-            <el-option 
-              v-for="model in textModels" 
-              :key="model.modelName" 
-              :label="model.modelName"
-              :value="model.modelName"
-            />
-          </el-select>
-          <div class="model-tip">
-            {{ $t('workflow.textModelTip') }}
-          </div>
-        </el-form-item>
-
-        <el-form-item :label="$t('workflow.imageGenModel')">
-          <el-select v-model="selectedImageModel" :placeholder="$t('workflow.selectImageModel')" style="width: 100%">
-            <el-option 
-              v-for="model in imageModels" 
-              :key="model.modelName" 
-              :label="model.modelName"
-              :value="model.modelName"
-            />
-          </el-select>
-          <div class="model-tip">
-            {{ $t('workflow.modelConfigTip') }}
-          </div>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="modelConfigDialogVisible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="saveModelConfig">{{ $t('common.saveConfig') }}</el-button>
-      </template>
     </el-dialog>
 
     <!-- 图片上传对话框 -->
@@ -1143,7 +1096,6 @@ import {
   VideoPlay,
   VideoPause,
   FolderAdd,
-  Setting,
   Loading,
   WarningFilled,
   VideoCamera
@@ -1151,8 +1103,6 @@ import {
 import { dramaAPI } from '@/api/drama'
 import { generationAPI } from '@/api/generation'
 import { characterLibraryAPI } from '@/api/character-library'
-import { aiAPI } from '@/api/ai'
-import type { AIServiceConfig } from '@/types/ai'
 import { imageAPI } from '@/api/image'
 import { voiceLibraryAPI } from '@/api/voice-library'
 import type { VoiceLibraryItem } from '@/api/voice-library'
@@ -1242,6 +1192,21 @@ const toPlayableMediaUrl = (url: string): string => {
   return value
 }
 
+const fixImageUrl = (url?: string | null): string => {
+  const value = (url || '').trim()
+  if (!value) return ''
+  if (value.startsWith('blob:') || value.startsWith('data:')) return value
+  if (value.startsWith('/api/v1/media/proxy')) return value
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return `/api/v1/media/proxy?url=${encodeURIComponent(value)}`
+  }
+  if (value.startsWith('/static/')) return value
+  if (value.startsWith('/data/')) return `/static${value}`
+  if (value.startsWith('data/')) return `/static/${value}`
+  if (value.startsWith('/')) return value
+  return `/static/${value}`
+}
+
 const digitalHumanPlayableResultUrl = computed(() => {
   return toPlayableMediaUrl(digitalHumanResultUrl.value)
 })
@@ -1256,7 +1221,6 @@ const selectAllScenes = ref(false)
 const promptDialogVisible = ref(false)
 const libraryDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
-const modelConfigDialogVisible = ref(false)
 const currentEditItem = ref<any>({ name: '' })
 const currentEditType = ref<'character' | 'scene'>('character')
 const editPrompt = ref('')
@@ -1289,19 +1253,6 @@ onBeforeUnmount(() => {
   document.body.classList.remove('digital-human-dialog-open')
   document.documentElement.classList.remove('digital-human-dialog-open')
 })
-
-// AI模型配置
-interface ModelOption {
-  modelName: string
-  configName: string
-  configId: number
-  priority: number
-}
-
-const textModels = ref<ModelOption[]>([])
-const imageModels = ref<ModelOption[]>([])
-const selectedTextModel = ref<string>('')
-const selectedImageModel = ref<string>('')
 
 const hasScript = computed(() => {
   const currentEp = currentEpisode.value
@@ -1427,112 +1378,6 @@ const goBack = () => {
   router.replace(`/dramas/${dramaId}`)
 }
 
-// 加载AI模型配置
-const loadAIConfigs = async () => {
-  try {
-    const [textList, imageList] = await Promise.all([
-      aiAPI.list('text'),
-      aiAPI.list('image')
-    ])
-    
-    // 只使用激活的配置
-    const activeTextList = textList.filter(c => c.is_active)
-    const activeImageList = imageList.filter(c => c.is_active)
-    
-    // 展开模型列表并去重（保留优先级最高的）
-    const allTextModels = activeTextList.flatMap(config => {
-      const models = Array.isArray(config.model) ? config.model : [config.model]
-      return models.map(modelName => ({
-        modelName,
-        configName: config.name,
-        configId: config.id,
-        priority: config.priority || 0
-      }))
-    }).sort((a, b) => b.priority - a.priority)
-    
-    // 按模型名称去重，保留优先级最高的（已排序，第一个就是优先级最高的）
-    const textModelMap = new Map<string, ModelOption>()
-    allTextModels.forEach(model => {
-      if (!textModelMap.has(model.modelName)) {
-        textModelMap.set(model.modelName, model)
-      }
-    })
-    textModels.value = Array.from(textModelMap.values())
-    
-    const allImageModels = activeImageList.flatMap(config => {
-      const models = Array.isArray(config.model) ? config.model : [config.model]
-      return models.map(modelName => ({
-        modelName,
-        configName: config.name,
-        configId: config.id,
-        priority: config.priority || 0
-      }))
-    }).sort((a, b) => b.priority - a.priority)
-    
-    // 按模型名称去重，保留优先级最高的
-    const imageModelMap = new Map<string, ModelOption>()
-    allImageModels.forEach(model => {
-      if (!imageModelMap.has(model.modelName)) {
-        imageModelMap.set(model.modelName, model)
-      }
-    })
-    imageModels.value = Array.from(imageModelMap.values())
-    
-    // 设置默认选择（优先级最高的）
-    if (textModels.value.length > 0 && !selectedTextModel.value) {
-      selectedTextModel.value = textModels.value[0].modelName
-    }
-    if (imageModels.value.length > 0 && !selectedImageModel.value) {
-      selectedImageModel.value = imageModels.value[0].modelName
-    }
-    
-    // 验证已选择的模型是否还在可用列表中，如果不在则重置为默认值
-    const availableTextModelNames = textModels.value.map(m => m.modelName)
-    const availableImageModelNames = imageModels.value.map(m => m.modelName)
-    
-    if (selectedTextModel.value && !availableTextModelNames.includes(selectedTextModel.value)) {
-      console.warn(`已选择的文本模型 ${selectedTextModel.value} 不在可用列表中，重置为默认值`)
-      selectedTextModel.value = textModels.value.length > 0 ? textModels.value[0].modelName : ''
-      // 更新 localStorage
-      if (selectedTextModel.value) {
-        localStorage.setItem(`ai_text_model_${dramaId}`, selectedTextModel.value)
-      }
-    }
-    
-    if (selectedImageModel.value && !availableImageModelNames.includes(selectedImageModel.value)) {
-      console.warn(`已选择的图片模型 ${selectedImageModel.value} 不在可用列表中，重置为默认值`)
-      selectedImageModel.value = imageModels.value.length > 0 ? imageModels.value[0].modelName : ''
-      // 更新 localStorage
-      if (selectedImageModel.value) {
-        localStorage.setItem(`ai_image_model_${dramaId}`, selectedImageModel.value)
-      }
-    }
-  } catch (error: any) {
-    console.error('加载AI配置失败:', error)
-  }
-}
-
-// 显示模型配置对话框
-const showModelConfigDialog = () => {
-  modelConfigDialogVisible.value = true
-  loadAIConfigs()
-}
-
-// 保存模型配置
-const saveModelConfig = () => {
-  if (!selectedTextModel.value || !selectedImageModel.value) {
-    ElMessage.warning($t('workflow.pleaseSelectModels'))
-    return
-  }
-  
-  // 保存模型名称到localStorage
-  localStorage.setItem(`ai_text_model_${dramaId}`, selectedTextModel.value)
-  localStorage.setItem(`ai_image_model_${dramaId}`, selectedImageModel.value)
-  
-  ElMessage.success($t('workflow.modelConfigSaved'))
-  modelConfigDialogVisible.value = false
-}
-
 const nextStep = () => {
   if (currentStep.value < 3) {
     currentStep.value++
@@ -1542,19 +1387,6 @@ const nextStep = () => {
 const prevStep = () => {
   if (currentStep.value > 0) {
     currentStep.value--
-  }
-}
-
-// 从localStorage加载已保存的模型配置
-const loadSavedModelConfig = () => {
-  const savedTextModel = localStorage.getItem(`ai_text_model_${dramaId}`)
-  const savedImageModel = localStorage.getItem(`ai_image_model_${dramaId}`)
-  
-  if (savedTextModel) {
-    selectedTextModel.value = savedTextModel
-  }
-  if (savedImageModel) {
-    selectedImageModel.value = savedImageModel
   }
 }
 
@@ -1588,6 +1420,8 @@ watch(currentEpisode, (episode) => {
   }
 }, { immediate: true })
 
+const activeImagePolls = new Set<number>()
+
 // 检查并启动轮询
 const checkAndStartPolling = async () => {
   if (!currentEpisode.value) return
@@ -1607,13 +1441,12 @@ const checkAndStartPolling = async () => {
           img.character_id === char.id && (img.status === 'pending' || img.status === 'processing')
         )
         
-        if (charImageGen) {
+        if (charImageGen && !activeImagePolls.has(charImageGen.id)) {
           // 启动轮询
           generatingCharacterImages.value[char.id] = true
           pollImageStatus(charImageGen.id, async () => {
             await loadDramaData()
-            ElMessage.success(`${char.name}的图片生成完成！`)
-          }).finally(() => {
+          }, { silent: true }).finally(() => {
             generatingCharacterImages.value[char.id] = false
           })
         }
@@ -1638,13 +1471,12 @@ const checkAndStartPolling = async () => {
           img.scene_id === scene.id && (img.status === 'pending' || img.status === 'processing')
         )
         
-        if (sceneImageGen) {
+        if (sceneImageGen && !activeImagePolls.has(sceneImageGen.id)) {
           // 启动轮询
           generatingSceneImages.value[scene.id] = true
           pollImageStatus(sceneImageGen.id, async () => {
             await loadDramaData()
-            ElMessage.success(`${scene.location}的图片生成完成！`)
-          }).finally(() => {
+          }, { silent: true }).finally(() => {
             generatingSceneImages.value[scene.id] = false
           })
         }
@@ -2146,34 +1978,52 @@ const handleExtractCharactersAndBackgrounds = async () => {
 }
 
 // 轮询检查图片生成状态
-const pollImageStatus = async (imageGenId: number, onComplete: () => Promise<void>) => {
+const pollImageStatus = async (
+  imageGenId: number,
+  onComplete: () => Promise<void>,
+  options: { silent?: boolean } = {}
+) => {
+  const { silent = false } = options
+  if (activeImagePolls.has(imageGenId)) return false
+  activeImagePolls.add(imageGenId)
+
   const maxAttempts = 100 // 最多轮询100次
   const pollInterval = 6000 // 每6秒轮询一次
-  
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await new Promise(resolve => setTimeout(resolve, pollInterval))
-      
-      const imageGen = await imageAPI.getImage(imageGenId)
-      
-      if (imageGen.status === 'completed') {
-        // 生成成功
-        await onComplete()
-        return
-      } else if (imageGen.status === 'failed') {
-        // 生成失败
-        ElMessage.error(`图片生成失败: ${imageGen.error_msg || '未知错误'}`)
-        return
+
+  try {
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+
+        const imageGen = await imageAPI.getImage(imageGenId)
+
+        if (imageGen.status === 'completed') {
+          // 生成成功
+          await onComplete()
+          return true
+        }
+        if (imageGen.status === 'failed') {
+          // 生成失败
+          if (!silent) {
+            ElMessage.error(`图片生成失败: ${imageGen.error_msg || '未知错误'}`)
+          }
+          return false
+        }
+        // 如果是pending或processing，继续轮询
+      } catch (error: any) {
+        console.error('[轮询] 检查图片状态失败:', error)
+        // 继续轮询，不中断
       }
-      // 如果是pending或processing，继续轮询
-    } catch (error: any) {
-      console.error('[轮询] 检查图片状态失败:', error)
-      // 继续轮询，不中断
     }
+
+    // 超时
+    if (!silent) {
+      ElMessage.warning('图片生成超时，请稍后刷新页面查看结果')
+    }
+    return false
+  } finally {
+    activeImagePolls.delete(imageGenId)
   }
-  
-  // 超时
-  ElMessage.warning('图片生成超时，请稍后刷新页面查看结果')
 }
 
 const extractCharactersAndBackgrounds = async () => {
@@ -2193,10 +2043,9 @@ const extractCharactersAndBackgrounds = async () => {
         drama_id: dramaId.toString(),
         episode_id: Number(episodeId),
         outline: currentEpisode.value.script_content || '',
-        count: 0,
-        model: selectedTextModel.value  // 传递用户选择的文本模型
+        count: 0
       }),
-      dramaAPI.extractBackgrounds(episodeId.toString(), selectedTextModel.value)  // 传递用户选择的文本模型
+      dramaAPI.extractBackgrounds(episodeId.toString())
     ])
     
     ElMessage.success('任务已创建，正在后台处理...')
@@ -2268,28 +2117,38 @@ const pollExtractTask = async (taskId: string, type: 'character' | 'background')
 }
 
 
-const generateCharacterImage = async (characterId: number) => {
+const generateCharacterImage = async (characterId: number, options: { silent?: boolean } = {}) => {
+  const { silent = false } = options
   generatingCharacterImages.value[characterId] = true
   
   try {
-    // 获取用户选择的图片生成模型
-    const model = selectedImageModel.value || undefined
-    const response = await characterLibraryAPI.generateCharacterImage(characterId.toString(), model)
+    const response = await characterLibraryAPI.generateCharacterImage(characterId.toString())
     const imageGenId = response.image_generation?.id
     
     if (imageGenId) {
-      ElMessage.info('角色图片生成中，请稍候...')
+      if (!silent) {
+        ElMessage.info('角色图片生成中，请稍候...')
+      }
       // 轮询检查生成状态
-      await pollImageStatus(imageGenId, async () => {
+      const success = await pollImageStatus(imageGenId, async () => {
         await loadDramaData()
+      }, { silent })
+      if (success && !silent) {
         ElMessage.success('角色图片生成完成！')
-      })
+      }
+      return success
     } else {
-      ElMessage.success('角色图片生成已启动')
       await loadDramaData()
+      if (!silent) {
+        ElMessage.success('角色图片生成已启动')
+      }
+      return true
     }
   } catch (error: any) {
-    ElMessage.error(error.message || '生成失败')
+    if (!silent) {
+      ElMessage.error(error.message || '生成失败')
+    }
+    return false
   } finally {
     generatingCharacterImages.value[characterId] = false
   }
@@ -2316,54 +2175,99 @@ const batchGenerateCharacterImages = async () => {
     ElMessage.warning('请先选择要生成的角色')
     return
   }
-  
+
+  const targetCharacterIds = [...selectedCharacterIds.value]
+  targetCharacterIds.forEach(id => {
+    generatingCharacterImages.value[id] = true
+  })
+
   batchGeneratingCharacters.value = true
   try {
-    // 获取用户选择的图片生成模型
-    const model = selectedImageModel.value || undefined
-    
     // 使用批量生成API
     await characterLibraryAPI.batchGenerateCharacterImages(
-      selectedCharacterIds.value.map(id => id.toString()),
-      model
+      targetCharacterIds.map(id => id.toString())
     )
-    
-    ElMessage.success($t('workflow.batchTaskSubmitted'))
-    await loadDramaData()
+
+    const maxAttempts = 100
+    const pollInterval = 6000
+    let successCount = 0
+    let failedCount = 0
+
+    for (let i = 0; i < maxAttempts; i++) {
+      await loadDramaData()
+
+      successCount = 0
+      failedCount = 0
+      for (const id of targetCharacterIds) {
+        const char = currentEpisode.value?.characters?.find(item => Number(item.id) === Number(id))
+        if (char?.image_url) {
+          successCount++
+          continue
+        }
+        if (char?.image_generation_status === 'failed') {
+          failedCount++
+        }
+      }
+
+      if (successCount + failedCount === targetCharacterIds.length) {
+        break
+      }
+
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
+    }
+
+    if (failedCount === 0 && successCount === targetCharacterIds.length) {
+      ElMessage.success('角色图片全部生成成功')
+    } else {
+      ElMessage.warning(`角色图片批量生成完成：成功 ${successCount} 个，失败 ${targetCharacterIds.length - successCount} 个`)
+    }
   } catch (error: any) {
     ElMessage.error(error.message || $t('workflow.batchGenerateFailed'))
   } finally {
+    targetCharacterIds.forEach(id => {
+      generatingCharacterImages.value[id] = false
+    })
     batchGeneratingCharacters.value = false
   }
 }
 
-const generateSceneImage = async (sceneId: string) => {
-  generatingSceneImages.value[sceneId] = true
+const generateSceneImage = async (sceneId: string | number, options: { silent?: boolean } = {}) => {
+  const { silent = false } = options
+  const sceneKey = String(sceneId)
+  generatingSceneImages.value[sceneKey] = true
   
   try {
-    // 获取用户选择的图片生成模型
-    const model = selectedImageModel.value || undefined
     const response = await dramaAPI.generateSceneImage({ 
-      scene_id: parseInt(sceneId),
-      model
+      scene_id: parseInt(sceneKey, 10)
     })
     const imageGenId = response.image_generation?.id
     
     if (imageGenId) {
-      ElMessage.info($t('workflow.sceneImageGenerating'))
+      if (!silent) {
+        ElMessage.info($t('workflow.sceneImageGenerating'))
+      }
       // 轮询检查生成状态
-      await pollImageStatus(imageGenId, async () => {
+      const success = await pollImageStatus(imageGenId, async () => {
         await loadDramaData()
+      }, { silent })
+      if (success && !silent) {
         ElMessage.success($t('workflow.sceneImageComplete'))
-      })
+      }
+      return success
     } else {
-      ElMessage.success($t('workflow.sceneImageStarted'))
       await loadDramaData()
+      if (!silent) {
+        ElMessage.success($t('workflow.sceneImageStarted'))
+      }
+      return true
     }
   } catch (error: any) {
-    ElMessage.error(error.message || '生成失败')
+    if (!silent) {
+      ElMessage.error(error.message || '生成失败')
+    }
+    return false
   } finally {
-    generatingSceneImages.value[sceneId] = false
+    generatingSceneImages.value[sceneKey] = false
   }
 }
 
@@ -2375,16 +2279,17 @@ const batchGenerateSceneImages = async () => {
   
   batchGeneratingScenes.value = true
   try {
-    const promises = selectedSceneIds.value.map(sceneId => 
-      generateSceneImage(sceneId.toString())
+    const targetSceneIds = [...selectedSceneIds.value]
+    const promises = targetSceneIds.map(sceneId =>
+      generateSceneImage(sceneId, { silent: true })
     )
-    const results = await Promise.allSettled(promises)
-    
-    const successCount = results.filter(r => r.status === 'fulfilled').length
-    const failCount = results.filter(r => r.status === 'rejected').length
-    
+    const results = await Promise.all(promises)
+
+    const successCount = results.filter(Boolean).length
+    const failCount = results.length - successCount
+
     if (failCount === 0) {
-      ElMessage.success($t('workflow.batchCompleteSuccess', { count: successCount }))
+      ElMessage.success('场景图片全部生成成功')
     } else {
       ElMessage.warning($t('workflow.batchCompletePartial', { success: successCount, fail: failCount }))
     }
@@ -2444,7 +2349,7 @@ const generateShots = async () => {
     console.log('所有剧集列表:', drama.value?.episodes?.map(ep => ({ id: ep.id, episode_number: ep.episode_number, title: ep.title })))
     
     // 创建异步任务
-    const response = await generationAPI.generateStoryboard(episodeId, selectedTextModel.value)
+    const response = await generationAPI.generateStoryboard(episodeId)
     
     taskMessage.value = '生成分镜中'
     
@@ -2575,11 +2480,9 @@ const savePrompt = async () => {
       await dramaAPI.updateScenePrompt(currentEditItem.value.id.toString(), editPrompt.value)
       
       // 2. 生成场景图片
-      const model = selectedImageModel.value || undefined
       const response = await dramaAPI.generateSceneImage({ 
         scene_id: parseInt(currentEditItem.value.id),
-        prompt: editPrompt.value,
-        model
+        prompt: editPrompt.value
       })
       const imageGenId = response.image_generation?.id
       
@@ -2780,8 +2683,6 @@ watch(currentStep, (newStep) => {
 
 onMounted(() => {
   loadDramaData()
-  loadSavedModelConfig()
-  loadAIConfigs()
 })
 </script>
 
@@ -3489,12 +3390,6 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
-}
-
-.model-tip {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 .fixed-card {
