@@ -63,7 +63,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	settingsHandler := handlers2.NewSettingsHandler(cfg, log)
 	musicHandler := handlers2.NewMusicHandler(log)
 	mediaHandler := handlers2.NewMediaHandler(log)
-	sfxHandler := handlers2.NewSfxHandler(cfg)
+	sfxHandler := handlers2.NewSfxHandler(cfg, log)
 
 	api := r.Group("/api/v1")
 	{

@@ -46,11 +46,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	if err != nil {
 		log.Fatalw("Failed to create upload handler", "error", err)
 	}
-	digitalHumanHandler, err := handlers2.NewDigitalHumanHandler(cfg, log)
+	digitalHumanHandler, err := handlers2.NewDigitalHumanHandler(db, cfg, log)
 	if err != nil {
 		log.Fatalw("Failed to create digital human handler", "error", err)
 	}
-	voiceLibraryHandler, err := handlers2.NewVoiceLibraryHandler(cfg, log)
+	voiceLibraryHandler, err := handlers2.NewVoiceLibraryHandler(cfg, db, log)
 	if err != nil {
 		log.Fatalw("Failed to create voice library handler", "error", err)
 	}
@@ -62,6 +62,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	audioExtractionHandler := handlers2.NewAudioExtractionHandler(log, cfg.Storage.LocalPath)
 	settingsHandler := handlers2.NewSettingsHandler(cfg, log)
 	musicHandler := handlers2.NewMusicHandler(log)
+	mediaHandler := handlers2.NewMediaHandler(log)
 	sfxHandler := handlers2.NewSFXHandler(cfg, log)
 
 	api := r.Group("/api/v1")
@@ -136,6 +137,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		voiceLibrary := api.Group("/voice-library")
 		{
 			voiceLibrary.GET("", voiceLibraryHandler.List)
+			voiceLibrary.POST("/custom", voiceLibraryHandler.CreateCustom)
+			voiceLibrary.GET("/custom/:id/status", voiceLibraryHandler.GetCustomStatus)
 		}
 
 		// 分镜头路由
@@ -227,6 +230,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			music.GET("/netease/stream", musicHandler.StreamNeteaseSong)
 			music.GET("/search", musicHandler.SearchAll)
 			music.GET("/stream", musicHandler.StreamMusic)
+		}
+
+		media := api.Group("/media")
+		{
+			media.GET("/proxy", mediaHandler.Proxy)
 		}
 
 		sfx := api.Group("/sfx")

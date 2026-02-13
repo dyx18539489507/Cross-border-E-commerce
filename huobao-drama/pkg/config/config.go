@@ -7,12 +7,13 @@ import (
 )
 
 type Config struct {
-	App      AppConfig      `mapstructure:"app"`
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Storage  StorageConfig  `mapstructure:"storage"`
-	AI       AIConfig       `mapstructure:"ai"`
+	App       AppConfig       `mapstructure:"app"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Storage   StorageConfig   `mapstructure:"storage"`
+	AI        AIConfig        `mapstructure:"ai"`
 	Volcengine VolcengineConfig `mapstructure:"volcengine"`
+	SFX       SFXConfig       `mapstructure:"sfx"`
 }
 
 type AppConfig struct {
@@ -61,6 +62,24 @@ type VolcengineConfig struct {
 	Region          string `mapstructure:"region"`
 	Service         string `mapstructure:"service"`
 	VisualHost      string `mapstructure:"visual_host"`
+}
+
+type SFXConfig struct {
+	DefaultLimit   int              `mapstructure:"default_limit"`
+	RequestTimeout int              `mapstructure:"request_timeout"`
+	Freesound      FreesoundConfig  `mapstructure:"freesound"`
+	Pixabay        PixabaySFXConfig `mapstructure:"pixabay"`
+}
+
+type FreesoundConfig struct {
+	ClientID string `mapstructure:"client_id"`
+	APIKey   string `mapstructure:"api_key"`
+	BaseURL  string `mapstructure:"base_url"`
+}
+
+type PixabaySFXConfig struct {
+	APIKey  string `mapstructure:"api_key"`
+	BaseURL string `mapstructure:"base_url"`
 }
 
 func LoadConfig() (*Config, error) {

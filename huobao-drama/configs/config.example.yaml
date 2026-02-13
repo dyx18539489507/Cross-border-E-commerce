@@ -27,3 +27,14 @@ ai:
   default_text_provider: "openai"
   default_image_provider: "openai"
   default_video_provider: "doubao"
+
+sfx:
+  default_limit: 20
+  request_timeout: 30
+  freesound:
+    client_id: ""
+    api_key: ""
+    base_url: "https://freesound.org/apiv2"
+  pixabay:
+    api_key: ""
+    base_url: "https://pixabay.com"

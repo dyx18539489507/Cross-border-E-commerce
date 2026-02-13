@@ -46,6 +46,9 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 		defer audioFile.Close()
 	}
 
+	speechText := strings.TrimSpace(c.PostForm("speech_text"))
+	motionText := strings.TrimSpace(c.PostForm("motion_text"))
+	voiceType := strings.TrimSpace(c.PostForm("voice_type"))
 	audioURL := strings.TrimSpace(c.PostForm("audio_url"))
 
 	imageContentType := imageHeader.Header.Get("Content-Type")
@@ -100,11 +103,18 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 			return
 		}
 	} else {
-		if audioURL == "" {
-			response.BadRequest(c, "请上传音频或选择音色")
+		if audioURL == "" && speechText == "" {
+			response.BadRequest(c, "请上传音频，或填写说话内容并选择音色")
 			return
 		}
-		if !strings.HasPrefix(audioURL, "http://") && !strings.HasPrefix(audioURL, "https://") {
+		if speechText != "" && voiceType == "" {
+			response.BadRequest(c, "填写说话内容时请先选择音色")
+			return
+		}
+		if speechText != "" {
+			// 当提供了文案时，强制走文本驱动语音，避免 audio_url 覆盖文案。
+			audioURL = ""
+		} else if audioURL != "" && !strings.HasPrefix(audioURL, "http://") && !strings.HasPrefix(audioURL, "https://") {
 			response.BadRequest(c, "audio_url 必须是 http/https URL")
 			return
 		}
@@ -127,20 +137,26 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 		audioURL = uploadedAudioURL
 	}
 
-	speechText := strings.TrimSpace(c.PostForm("speech_text"))
-	motionText := strings.TrimSpace(c.PostForm("motion_text"))
-
 	result, err := h.service.Generate(c.Request.Context(), &services.DigitalHumanRequest{
 		ImageURL:    uploadedImageURL,
 		ImageBase64: imageBase64,
-		AudioURL:   audioURL,
-		SpeechText: speechText,
-		MotionText: motionText,
+		AudioURL:    audioURL,
+		VoiceType:   voiceType,
+		SpeechText:  speechText,
+		MotionText:  motionText,
 	})
 	if err != nil {
 		h.log.Errorw("Failed to generate digital human video", "error", err)
 		msg := err.Error()
 		switch {
+		case strings.Contains(msg, "audio_url or speech_text is required"):
+			response.BadRequest(c, "请上传音频，或填写说话内容并选择音色")
+		case strings.Contains(msg, "voice_type is required when speech_text is provided"):
+			response.BadRequest(c, "填写说话内容时请先选择音色")
+		case speechText != "" && (strings.Contains(msg, "\"code\":50215") || strings.Contains(msg, "Input invalid for this service")):
+			response.Error(c, 400, "DIGITAL_HUMAN_TTS_NOT_ENABLED", "当前模型仅支持音频驱动，暂不支持直接文本配音。请上传音频后重试")
+		case strings.Contains(msg, "Invalid parameter: AppID") || strings.Contains(msg, "UnauthorizedRequest.AppID"):
+			response.Error(c, 400, "DIGITAL_HUMAN_TTS_NOT_ENABLED", "当前火山账号未开通文本配音能力，请先上传音频，或联系管理员开通后再试")
 		case strings.Contains(msg, "\"code\":50218") || strings.Contains(msg, "Resource exists risk"):
 			// Volcengine content risk control.
 			response.BadRequest(c, "内容安全审核未通过，请更换角色图片/文案/音色后重试")

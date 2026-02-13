@@ -24,7 +24,7 @@ type VolcEngineImageRequest struct {
 	Image                     []string `json:"image,omitempty"`
 	SequentialImageGeneration string   `json:"sequential_image_generation,omitempty"`
 	Size                      string   `json:"size,omitempty"`
-	Watermark                 bool     `json:"watermark,omitempty"`
+	Watermark                 bool     `json:"watermark"`
 }
 
 type VolcEngineImageResponse struct {

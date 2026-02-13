@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ func (h *MusicHandler) SearchNetease(c *gin.Context) {
 	req.Header.Set("Referer", "https://music.163.com")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		h.log.Warnw("Netease search request failed", "error", err)
@@ -95,23 +96,62 @@ func (h *MusicHandler) SearchAll(c *gin.Context) {
 	page := c.DefaultQuery("page", "1")
 	pageSize := c.DefaultQuery("page_size", "20")
 
-	items := make([]MusicSearchItem, 0)
-	total := 0
-
-	// 1) Netease search
-	if neteaseItems, neteaseTotal, err := h.searchNeteaseItems(keywords, page, pageSize); err == nil {
-		items = append(items, neteaseItems...)
-		total += neteaseTotal
-	} else {
-		h.log.Warnw("Netease search failed", "error", err)
+	type searchResult struct {
+		source string
+		items  []MusicSearchItem
+		total  int
+		err    error
 	}
 
-	// 2) music-dl search (qq/kugou/migu/baidu)
-	if dlItems, dlTotal, err := h.searchMusicDLItems(keywords, page, pageSize); err == nil {
-		items = append(items, dlItems...)
-		total += dlTotal
-	} else {
-		h.log.Warnw("music-dl search failed", "error", err)
+	resultsCh := make(chan searchResult, 2)
+	go func() {
+		items, total, err := h.searchNeteaseItems(keywords, page, pageSize)
+		resultsCh <- searchResult{source: "netease", items: items, total: total, err: err}
+	}()
+	go func() {
+		items, total, err := h.searchMusicDLItems(keywords, page, pageSize)
+		resultsCh <- searchResult{source: "music_dl", items: items, total: total, err: err}
+	}()
+
+	var neteaseRes searchResult
+	var musicDLRes searchResult
+	for i := 0; i < 2; i++ {
+		res := <-resultsCh
+		if res.source == "netease" {
+			neteaseRes = res
+		} else {
+			musicDLRes = res
+		}
+	}
+
+	if neteaseRes.err != nil {
+		h.log.Warnw("Netease search failed", "error", neteaseRes.err)
+	}
+	if musicDLRes.err != nil {
+		h.log.Warnw("music-dl search failed", "error", musicDLRes.err)
+	}
+
+	items := make([]MusicSearchItem, 0, len(neteaseRes.items)+len(musicDLRes.items))
+	seen := make(map[string]struct{})
+	appendUnique := func(list []MusicSearchItem) {
+		for _, item := range list {
+			key := strings.ToLower(strings.Join([]string{item.Source, item.ID, item.Mid, item.Hash, item.Title, item.Artist}, "|"))
+			if key == "" {
+				key = strings.ToLower(strings.Join([]string{item.Source, item.Title, item.Artist}, "|"))
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			items = append(items, item)
+		}
+	}
+	appendUnique(neteaseRes.items)
+	appendUnique(musicDLRes.items)
+
+	total := neteaseRes.total + musicDLRes.total
+	if total < len(items) {
+		total = len(items)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -139,7 +179,7 @@ func (h *MusicHandler) searchNeteaseItems(keyword, page, pageSize string) ([]Mus
 	req.Header.Set("Referer", "https://music.163.com")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, err
@@ -192,18 +232,23 @@ func (h *MusicHandler) searchNeteaseItems(keyword, page, pageSize string) ([]Mus
 }
 
 func (h *MusicHandler) searchMusicDLItems(keyword, page, pageSize string) ([]MusicSearchItem, int, error) {
-	return h.searchMusicDLItemsWithSources(keyword, page, pageSize, "qq,kugou,migu,baidu")
+	return h.searchMusicDLItemsWithSources(keyword, page, pageSize, "qq,kugou,migu,baidu", 0)
 }
 
-func (h *MusicHandler) searchMusicDLItemsWithSources(keyword, page, pageSize, sources string) ([]MusicSearchItem, int, error) {
+func (h *MusicHandler) searchMusicDLItemsWithSources(keyword, page, pageSize, sources string, resolveLimit int) ([]MusicSearchItem, int, error) {
 	cwd, _ := os.Getwd()
 	script := filepath.Join(cwd, "scripts", "music_dl_search.py")
 	pythonPath := getPythonPath(cwd)
-	cmd := exec.Command(pythonPath, script, keyword, page, pageSize, sources)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, pythonPath, script, keyword, page, pageSize, sources, strconv.Itoa(resolveLimit))
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, 0, fmt.Errorf("music-dl search timeout: %w", err)
+		}
 		return nil, 0, fmt.Errorf("music-dl search error: %w: %s", err, out.String())
 	}
 	var resp MusicSearchResponse
@@ -271,7 +316,7 @@ func (h *MusicHandler) StreamNeteaseSong(c *gin.Context) {
 	}
 	req.Header.Set("Referer", "https://music.163.com")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err == nil && resp != nil {
 		defer resp.Body.Close()
@@ -342,7 +387,7 @@ func (h *MusicHandler) StreamMusic(c *gin.Context) {
 			keyword = strings.TrimSpace(strings.TrimSpace(payload["title"]) + " " + strings.TrimSpace(payload["artist"]))
 		}
 		if keyword != "" {
-			if items, _, err := h.searchMusicDLItemsWithSources(keyword, "1", "20", "kugou"); err == nil {
+			if items, _, err := h.searchMusicDLItemsWithSources(keyword, "1", "20", "qq,kugou,migu,baidu,netease", 8); err == nil {
 				for _, item := range items {
 					if item.SongURL == "" {
 						continue
@@ -409,7 +454,7 @@ func (h *MusicHandler) proxyStream(c *gin.Context, target string) bool {
 		req.Header.Set("Range", rangeHeader)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 45 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil || resp == nil {
 		h.log.Warnw("Netease stream request failed", "error", err)

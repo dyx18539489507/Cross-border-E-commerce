@@ -90,6 +90,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// 资源管理
 		&models.Asset{},
 		&models.CharacterLibrary{},
+		&models.CustomVoice{},
 
 		// 任务管理
 		&models.AsyncTask{},

@@ -39,6 +39,7 @@ def main():
     page = int(sys.argv[2])
     page_size = int(sys.argv[3])
     sources = [s for s in sys.argv[4].split(",") if s]
+    resolve_limit = int(sys.argv[5]) if len(sys.argv) > 5 else 0
 
     # music-dl 库会直接向 stdout/stderr 打印日志，需屏蔽以保证只输出 JSON。
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -57,9 +58,11 @@ def main():
     page_songs = songs[start:end]
 
     items = []
-    for s in page_songs:
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            url = _resolve_url(s)
+    for idx, s in enumerate(page_songs):
+        url = ""
+        if resolve_limit > 0 and idx < resolve_limit:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                url = _resolve_url(s)
         item = {
             "id": str(getattr(s, "id", "") or ""),
             "title": getattr(s, "title", ""),

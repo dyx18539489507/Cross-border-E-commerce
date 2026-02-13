@@ -29,6 +29,7 @@ type DigitalHumanRequest struct {
 	ImageURL    string
 	ImageBase64 string
 	AudioURL    string
+	VoiceType   string
 	SpeechText  string
 	MotionText  string
 }
@@ -76,16 +77,26 @@ func NewDigitalHumanService(cfg *config.Config, log *logger.Logger) *DigitalHuma
 }
 
 func (s *DigitalHumanService) Generate(ctx context.Context, req *DigitalHumanRequest) (*DigitalHumanResult, error) {
-	if (req.ImageURL == "" && strings.TrimSpace(req.ImageBase64) == "") || req.AudioURL == "" {
-		return nil, fmt.Errorf("image and audio are required")
+	if req.ImageURL == "" && strings.TrimSpace(req.ImageBase64) == "" {
+		return nil, fmt.Errorf("image is required")
+	}
+
+	audioURL := strings.TrimSpace(req.AudioURL)
+	speechText := strings.TrimSpace(req.SpeechText)
+	voiceType := strings.TrimSpace(req.VoiceType)
+	if audioURL == "" && speechText == "" {
+		return nil, fmt.Errorf("audio_url or speech_text is required")
+	}
+	if audioURL == "" && speechText != "" && voiceType == "" {
+		return nil, fmt.Errorf("voice_type is required when speech_text is provided")
 	}
 	if s.client == nil || s.client.AccessKeyID == "" || s.client.SecretAccessKey == "" {
 		return nil, fmt.Errorf("volcengine access key is not configured")
 	}
 
-	prompt := buildPrompt(req.SpeechText, req.MotionText)
+	prompt := buildPrompt(req.MotionText)
 
-	videoTaskID, err := s.submitVideoTask(ctx, req.ImageURL, req.ImageBase64, req.AudioURL, nil, prompt)
+	videoTaskID, err := s.submitVideoTask(ctx, req.ImageURL, req.ImageBase64, audioURL, voiceType, speechText, nil, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +113,20 @@ func (s *DigitalHumanService) Generate(ctx context.Context, req *DigitalHumanReq
 	}, nil
 }
 
-func (s *DigitalHumanService) submitVideoTask(ctx context.Context, imageURL, imageBase64, audioURL string, maskURLs []string, prompt string) (string, error) {
+func (s *DigitalHumanService) submitVideoTask(ctx context.Context, imageURL, imageBase64, audioURL, voiceType, speechText string, maskURLs []string, prompt string) (string, error) {
 	payload := map[string]any{
 		"req_key":           reqKeyVideoGeneration,
-		"audio_url":         audioURL,
 		"output_resolution": 1080,
 		"pe_fast_mode":      false,
+	}
+	if strings.TrimSpace(audioURL) != "" {
+		payload["audio_url"] = strings.TrimSpace(audioURL)
+	}
+	if strings.TrimSpace(voiceType) != "" {
+		payload["voice_type"] = strings.TrimSpace(voiceType)
+	}
+	if strings.TrimSpace(speechText) != "" {
+		payload["speech_text"] = strings.TrimSpace(speechText)
 	}
 	if strings.TrimSpace(imageBase64) != "" {
 		payload["image_base64"] = strings.TrimSpace(imageBase64)
@@ -201,11 +220,8 @@ func (s *DigitalHumanService) getTaskResult(ctx context.Context, reqKey, taskID 
 	return &data, nil
 }
 
-func buildPrompt(speechText, motionText string) string {
-	parts := make([]string, 0, 2)
-	if strings.TrimSpace(speechText) != "" {
-		parts = append(parts, fmt.Sprintf("说话内容：%s", strings.TrimSpace(speechText)))
-	}
+func buildPrompt(motionText string) string {
+	parts := make([]string, 0, 1)
 	if strings.TrimSpace(motionText) != "" {
 		parts = append(parts, fmt.Sprintf("动作描述：%s", strings.TrimSpace(motionText)))
 	}

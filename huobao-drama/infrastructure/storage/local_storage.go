@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const downloadTimeout = 45 * time.Second
+
 type LocalStorage struct {
 	basePath string
 	baseURL  string
@@ -68,8 +70,9 @@ func (s *LocalStorage) BasePath() string {
 
 // DownloadFromURL 从远程URL下载文件到本地存储
 func (s *LocalStorage) DownloadFromURL(url, category string) (string, error) {
-	// 发送HTTP请求下载文件
-	resp, err := http.Get(url)
+	// 发送HTTP请求下载文件（带超时，避免卡死）
+	client := &http.Client{Timeout: downloadTimeout}
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}

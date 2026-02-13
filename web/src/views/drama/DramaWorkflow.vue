@@ -137,7 +137,13 @@
         @close="resetDigitalHumanForm"
       >
         <el-form label-position="top" class="digital-human-form">
-          <el-form-item label="上传角色">
+          <el-form-item>
+          <template #label>
+            <span class="digital-human-required-label">
+              上传角色
+              <span class="digital-human-required-dot">*</span>
+            </span>
+          </template>
           <el-upload
             class="digital-human-upload"
             :auto-upload="false"
@@ -169,7 +175,13 @@
               </el-button>
           </el-upload>
           </el-form-item>
-        <el-form-item label="上传音色">
+        <el-form-item>
+          <template #label>
+            <span class="digital-human-required-label">
+              上传音色
+              <span class="digital-human-required-dot">*</span>
+            </span>
+          </template>
           <div class="digital-human-audio-row">
             <el-popover
               v-model:visible="voiceLibraryVisible"
@@ -237,9 +249,10 @@
                 <div v-else-if="voiceLibraryError" class="voice-library-error">{{ voiceLibraryError }}</div>
                 <el-scrollbar v-else height="320">
                   <div class="voice-library-grid">
-                    <button class="voice-card voice-card-create" type="button" @click="openCreateVoice">
-                      <el-icon><Plus /></el-icon>
-                      <span>{{ $t('workflow.voiceLibrary.createVoice') }}</span>
+                    <button class="voice-card voice-card-create" type="button" :disabled="creatingCustomVoice" @click="openCreateVoice">
+                      <el-icon v-if="creatingCustomVoice"><Loading /></el-icon>
+                      <el-icon v-else><Plus /></el-icon>
+                      <span>{{ creatingCustomVoice ? '创建中...' : '上传音色' }}</span>
                     </button>
                     <button
                       v-for="voice in filteredVoiceLibrary"
@@ -294,11 +307,15 @@
                 </el-button>
               </template>
             </el-popover>
-            <!--
-            <div class="digital-human-hint-inline">音频时长需小于60秒，支持 mp3/wav/m4a 等格式</div>
-            -->
+            <input
+              ref="digitalHumanUploadVoiceInputRef"
+              class="digital-human-hidden-input"
+              type="file"
+              accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac,.flac,.mp4"
+              @change="handleUploadVoiceFromCard"
+            />
+            <!-- <div class="digital-human-hint-inline">音频时长需小于60秒，支持 mp3/wav/m4a 等格式</div> -->
           </div>
-          <!--
           <el-upload
             class="digital-human-upload"
             :auto-upload="false"
@@ -311,7 +328,7 @@
             :on-remove="handleDigitalHumanAudioRemove"
           >
             <el-button type="info" plain class="digital-human-upload-btn digital-human-upload-secondary" :icon="Upload">
-              上传音频
+              上传音色音频
             </el-button>
           </el-upload>
           <div
@@ -323,8 +340,6 @@
           >
             {{ digitalHumanAudioList[0].name }}
           </div>
-          -->
-          <!--
           <div v-if="digitalHumanAudioPreviewVisible && digitalHumanAudioPreview" class="digital-human-audio">
             <audio
               ref="digitalHumanAudioRef"
@@ -334,14 +349,19 @@
               preload="metadata"
             />
           </div>
-          -->
           </el-form-item>
-        <el-form-item label="说话内容">
+        <el-form-item>
+          <template #label>
+            <span class="digital-human-required-label">
+              说话内容
+              <span class="digital-human-required-dot">*</span>
+            </span>
+          </template>
           <el-input
             v-model="digitalHumanForm.speechText"
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 3 }"
-            placeholder="请输入你希望角色说出的内容"
+            placeholder="请输入你希望角色说出的内容（将自动转语音）"
             class="digital-human-textarea"
           />
         </el-form-item>
@@ -358,8 +378,8 @@
 
         <div v-if="digitalHumanResultUrl" class="digital-human-result">
           <div class="digital-human-result-title">生成结果</div>
-          <video :src="digitalHumanResultUrl" controls preload="metadata" />
-          <el-link :href="digitalHumanResultUrl" target="_blank">打开视频链接</el-link>
+          <video :src="digitalHumanPlayableResultUrl" controls preload="metadata" />
+          <el-button type="primary" plain size="small" @click="downloadDigitalHumanVideo">下载视频</el-button>
         </div>
 
         <template #footer>
@@ -862,6 +882,7 @@ const digitalHumanAudioPreview = ref('')
 const digitalHumanImagePreviewVisible = ref(false)
 const digitalHumanAudioPreviewVisible = ref(false)
 const digitalHumanAudioRef = ref<HTMLAudioElement | null>(null)
+const digitalHumanUploadVoiceInputRef = ref<HTMLInputElement | null>(null)
 const voiceLibraryVisible = ref(false)
 const voiceLibraryLoading = ref(false)
 const voiceLibraryList = ref<VoiceLibraryItem[]>([])
@@ -875,6 +896,7 @@ const voiceCategoryFilter = ref<string | null>(null)
 const voiceTrialAudioRef = ref<HTMLAudioElement | null>(null)
 const voiceTrialUrl = ref('')
 const voiceTrialPlayingId = ref('')
+const creatingCustomVoice = ref(false)
 const digitalHumanForm = reactive({
   imageFile: null as File | null,
   audioFile: null as File | null,
@@ -893,8 +915,23 @@ const selectedDigitalHumanImageFile = computed(() => {
 
 const digitalHumanCanGenerate = computed(() => {
   if (!selectedDigitalHumanImageFile.value) return false
-  if (digitalHumanForm.audioFile) return true
-  return !!selectedVoice.value && !!selectedVoice.value.trial_url
+  if (!digitalHumanForm.speechText.trim()) return false
+  return !!selectedVoice.value || !!digitalHumanForm.audioFile
+})
+
+const toPlayableMediaUrl = (url: string): string => {
+  const value = (url || '').trim()
+  if (!value) return ''
+  if (value.startsWith('blob:') || value.startsWith('data:')) return value
+  if (value.startsWith('/api/v1/media/proxy')) return value
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return `/api/v1/media/proxy?url=${encodeURIComponent(value)}`
+  }
+  return value
+}
+
+const digitalHumanPlayableResultUrl = computed(() => {
+  return toPlayableMediaUrl(digitalHumanResultUrl.value)
 })
 
 // 分镜相关状态
@@ -1308,7 +1345,7 @@ const selectVoice = (voice: VoiceLibraryItem) => {
 }
 
 const openCreateVoice = () => {
-  window.open('https://console.volcengine.com/speech/tts', '_blank')
+  digitalHumanUploadVoiceInputRef.value?.click()
 }
 
 const stopVoiceTrial = () => {
@@ -1356,6 +1393,74 @@ const toggleVoiceTrial = async (voice: VoiceLibraryItem) => {
 
 const clearSelectedVoice = () => {
   selectedVoice.value = null
+}
+
+const handleUploadVoiceFromCard = async (event: Event) => {
+  const inputEl = event.target as HTMLInputElement | null
+  const file = inputEl?.files?.[0]
+  if (!file) {
+    return
+  }
+
+  const allowed = await Promise.resolve(beforeDigitalHumanAudioUpload?.(file as any))
+  if (allowed !== false) {
+    const rawUID = Date.now()
+    digitalHumanAudioList.value = [
+      {
+        name: file.name,
+        size: file.size,
+        status: 'success',
+        uid: rawUID,
+        raw: Object.assign(file, { uid: rawUID })
+      } as UploadUserFile
+    ]
+    digitalHumanForm.audioFile = file
+    digitalHumanAudioPreviewVisible.value = false
+    if (digitalHumanAudioPreview.value && digitalHumanAudioPreview.value.startsWith('blob:')) {
+      URL.revokeObjectURL(digitalHumanAudioPreview.value)
+    }
+    digitalHumanAudioPreview.value = URL.createObjectURL(file)
+    selectedVoice.value = null
+  }
+
+  if (inputEl) {
+    inputEl.value = ''
+  }
+}
+
+const downloadDigitalHumanVideo = async () => {
+  const playableURL = digitalHumanPlayableResultUrl.value
+  if (!playableURL) {
+    ElMessage.warning('暂无可下载视频')
+    return
+  }
+
+  try {
+    const loadingMsg = ElMessage.info({
+      message: '正在准备下载...',
+      duration: 0
+    })
+    const response = await fetch(playableURL)
+    if (!response.ok) {
+      throw new Error(`下载失败: ${response.status}`)
+    }
+    const blob = await response.blob()
+    const blobURL = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobURL
+    link.download = `digital_human_${Date.now()}.mp4`
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    setTimeout(() => {
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobURL)
+    }, 100)
+    loadingMsg.close()
+    ElMessage.success('视频下载已开始')
+  } catch (error: any) {
+    ElMessage.error(error?.message || '视频下载失败，请稍后重试')
+  }
 }
 
 const resetDigitalHumanForm = () => {
@@ -1486,10 +1591,18 @@ const submitDigitalHuman = async () => {
   const speechText = digitalHumanForm.speechText.trim()
   const motionText = digitalHumanForm.motionText.trim()
   const hasAudio = !!digitalHumanForm.audioFile
-  const hasVoiceAudio = !!selectedVoice.value && !!selectedVoice.value.trial_url
+  const hasSelectedVoice = !!selectedVoice.value
   const imageFile = selectedDigitalHumanImageFile.value
-  if (!imageFile || (!hasAudio && !hasVoiceAudio)) {
-    ElMessage.warning('请先上传角色图片，并选择音色（或上传音频）')
+  if (!imageFile) {
+    ElMessage.warning('请先上传角色图片')
+    return
+  }
+  if (!speechText) {
+    ElMessage.warning('请先填写说话内容')
+    return
+  }
+  if (!hasAudio && !hasSelectedVoice) {
+    ElMessage.warning('请先选择音色或上传音色音频')
     return
   }
 
@@ -1506,9 +1619,8 @@ const submitDigitalHuman = async () => {
     if (motionText) formData.append('motion_text', motionText)
     if (selectedVoice.value) {
       formData.append('voice_id', selectedVoice.value.id)
-      formData.append('voice_type', selectedVoice.value.voice_type)
-      if (!digitalHumanForm.audioFile && selectedVoice.value.trial_url) {
-        formData.append('audio_url', selectedVoice.value.trial_url)
+      if (selectedVoice.value.voice_type) {
+        formData.append('voice_type', selectedVoice.value.voice_type)
       }
     }
 
@@ -1519,7 +1631,12 @@ const submitDigitalHuman = async () => {
     digitalHumanResultUrl.value = result.video_url
     ElMessage.success('数字人视频生成完成')
   } catch (error: any) {
-    ElMessage.error(error.message || '生成失败')
+    const raw = String(error?.message || '')
+    if (raw.includes('DIGITAL_HUMAN_TTS_NOT_ENABLED') || raw.includes('未开通文本配音能力')) {
+      ElMessage.error('当前账号未开通文本配音能力：请上传音色音频后生成，或联系管理员开通文本驱动配音')
+    } else {
+      ElMessage.error(raw || '生成失败')
+    }
   } finally {
     digitalHumanLoading.value = false
   }
@@ -2406,6 +2523,22 @@ onMounted(() => {
 
 .voice-library-popover {
   padding: 12px;
+}
+
+.digital-human-required-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.digital-human-required-dot {
+  color: #f56c6c;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.digital-human-hidden-input {
+  display: none;
 }
 
 .voice-library-panel {

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ func NewVideoGenerationService(db *gorm.DB, transferService *ResourceTransferSer
 	}
 
 	go service.RecoverPendingTasks()
+	go func() {
+		service.RecoverCompletedVideoLocalLinks()
+		service.NormalizeCompletedVideoPlaybackURLs()
+	}()
 
 	return service
 }
@@ -348,28 +353,46 @@ func (s *VideoGenerationService) pollTaskStatus(videoGenID uint, taskID string, 
 }
 
 func (s *VideoGenerationService) completeVideoGeneration(videoGenID uint, videoURL string, duration *int, width *int, height *int, firstFrameURL *string) {
-	var localVideoPath string
+	sourceVideoURL := strings.TrimSpace(videoURL)
+	playbackVideoURL := sourceVideoURL
+	var localVideoURL string
+	var durationProbePath string
 
-	// 下载视频到本地存储（仅用于缓存，不更新数据库）
-	if s.localStorage != nil && videoURL != "" {
-		downloadedPath, err := s.localStorage.DownloadFromURL(videoURL, "videos")
+	// 下载远端视频到本地存储，并优先使用本地地址写库（避免上游签名URL过期）
+	if s.localStorage != nil && sourceVideoURL != "" &&
+		(strings.HasPrefix(sourceVideoURL, "http://") || strings.HasPrefix(sourceVideoURL, "https://")) {
+		downloadedURL, err := s.localStorage.DownloadFromURL(sourceVideoURL, "videos")
 		if err != nil {
 			s.log.Warnw("Failed to download video to local storage",
 				"error", err,
 				"id", videoGenID,
-				"original_url", videoURL)
-		} else {
-			localVideoPath = downloadedPath
-			s.log.Infow("Video downloaded to local storage for caching",
+				"original_url", sourceVideoURL)
+		} else if downloadedURL != "" {
+			localVideoURL = downloadedURL
+			if stablePlaybackURL := s.toStablePlaybackURL(downloadedURL); stablePlaybackURL != "" {
+				playbackVideoURL = stablePlaybackURL
+			} else {
+				playbackVideoURL = downloadedURL
+			}
+			durationProbePath = s.resolveLocalStorageFilePath(downloadedURL)
+			s.log.Infow("Video downloaded to local storage",
 				"id", videoGenID,
-				"original_url", videoURL,
-				"local_path", localVideoPath)
+				"source_url", sourceVideoURL,
+				"local_url", localVideoURL,
+				"playback_url", playbackVideoURL)
 		}
 	}
 
-	// 如果视频已下载到本地，探测真实时长
-	if localVideoPath != "" && s.ffmpeg != nil {
-		if probedDuration, err := s.ffmpeg.GetVideoDuration(localVideoPath); err == nil {
+	if durationProbePath == "" {
+		durationProbePath = s.resolveLocalStorageFilePath(playbackVideoURL)
+	}
+	if durationProbePath == "" {
+		durationProbePath = playbackVideoURL
+	}
+
+	// 优先使用本地文件探测真实时长
+	if durationProbePath != "" && s.ffmpeg != nil {
+		if probedDuration, err := s.ffmpeg.GetVideoDuration(durationProbePath); err == nil {
 			// 转换为整数秒（向上取整）
 			durationInt := int(probedDuration + 0.5)
 			duration = &durationInt
@@ -381,7 +404,7 @@ func (s *VideoGenerationService) completeVideoGeneration(videoGenID uint, videoU
 			s.log.Warnw("Failed to probe video duration, using provided duration",
 				"error", err,
 				"id", videoGenID,
-				"local_path", localVideoPath)
+				"probe_path", durationProbePath)
 		}
 	}
 
@@ -400,10 +423,13 @@ func (s *VideoGenerationService) completeVideoGeneration(videoGenID uint, videoU
 		}
 	}
 
-	// 数据库中保持使用原始URL
+	// 数据库优先保存可持久播放地址
 	updates := map[string]interface{}{
 		"status":    models.VideoStatusCompleted,
-		"video_url": videoURL,
+		"video_url": playbackVideoURL,
+	}
+	if localVideoURL != "" {
+		updates["local_path"] = playbackVideoURL
 	}
 	if duration != nil {
 		updates["duration"] = *duration
@@ -428,7 +454,7 @@ func (s *VideoGenerationService) completeVideoGeneration(videoGenID uint, videoU
 		if videoGen.StoryboardID != nil {
 			// 更新 Storyboard 的 video_url 和 duration
 			storyboardUpdates := map[string]interface{}{
-				"video_url": videoURL,
+				"video_url": playbackVideoURL,
 			}
 			if duration != nil {
 				storyboardUpdates["duration"] = *duration
@@ -441,7 +467,95 @@ func (s *VideoGenerationService) completeVideoGeneration(videoGenID uint, videoU
 		}
 	}
 
-	s.log.Infow("Video generation completed", "id", videoGenID, "url", videoURL, "duration", duration)
+	s.log.Infow("Video generation completed",
+		"id", videoGenID,
+		"source_url", sourceVideoURL,
+		"playback_url", playbackVideoURL,
+		"duration", duration)
+}
+
+func (s *VideoGenerationService) resolveLocalStorageFilePath(raw string) string {
+	if s.localStorage == nil {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
+	rel := ""
+
+	switch {
+	case baseURL != "" && strings.HasPrefix(trimmed, baseURL):
+		rel = strings.TrimPrefix(trimmed, baseURL)
+	case strings.HasPrefix(trimmed, "/static/"):
+		rel = strings.TrimPrefix(trimmed, "/static/")
+	case strings.HasPrefix(trimmed, "static/"):
+		rel = strings.TrimPrefix(trimmed, "static/")
+	default:
+		return ""
+	}
+
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return ""
+	}
+
+	localPath := filepath.Join(s.localStorage.BasePath(), filepath.FromSlash(rel))
+	if info, err := os.Stat(localPath); err != nil || info.IsDir() {
+		return ""
+	}
+
+	return localPath
+}
+
+func (s *VideoGenerationService) toStablePlaybackURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(trimmed, "/static/") {
+		return trimmed
+	}
+	if strings.HasPrefix(trimmed, "static/") {
+		return "/" + trimmed
+	}
+
+	if s.localStorage == nil {
+		return trimmed
+	}
+
+	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
+	if baseURL == "" {
+		return trimmed
+	}
+
+	baseParsed, err := url.Parse(baseURL)
+	if err != nil {
+		return trimmed
+	}
+
+	prefixPath := strings.TrimSuffix(baseParsed.Path, "/")
+	if prefixPath == "" {
+		prefixPath = "/static"
+	}
+	if !strings.HasPrefix(prefixPath, "/") {
+		prefixPath = "/" + prefixPath
+	}
+
+	prefixURL := baseURL + "/"
+	if strings.HasPrefix(trimmed, prefixURL) {
+		rel := strings.TrimPrefix(trimmed, prefixURL)
+		rel = strings.TrimPrefix(rel, "/")
+		if rel != "" {
+			return prefixPath + "/" + rel
+		}
+	}
+
+	return trimmed
 }
 
 func (s *VideoGenerationService) updateVideoGenError(videoGenID uint, errorMsg string) {
@@ -735,6 +849,226 @@ func (s *VideoGenerationService) RecoverPendingTasks() {
 	for _, videoGen := range pendingVideos {
 		go s.pollTaskStatus(videoGen.ID, *videoGen.TaskID, videoGen.Provider, videoGen.Model)
 	}
+}
+
+func (s *VideoGenerationService) RecoverCompletedVideoLocalLinks() {
+	if s.localStorage == nil {
+		return
+	}
+
+	var completedVideos []models.VideoGeneration
+	if err := s.db.
+		Where("status = ?", models.VideoStatusCompleted).
+		Where("video_url IS NOT NULL AND video_url <> ''").
+		Where("local_path IS NULL OR local_path = ''").
+		Order("updated_at asc").
+		Find(&completedVideos).Error; err != nil {
+		s.log.Warnw("Failed to load completed videos for local link recovery", "error", err)
+		return
+	}
+
+	if len(completedVideos) == 0 {
+		return
+	}
+
+	type cachedVideoFile struct {
+		name     string
+		localURL string
+		ts       time.Time
+		used     bool
+	}
+
+	cacheFiles := make([]cachedVideoFile, 0)
+	videosDir := filepath.Join(s.localStorage.BasePath(), "videos")
+	entries, err := os.ReadDir(videosDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			timestamp, ok := parseVideoCacheTimestamp(entry.Name())
+			if !ok {
+				continue
+			}
+			cacheFiles = append(cacheFiles, cachedVideoFile{
+				name:     entry.Name(),
+				localURL: s.localStorage.GetURL(filepath.ToSlash(filepath.Join("videos", entry.Name()))),
+				ts:       timestamp,
+			})
+		}
+		sort.Slice(cacheFiles, func(i, j int) bool {
+			return cacheFiles[i].ts.Before(cacheFiles[j].ts)
+		})
+	}
+
+	const maxMatchDistance = 2 * time.Minute
+	var recoveredCount int
+
+	for _, videoGen := range completedVideos {
+		if videoGen.VideoURL == nil {
+			continue
+		}
+
+		sourceURL := strings.TrimSpace(*videoGen.VideoURL)
+		if sourceURL == "" {
+			continue
+		}
+
+		// 历史缓存兜底：按完成时间匹配本地缓存文件
+		referenceTime := videoGen.UpdatedAt
+		if videoGen.CompletedAt != nil {
+			referenceTime = *videoGen.CompletedAt
+		}
+
+		bestIdx := -1
+		bestDiff := maxMatchDistance + time.Second
+		for idx := range cacheFiles {
+			if cacheFiles[idx].used {
+				continue
+			}
+			delta := cacheFiles[idx].ts.Sub(referenceTime)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta <= maxMatchDistance && delta < bestDiff {
+				bestDiff = delta
+				bestIdx = idx
+			}
+		}
+
+		if bestIdx >= 0 {
+			s.rebindVideoToLocalURL(videoGen, cacheFiles[bestIdx].localURL)
+			cacheFiles[bestIdx].used = true
+			recoveredCount++
+			continue
+		}
+
+		// 缓存未匹配到时再尝试重下远程URL（URL仍有效时可恢复）
+		if strings.HasPrefix(sourceURL, "http://") || strings.HasPrefix(sourceURL, "https://") {
+			if downloadedURL, err := s.localStorage.DownloadFromURL(sourceURL, "videos"); err == nil && downloadedURL != "" {
+				s.rebindVideoToLocalURL(videoGen, downloadedURL)
+				recoveredCount++
+			}
+		}
+	}
+
+	if recoveredCount > 0 {
+		s.log.Infow("Recovered completed videos with local playback URLs",
+			"total_candidates", len(completedVideos),
+			"recovered", recoveredCount)
+	}
+}
+
+func (s *VideoGenerationService) NormalizeCompletedVideoPlaybackURLs() {
+	if s.localStorage == nil {
+		return
+	}
+
+	var completedVideos []models.VideoGeneration
+	if err := s.db.
+		Where("status = ?", models.VideoStatusCompleted).
+		Where("(video_url IS NOT NULL AND video_url <> '') OR (local_path IS NOT NULL AND local_path <> '')").
+		Find(&completedVideos).Error; err != nil {
+		s.log.Warnw("Failed to load completed videos for playback url normalization", "error", err)
+		return
+	}
+
+	if len(completedVideos) == 0 {
+		return
+	}
+
+	var normalizedCount int
+	for _, videoGen := range completedVideos {
+		source := ""
+		if videoGen.LocalPath != nil && strings.TrimSpace(*videoGen.LocalPath) != "" {
+			source = *videoGen.LocalPath
+		} else if videoGen.VideoURL != nil {
+			source = *videoGen.VideoURL
+		}
+
+		stableURL := s.toStablePlaybackURL(source)
+		if !strings.HasPrefix(stableURL, "/static/") {
+			continue
+		}
+
+		needUpdate := videoGen.VideoURL == nil || strings.TrimSpace(*videoGen.VideoURL) != stableURL ||
+			videoGen.LocalPath == nil || strings.TrimSpace(*videoGen.LocalPath) != stableURL
+		if !needUpdate {
+			continue
+		}
+
+		updates := map[string]interface{}{
+			"video_url":  stableURL,
+			"local_path": stableURL,
+		}
+		if err := s.db.Model(&models.VideoGeneration{}).Where("id = ?", videoGen.ID).Updates(updates).Error; err != nil {
+			s.log.Warnw("Failed to normalize completed video playback url",
+				"id", videoGen.ID,
+				"target_url", stableURL,
+				"error", err)
+			continue
+		}
+
+		if videoGen.StoryboardID != nil {
+			if err := s.db.Model(&models.Storyboard{}).Where("id = ?", *videoGen.StoryboardID).Update("video_url", stableURL).Error; err != nil {
+				s.log.Warnw("Failed to normalize storyboard video url",
+					"storyboard_id", *videoGen.StoryboardID,
+					"target_url", stableURL,
+					"error", err)
+			}
+		}
+
+		normalizedCount++
+	}
+
+	if normalizedCount > 0 {
+		s.log.Infow("Normalized completed video playback URLs",
+			"total_candidates", len(completedVideos),
+			"normalized", normalizedCount)
+	}
+}
+
+func (s *VideoGenerationService) rebindVideoToLocalURL(videoGen models.VideoGeneration, localURL string) {
+	playbackURL := s.toStablePlaybackURL(localURL)
+	if playbackURL == "" {
+		playbackURL = localURL
+	}
+
+	updates := map[string]interface{}{
+		"video_url":  playbackURL,
+		"local_path": playbackURL,
+	}
+	if err := s.db.Model(&models.VideoGeneration{}).Where("id = ?", videoGen.ID).Updates(updates).Error; err != nil {
+		s.log.Warnw("Failed to update video generation local link",
+			"id", videoGen.ID,
+			"local_url", localURL,
+			"playback_url", playbackURL,
+			"error", err)
+		return
+	}
+
+	if videoGen.StoryboardID != nil {
+		if err := s.db.Model(&models.Storyboard{}).Where("id = ?", *videoGen.StoryboardID).Update("video_url", playbackURL).Error; err != nil {
+			s.log.Warnw("Failed to sync storyboard local video url",
+				"storyboard_id", *videoGen.StoryboardID,
+				"playback_url", playbackURL,
+				"error", err)
+		}
+	}
+}
+
+func parseVideoCacheTimestamp(fileName string) (time.Time, bool) {
+	ext := filepath.Ext(fileName)
+	base := strings.TrimSuffix(fileName, ext)
+	if len(base) < len("20060102_150405_000") {
+		return time.Time{}, false
+	}
+	timestampPart := base[:len("20060102_150405_000")]
+	parsed, err := time.ParseInLocation("20060102_150405_000", timestampPart, time.Local)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func (s *VideoGenerationService) GetVideoGeneration(id uint) (*models.VideoGeneration, error) {

@@ -733,6 +733,7 @@
                       <el-radio-button v-for="cat in sfxCategories" :key="cat" :label="cat">{{ cat }}</el-radio-button>
                     </el-radio-group>
                   </div>
+                  <!--
                   <div v-if="audioMode === 'sfx'" class="sfx-ai-generate">
                     <el-input
                       v-model="sfxPrompt"
@@ -746,6 +747,7 @@
                       生成音效
                     </el-button>
                   </div>
+                  -->
                   <!--
                   <el-select
                     v-model="audioCategory"
@@ -768,13 +770,13 @@
                   -->
                 </div>
 
-                <div class="audio-list" v-loading="audioListLoading">
-                  <div v-if="audioSearch.trim() && loadingNeteaseSearch" class="audio-search-status">
+                <div class="audio-list" v-loading="showAudioListOverlay">
+                  <div v-if="audioSearch.trim() && audioSearchLoading" class="audio-search-status">
                     <el-icon class="rotating"><Loading /></el-icon>
                     <span>正在加载中...</span>
                   </div>
                   <el-empty
-                    v-if="filteredAudioAssets.length === 0 && !loadingNeteaseSearch"
+                    v-if="filteredAudioAssets.length === 0 && !audioSearchLoading"
                     :description="$t('video.soundMusicEmpty')"
                   />
                   <div v-else class="audio-grid">
@@ -804,12 +806,23 @@
                         </div>
                       </div>
                       <div class="audio-actions">
-                        <el-button size="small" :loading="previewLoadingAudioId === asset.id" @click="toggleAudioPreview(asset)">
+                        <el-button
+                          size="small"
+                          :loading="previewLoadingAudioId === asset.id"
+                          :disabled="unsupportedPreviewAudioIds.has(asset.id) && previewingAudioId !== asset.id"
+                          @click="toggleAudioPreview(asset)"
+                        >
                           <el-icon v-if="previewLoadingAudioId !== asset.id">
                             <VideoPause v-if="previewingAudioId === asset.id && previewLoadingAudioId !== asset.id" />
                             <VideoPlay v-else />
                           </el-icon>
-                          {{ previewLoadingAudioId === asset.id ? '加载中...' : (previewingAudioId === asset.id ? $t('video.soundMusicStop') : $t('video.soundMusicPreview')) }}
+                          {{
+                            previewLoadingAudioId === asset.id
+                              ? '加载中...'
+                              : (unsupportedPreviewAudioIds.has(asset.id) && previewingAudioId !== asset.id
+                                  ? '暂不支持试听'
+                                  : (previewingAudioId === asset.id ? $t('video.soundMusicStop') : $t('video.soundMusicPreview')))
+                          }}
                         </el-button>
                         <el-button type="primary" size="small" @click="addAudioToTimeline(asset)">
                           <el-icon><Plus /></el-icon>
@@ -818,7 +831,7 @@
                       </div>
                     </div>
                   </div>
-                  <div v-if="audioSearch.trim() && neteaseSearchTotal > 0" class="audio-pagination">
+                  <div v-if="audioMode === 'music' && audioSearch.trim() && neteaseSearchTotal > 0" class="audio-pagination">
                     <span class="audio-total">共搜索到 {{ neteaseSearchTotal }} 条</span>
                     <el-pagination
                       v-model:current-page="audioSearchPage"
@@ -1066,7 +1079,6 @@ import { videoAPI } from '@/api/video'
 import { aiAPI } from '@/api/ai'
 import { assetAPI } from '@/api/asset'
 import { videoMergeAPI } from '@/api/videoMerge'
-import request from '@/utils/request'
 import type { ImageGeneration } from '@/types/image'
 import type { VideoGeneration } from '@/types/video'
 import type { AIServiceConfig } from '@/types/ai'
@@ -1147,9 +1159,6 @@ const douyinMusicUpdatedAt = ref<string | null>(null)
 const sfxAssets = ref<AudioListItem[]>([])
 const loadingSfx = ref(false)
 const sfxCategory = ref('热门')
-const sfxPrompt = ref('')
-const generatingSfx = ref(false)
-const sfxGenerateError = ref<string | null>(null)
 const neteaseSearchResults = ref<AudioListItem[]>([])
 const neteaseSearchTotal = ref(0)
 const loadingNeteaseSearch = ref(false)
@@ -1163,6 +1172,7 @@ const audioHotOnly = ref(true)
 const previewingAudioId = ref<string | null>(null)
 const previewLoadingAudioId = ref<string | null>(null)
 const previewAudioPlayer = ref<HTMLAudioElement | null>(null)
+const unsupportedPreviewAudioIds = ref<Set<string>>(new Set())
 const timelineEditorRef = ref<InstanceType<typeof VideoTimelineEditor> | null>(null)
 const videoReferenceImages = ref<ImageGeneration[]>([])
 const selectedVideoModel = ref<string>('')
@@ -1429,22 +1439,76 @@ const loadAudioAssets = async () => {
 
 const DOUYIN_MUSIC_SOURCE = 'https://raw.githubusercontent.com/lonnyzhang423/douyin-hot-hub/main/README.md'
 
-const fetchJsonWithTimeout = async (url: string, timeoutMs = 12000) => {
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    window.setTimeout(() => reject(new Error('timeout')), timeoutMs)
-  })
-  const fetchPromise = fetch(url, { cache: 'no-store' }).then((response) => {
+const FRONTEND_FETCH_TIMEOUT_MS = 45000
+const MUSIC_SEARCH_TIMEOUT_MS = 60000
+const MUSIC_PREVIEW_PROBE_TIMEOUT_MS = 25000
+const AUDIO_METADATA_TIMEOUT_MS = 30000
+const SFX_FETCH_TIMEOUT_MS = 45000
+const SEARCH_PREVIEW_FALLBACK_TIMEOUT_MS = 30000
+const HOT_MUSIC_FALLBACK_TIMEOUT_MS = 45000
+const DOUYIN_MUSIC_FETCH_TIMEOUT_MS = 45000
+
+const createTimeoutSignal = (timeoutMs: number, externalSignal?: AbortSignal) => {
+  const timeoutController = new AbortController()
+  const timeoutId = window.setTimeout(() => timeoutController.abort(), timeoutMs)
+
+  const onExternalAbort = () => timeoutController.abort()
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      timeoutController.abort()
+    } else {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+    }
+  }
+
+  const cleanup = () => {
+    window.clearTimeout(timeoutId)
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort)
+    }
+  }
+
+  return { signal: timeoutController.signal, cleanup }
+}
+
+const fetchJsonWithTimeout = async (url: string, timeoutMs = FRONTEND_FETCH_TIMEOUT_MS, externalSignal?: AbortSignal) => {
+  const { signal, cleanup } = createTimeoutSignal(timeoutMs, externalSignal)
+  try {
+    const response = await fetch(url, { cache: 'no-store', signal })
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
-    return response.json().then((json) => {
-      if (json && typeof json === 'object' && 'success' in json) {
-        if ('data' in json) return json.data
-      }
-      return json
-    })
-  })
-  return Promise.race([fetchPromise, timeoutPromise])
+    const json = await response.json()
+    if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
+      return json.data
+    }
+    return json
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error(externalSignal?.aborted ? 'cancelled' : 'timeout')
+    }
+    throw error
+  } finally {
+    cleanup()
+  }
+}
+
+const fetchTextWithTimeout = async (url: string, timeoutMs = FRONTEND_FETCH_TIMEOUT_MS, externalSignal?: AbortSignal) => {
+  const { signal, cleanup } = createTimeoutSignal(timeoutMs, externalSignal)
+  try {
+    const response = await fetch(url, { cache: 'no-store', signal })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    return response.text()
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error(externalSignal?.aborted ? 'cancelled' : 'timeout')
+    }
+    throw error
+  } finally {
+    cleanup()
+  }
 }
 
 let neteaseSearchRequestId = 0
@@ -1514,7 +1578,16 @@ const resolveVideoUrl = (url?: string | null) => {
   const fixed = fixMediaUrl(url)
   if (!fixed) return ''
   if (fixed.startsWith('blob:') || fixed.startsWith('data:')) return fixed
+  if (fixed.startsWith('/api/v1/media/proxy')) return fixed
   if (fixed.startsWith('http://') || fixed.startsWith('https://')) {
+    try {
+      const parsed = new URL(fixed)
+      if (parsed.pathname === '/api/v1/media/proxy') {
+        return `${parsed.pathname}${parsed.search}`
+      }
+    } catch {
+      // noop
+    }
     return `/api/v1/media/proxy?url=${encodeURIComponent(fixed)}`
   }
   return toBackendMediaUrl(fixed)
@@ -1605,8 +1678,19 @@ const searchNeteaseSongs = async (keywords: string) => {
   if (!query || audioMode.value !== 'music') {
     neteaseSearchResults.value = []
     neteaseSearchTotal.value = 0
+    if (neteaseSearchAbortController) {
+      neteaseSearchAbortController.abort()
+      neteaseSearchAbortController = null
+    }
     return
   }
+
+  if (neteaseSearchAbortController) {
+    neteaseSearchAbortController.abort()
+  }
+  const abortController = new AbortController()
+  neteaseSearchAbortController = abortController
+
   const currentRequestId = ++neteaseSearchRequestId
   loadingNeteaseSearch.value = true
   neteaseSearchError.value = null
@@ -1630,7 +1714,7 @@ const searchNeteaseSongs = async (keywords: string) => {
       return
     }
 
-    const backendData = await fetchJsonWithTimeout(backendUrl, 25000)
+    const backendData = await fetchJsonWithTimeout(backendUrl, MUSIC_SEARCH_TIMEOUT_MS, abortController.signal)
     const { items: backendItems, total: backendTotal } = resolveListPayload(backendData)
 
     if (currentRequestId !== neteaseSearchRequestId) return
@@ -1705,11 +1789,15 @@ const searchNeteaseSongs = async (keywords: string) => {
     neteaseSearchCache.set(cacheKey, { items: neteaseSearchResults.value, total: neteaseSearchTotal.value })
   } catch (error: any) {
     if (currentRequestId !== neteaseSearchRequestId) return
+    if (error?.message === 'cancelled') return
     console.error('网易云搜索失败:', error)
     neteaseSearchError.value = error?.message || '搜索失败'
     neteaseSearchResults.value = []
     neteaseSearchTotal.value = 0
   } finally {
+    if (neteaseSearchAbortController === abortController) {
+      neteaseSearchAbortController = null
+    }
     if (currentRequestId === neteaseSearchRequestId) {
       loadingNeteaseSearch.value = false
     }
@@ -1717,76 +1805,67 @@ const searchNeteaseSongs = async (keywords: string) => {
 }
 
 const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] => {
-  const mapped: AudioListItem[] = items.map((item: any, index: number) => {
-    const category = item.category || fallbackCategory
-    return {
-      id: item.id || `sfx-${category}-${index}-${Date.now()}`,
-      name: item.name || item.title || `${category}-${index + 1}`,
-      url: resolveAudioUrl(item.url || item.audio_url || item.file_url || item.file_path),
-      category,
-      duration: parseDurationToSeconds(item.duration),
-      view_count: item.view_count || 0,
-      artist: item.artist || '',
-      cover: item.cover || '',
-      description: item.description || '',
-      tags: [{ name: category }],
-      source: 'sfx' as const
-    }
-  })
-
-  mapped.forEach(asset => {
-    if (!asset.url) return
-    const audio = new Audio(asset.url)
-    audio.preload = 'metadata'
-    audio.onloadedmetadata = () => {
-      if (!asset.duration && audio.duration) {
-        asset.duration = Math.round(audio.duration)
+  const now = Date.now()
+  const mappedRaw: Array<AudioListItem | null> = items
+    .map((item: any, index: number) => {
+      const sourceName = `${item.source || ''}`.trim().toLowerCase()
+      const sourceLabel = sourceName === 'pixabay' ? 'Pixabay' : (sourceName === 'freesound' ? 'Freesound' : '')
+      const category = item.category || fallbackCategory || '热门音效'
+      const url = resolveAudioUrl(item.url || item.audio_url || item.file_url || item.file_path || item.preview_url)
+      if (!url) {
+        return null
       }
-    }
-  })
 
+      const tags = [category]
+      if (sourceLabel) {
+        tags.push(sourceLabel)
+      }
+
+      return {
+        id: item.id ? String(item.id) : `sfx-${sourceName || 'mix'}-${category}-${index}-${now}`,
+        name: item.name || item.title || `${category}-${index + 1}`,
+        url,
+        category,
+        duration: parseDurationToSeconds(item.duration ?? item.length),
+        view_count: Number(item.view_count || item.downloads || item.plays || 0),
+        artist: item.artist || item.user || '',
+        cover: item.cover || item.image || '',
+        description: item.description || (sourceLabel ? `来源：${sourceLabel}` : ''),
+        tags: tags.map((name) => ({ name })),
+        source: 'sfx' as const,
+        rank: Number(item.rank || index + 1)
+      } as AudioListItem
+    })
+
+  const mapped = mappedRaw.filter((asset): asset is AudioListItem => asset !== null)
+
+  void fillMissingDurations(mapped)
   return mapped
 }
 
 const loadSfx = async () => {
   loadingSfx.value = true
   try {
-    const url = `/api/v1/sfx?category=${encodeURIComponent(sfxCategory.value)}&limit=20`
-    const data = await fetchJsonWithTimeout(url, 8000)
+    const query = audioSearch.value.trim()
+    const params = new URLSearchParams({ limit: '20' })
+    if (query) {
+      params.set('keywords', query)
+    } else {
+      params.set('category', sfxCategory.value)
+    }
+
+    const data = await fetchJsonWithTimeout(`/api/v1/sfx?${params.toString()}`, SFX_FETCH_TIMEOUT_MS)
     const { items } = resolveListPayload(data)
     sfxAssets.value = mapSfxItems(items, sfxCategory.value)
-  } catch (error) {
+    const warnings = Array.isArray(data?.warnings) ? data.warnings : []
+    if (warnings.length > 0) {
+      console.warn('音效部分数据源不可用:', warnings)
+    }
+  } catch (error: any) {
+    console.error('加载音效失败:', error)
     sfxAssets.value = []
   } finally {
     loadingSfx.value = false
-  }
-}
-
-const generateSfx = async () => {
-  const prompt = sfxPrompt.value.trim()
-  if (!prompt) {
-    ElMessage.warning('请输入想要生成的音效')
-    return
-  }
-  generatingSfx.value = true
-  sfxGenerateError.value = null
-  try {
-    const data = await request.post('/sfx/generate', { prompt, count: 3 })
-    const { items } = resolveListPayload(data)
-    if (!items.length) {
-      sfxGenerateError.value = '未生成音效'
-      ElMessage.warning('未生成音效，请重试')
-      sfxAssets.value = []
-      return
-    }
-    sfxAssets.value = mapSfxItems(items, 'AI生成')
-    ElMessage.success('已生成 3 条音效')
-  } catch (error: any) {
-    console.error('生成音效失败:', error)
-    sfxGenerateError.value = error?.message || '生成失败'
-    ElMessage.error('生成音效失败')
-  } finally {
-    generatingSfx.value = false
   }
 }
 
@@ -1824,7 +1903,7 @@ const resolveSearchPreviewCandidates = async (asset: AudioListItem) => {
   const keyword = `${asset.name || ''} ${asset.artist || ''}`.trim()
   if (!keyword) return []
   const searchUrl = `/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=20`
-  const data = await fetchJsonWithTimeout(searchUrl, 15000)
+  const data = await fetchJsonWithTimeout(searchUrl, SEARCH_PREVIEW_FALLBACK_TIMEOUT_MS)
   const { items } = resolveListPayload(data)
   if (!items.length) return []
 
@@ -1970,7 +2049,7 @@ const loadFallbackHotMusic = async () => {
   const keywords = ['抖音热歌', '热门歌曲', '热歌榜']
   for (const keyword of keywords) {
     try {
-      const data = await fetchJsonWithTimeout(`/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=30`, 20000)
+      const data = await fetchJsonWithTimeout(`/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=30`, HOT_MUSIC_FALLBACK_TIMEOUT_MS)
       const { items } = resolveListPayload(data)
       if (!items.length) continue
 
@@ -2007,11 +2086,7 @@ const loadFallbackHotMusic = async () => {
 const loadDouyinMusic = async () => {
   loadingDouyinMusic.value = true
   try {
-    const response = await fetch(DOUYIN_MUSIC_SOURCE, { cache: 'no-store' })
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const content = await response.text()
+    const content = await fetchTextWithTimeout(DOUYIN_MUSIC_SOURCE, DOUYIN_MUSIC_FETCH_TIMEOUT_MS)
     const parsed = parseDouyinMusic(content)
     douyinMusicAssets.value = parsed.items
     if (parsed.updatedAt) {
@@ -2095,11 +2170,33 @@ const audioCategoryOptions = computed(() => {
   ]
 })
 
-const audioListLoading = computed(() => loadingAudioAssets.value || loadingDouyinMusic.value || loadingSfx.value || generatingSfx.value)
+const audioSearchLoading = computed(() => {
+  if (!audioSearch.value.trim()) {
+    return false
+  }
+  return audioMode.value === 'sfx' ? loadingSfx.value : loadingNeteaseSearch.value
+})
+
+const audioListLoading = computed(() => {
+  if (audioMode.value === 'sfx') {
+    return loadingSfx.value
+  }
+  if (audioSearch.value.trim()) {
+    return false
+  }
+  return loadingAudioAssets.value || loadingDouyinMusic.value
+})
+
+const showAudioListOverlay = computed(() => {
+  if (audioSearch.value.trim()) {
+    return false
+  }
+  return audioListLoading.value
+})
 
 const filteredAudioAssets = computed(() => {
   const query = audioSearch.value.trim().toLowerCase()
-  if (query) {
+  if (audioMode.value === 'music' && query) {
     return neteaseSearchResults.value
   }
   const assets = audioList.value
@@ -2135,13 +2232,17 @@ watch(audioMode, () => {
   audioCategory.value = 'all'
   audioSearchPage.value = 1
   if (audioMode.value === 'sfx') {
-    audioSearch.value = ''
-    loadSfx()
-  }
-  if (audioMode.value !== 'music') {
+    if (neteaseSearchAbortController) {
+      neteaseSearchAbortController.abort()
+      neteaseSearchAbortController = null
+    }
     neteaseSearchResults.value = []
     neteaseSearchTotal.value = 0
-  } else if (audioSearch.value.trim()) {
+    loadSfx()
+    return
+  }
+
+  if (audioSearch.value.trim()) {
     searchNeteaseSongs(audioSearch.value)
   } else if (douyinMusicAssets.value.length === 0) {
     loadDouyinMusic()
@@ -2155,26 +2256,45 @@ watch(audioCategoryOptions, (options) => {
 })
 
 watch(sfxCategory, () => {
-  if (audioMode.value === 'sfx') {
+  if (audioMode.value === 'sfx' && !audioSearch.value.trim()) {
     loadSfx()
   }
 })
 
-let neteaseSearchTimer: number | null = null
+let audioSearchTimer: number | null = null
+let neteaseSearchAbortController: AbortController | null = null
 watch(audioSearch, (value) => {
   const query = value.trim()
   audioSearchPage.value = 1
-  if (neteaseSearchTimer) {
-    window.clearTimeout(neteaseSearchTimer)
+  if (audioSearchTimer) {
+    window.clearTimeout(audioSearchTimer)
   }
+
+  if (audioMode.value === 'sfx') {
+    if (neteaseSearchAbortController) {
+      neteaseSearchAbortController.abort()
+      neteaseSearchAbortController = null
+    }
+    neteaseSearchResults.value = []
+    neteaseSearchTotal.value = 0
+    audioSearchTimer = window.setTimeout(() => {
+      loadSfx()
+    }, 220)
+    return
+  }
+
   if (!query || audioMode.value !== 'music') {
     neteaseSearchResults.value = []
     neteaseSearchTotal.value = 0
+    if (neteaseSearchAbortController) {
+      neteaseSearchAbortController.abort()
+      neteaseSearchAbortController = null
+    }
     return
   }
-  neteaseSearchTimer = window.setTimeout(() => {
+  audioSearchTimer = window.setTimeout(() => {
     searchNeteaseSongs(query)
-  }, 120)
+  }, 260)
 })
 
 watch([audioSearchPage, audioSearchPageSize], () => {
@@ -2239,7 +2359,7 @@ const buildAssetCandidateUrls = (asset: AudioListItem) => {
 const probeAudioUrl = async (url: string) => {
   try {
     const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), 8000)
+    const timer = window.setTimeout(() => controller.abort(), MUSIC_PREVIEW_PROBE_TIMEOUT_MS)
     const response = await fetch(url, {
       method: 'GET',
       headers: { Range: 'bytes=0-2048' },
@@ -2332,7 +2452,7 @@ const getAudioDurationFromUrl = (url: string): Promise<number | undefined> => {
     timeoutId = window.setTimeout(() => {
       cleanup()
       resolve(undefined)
-    }, 10000)
+    }, AUDIO_METADATA_TIMEOUT_MS)
 
     audio.preload = 'metadata'
     audio.onloadedmetadata = () => {
@@ -2400,11 +2520,13 @@ const toggleAudioPreview = async (asset: AudioListItem) => {
     if (requestId !== previewRequestSeq) return
 
     if (!url) {
-      ElMessage.error('音频播放失败')
+      unsupportedPreviewAudioIds.value.add(asset.id)
+      ElMessage.warning('该音乐暂不支持试听，已自动尝试多个音源')
       previewingAudioId.value = null
       return
     }
 
+    unsupportedPreviewAudioIds.value.delete(asset.id)
     stopAudioPreview(false)
     const audio = new Audio(url)
     previewAudioPlayer.value = audio
@@ -2443,7 +2565,8 @@ const toggleAudioPreview = async (asset: AudioListItem) => {
       }
     }
 
-    ElMessage.error('音频播放失败')
+    unsupportedPreviewAudioIds.value.add(asset.id)
+    ElMessage.warning('该音乐暂不支持试听')
     previewingAudioId.value = null
   } finally {
     if (requestId === previewRequestSeq && previewLoadingAudioId.value === asset.id) {
@@ -2979,12 +3102,12 @@ const getStatusType = (status: string) => {
 
 const normalizeVideo = (video: VideoGeneration) => {
   const normalized: VideoGeneration = { ...video }
-  const derivedUrl = normalized.video_url || normalized.minio_url || normalized.local_path || ''
+  const derivedUrl = normalized.minio_url || normalized.local_path || normalized.video_url || ''
   const statusText = String(normalized.status || '')
   if (statusText === 'success') {
     normalized.status = 'completed'
   }
-  if (derivedUrl && !normalized.video_url) {
+  if (derivedUrl) {
     normalized.video_url = derivedUrl
   }
   if (derivedUrl && (normalized.status === 'failed' || !normalized.status)) {
