@@ -583,13 +583,21 @@
     <!-- 阶段 3: 专业制作（占位，实际跳转到专业UI页面） -->
 
     <!-- 镜头编辑对话框 -->
-    <el-dialog 
-      v-model="shotEditDialogVisible" 
-:title="$t('workflow.editShot')" 
+    <el-dialog
+      v-model="shotEditDialogVisible"
+      :title="$t('workflow.editShot')"
       width="800px"
       :close-on-click-modal="false"
+      class="dialog-form-safe"
     >
-      <el-form v-if="editingShot" label-width="100px" size="default">
+      <el-form
+        v-if="editingShot"
+        ref="shotEditFormRef"
+        label-width="100px"
+        size="default"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('workflow.shotTitle')">
           <el-input v-model="editingShot.title" :placeholder="$t('workflow.shotTitlePlaceholder')" />
         </el-form-item>
@@ -694,12 +702,18 @@
     </el-dialog>
 
     <!-- 提示词编辑对话框 -->
-    <el-dialog 
-      v-model="promptDialogVisible" 
-:title="$t('workflow.editPrompt')" 
+    <el-dialog
+      v-model="promptDialogVisible"
+      :title="$t('workflow.editPrompt')"
       width="600px"
+      class="dialog-form-safe"
     >
-      <el-form label-width="80px">
+      <el-form
+        ref="promptFormRef"
+        label-width="80px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('common.name')">
           <el-input v-model="currentEditItem.name" disabled />
         </el-form-item>
@@ -719,9 +733,9 @@
     </el-dialog>
 
     <!-- 角色库选择对话框 -->
-    <el-dialog 
-      v-model="libraryDialogVisible" 
-:title="$t('workflow.selectFromLibrary')" 
+    <el-dialog
+      v-model="libraryDialogVisible"
+      :title="$t('workflow.selectFromLibrary')"
       width="800px"
     >
       <div class="library-grid">
@@ -741,13 +755,19 @@
     </el-dialog>
 
     <!-- AI模型配置对话框 -->
-    <el-dialog 
-      v-model="modelConfigDialogVisible" 
-:title="$t('workflow.aiModelConfig')" 
+    <el-dialog
+      v-model="modelConfigDialogVisible"
+      :title="$t('workflow.aiModelConfig')"
       width="600px"
       :close-on-click-modal="false"
+      class="dialog-form-safe"
     >
-      <el-form label-width="120px">
+      <el-form
+        ref="modelConfigFormRef"
+        label-width="120px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('workflow.textGenModel')">
           <el-select v-model="selectedTextModel" :placeholder="$t('workflow.selectTextModel')" style="width: 100%">
             <el-option 
@@ -784,9 +804,9 @@
     </el-dialog>
 
     <!-- 图片上传对话框 -->
-    <el-dialog 
-      v-model="uploadDialogVisible" 
-:title="$t('tooltip.uploadImage')" 
+    <el-dialog
+      v-model="uploadDialogVisible"
+      :title="$t('tooltip.uploadImage')"
       width="500px"
     >
       <el-upload
@@ -845,6 +865,7 @@ import type { AIServiceConfig } from '@/types/ai'
 import { imageAPI } from '@/api/image'
 import type { Drama } from '@/types/drama'
 import { AppHeader } from '@/components/common'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 const route = useRoute()
 const router = useRouter()
@@ -880,6 +901,8 @@ const promptDialogVisible = ref(false)
 const libraryDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
 const modelConfigDialogVisible = ref(false)
+const promptFormRef = ref<{ $el?: HTMLElement } | null>(null)
+const modelConfigFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const currentEditItem = ref<any>({ name: '' })
 const currentEditType = ref<'character' | 'scene'>('character')
 const editPrompt = ref('')
@@ -1700,6 +1723,7 @@ const regenerateShots = async () => {
 }
 
 const shotEditDialogVisible = ref(false)
+const shotEditFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const editingShot = ref<any>(null)
 const editingShotIndex = ref<number>(-1)
 const savingShot = ref(false)
@@ -2586,5 +2610,167 @@ onMounted(() => {
 :deep(.el-upload-dragger) {
   background: var(--bg-secondary);
   border-color: var(--border-primary);
+}
+
+@media (max-width: 1024px) {
+  .custom-steps {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .custom-steps::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workflow-card,
+  .stage-card {
+    margin: 8px;
+  }
+
+  .stage-card.stage-card-fullscreen .stage-body-fullscreen {
+    min-height: calc(100dvh - 220px);
+  }
+
+  .image-gen-section .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .image-gen-section .section-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .character-image-list,
+  .scene-image-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .library-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .workflow-card,
+  .stage-card {
+    margin: 6px;
+  }
+
+  .custom-steps {
+    gap: 8px;
+  }
+
+  .custom-steps .step-arrow {
+    display: none;
+  }
+
+  .custom-steps .step-item {
+    padding: 6px 8px;
+    border-radius: 12px;
+  }
+
+  .custom-steps .step-item .step-text {
+    display: none;
+  }
+
+  .action-buttons,
+  .action-buttons-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-buttons .el-button,
+  .action-buttons-inline .el-button {
+    width: 100%;
+    margin: 0;
+  }
+
+  .script-textarea.script-textarea-fullscreen :deep(textarea) {
+    min-height: 260px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .image-gen-section .section-header {
+    padding: 12px;
+  }
+
+  .image-gen-section .section-title {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .image-gen-section .section-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .image-gen-section .section-actions .el-checkbox {
+    width: 100%;
+    margin-right: 0 !important;
+  }
+
+  .image-gen-section .section-actions .el-button {
+    width: 100%;
+    margin: 0;
+  }
+
+  .character-image-list,
+  .scene-image-list {
+    grid-template-columns: 1fr;
+  }
+
+  .fixed-card .card-header {
+    gap: 6px;
+  }
+
+  .fixed-card .card-actions {
+    flex-wrap: wrap;
+  }
+
+  .library-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .upload-area :deep(.el-upload-dragger) {
+    height: 140px;
+  }
+
+  :deep(.el-dialog .el-form-item__label) {
+    width: 100% !important;
+    text-align: left !important;
+    margin-bottom: 6px;
+  }
+
+  :deep(.el-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+  }
+
+  :deep(.el-dialog__footer .el-button) {
+    width: 100%;
+    margin: 0 0 8px 0;
+  }
+
+  :deep(.el-dialog__footer .el-button:last-child) {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .library-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

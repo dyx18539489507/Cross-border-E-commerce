@@ -5,7 +5,7 @@
     width="900px"
     :close-on-click-modal="false"
     destroy-on-close
-    class="ai-config-dialog"
+    class="ai-config-dialog dialog-form-safe"
   >
     <!-- Dialog Header Actions -->
     <template #header>
@@ -114,12 +114,15 @@
       width="600px"
       :close-on-click-modal="false"
       append-to-body
+      class="dialog-form-safe"
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
         label-width="100px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
       >
         <el-form-item :label="$t('aiConfig.form.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('aiConfig.form.namePlaceholder')" />
@@ -229,6 +232,7 @@ import { Plus, MagicStick } from '@element-plus/icons-vue'
 import { aiAPI } from '@/api/ai'
 import type { AIServiceConfig, AIServiceType, CreateAIConfigRequest, UpdateAIConfigRequest } from '@/types/ai'
 import ConfigList from '@/views/settings/components/ConfigList.vue'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 const props = defineProps<{
   modelValue: boolean
@@ -741,6 +745,7 @@ watch(visible, (val) => {
     loadConfigs()
   }
 })
+
 </script>
 
 <style scoped>
@@ -864,5 +869,54 @@ watch(visible, (val) => {
 
 .dark :deep(.el-select .el-input__wrapper) {
   background: var(--bg-secondary);
+}
+
+@media (max-width: 768px) {
+  .dialog-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding-right: 0;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .header-actions .el-button {
+    flex: 1 1 auto;
+  }
+
+  .ai-config-dialog :deep(.el-dialog__body) {
+    padding: 12px;
+    max-height: 70vh;
+  }
+
+  .quick-setup-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .footer-buttons {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .footer-buttons .el-button {
+    width: 100%;
+    margin: 0;
+  }
+
+  :deep(.el-dialog .el-form-item__label) {
+    width: 100% !important;
+    text-align: left !important;
+    margin-bottom: 6px;
+  }
+
+  :deep(.el-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+  }
 }
 </style>

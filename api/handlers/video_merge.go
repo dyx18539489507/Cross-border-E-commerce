@@ -102,3 +102,50 @@ func (h *VideoMergeHandler) DeleteMerge(c *gin.Context) {
 
 	response.Success(c, gin.H{"message": "Merge deleted successfully"})
 }
+
+func (h *VideoMergeHandler) DistributeVideo(c *gin.Context) {
+	mergeIDStr := c.Param("merge_id")
+	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
+	if err != nil {
+		response.BadRequest(c, "Invalid merge ID")
+		return
+	}
+
+	var req services2.DistributeVideoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request")
+		return
+	}
+
+	distributions, err := h.mergeService.DistributeVideo(uint(mergeID), &req)
+	if err != nil {
+		h.log.Errorw("Failed to distribute merged video", "error", err, "merge_id", mergeID)
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":       "Distribution task created",
+		"distributions": distributions,
+	})
+}
+
+func (h *VideoMergeHandler) ListDistributions(c *gin.Context) {
+	mergeIDStr := c.Param("merge_id")
+	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
+	if err != nil {
+		response.BadRequest(c, "Invalid merge ID")
+		return
+	}
+
+	distributions, err := h.mergeService.ListDistributions(uint(mergeID))
+	if err != nil {
+		h.log.Errorw("Failed to list distributions", "error", err, "merge_id", mergeID)
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"distributions": distributions,
+	})
+}

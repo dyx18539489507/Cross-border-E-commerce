@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -246,6 +247,13 @@ func (s *AssetService) ImportFromImageGen(imageGenID uint) (*models.Asset, error
 }
 
 func (s *AssetService) ImportFromVideoGen(videoGenID uint) (*models.Asset, error) {
+	var existing models.Asset
+	if err := s.db.Where("type = ? AND video_gen_id = ?", models.AssetTypeVideo, videoGenID).First(&existing).Error; err == nil {
+		return nil, fmt.Errorf("该视频已在素材库中")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing video asset: %w", err)
+	}
+
 	var videoGen models.VideoGeneration
 	if err := s.db.Preload("Storyboard.Episode").Where("id = ? ", videoGenID).First(&videoGen).Error; err != nil {
 		return nil, fmt.Errorf("video generation not found")

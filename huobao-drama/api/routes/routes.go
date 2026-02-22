@@ -17,6 +17,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	r.Use(gin.Recovery())
 	r.Use(middlewares2.LoggerMiddleware(log))
 	r.Use(middlewares2.CORSMiddleware(cfg.Server.CORSOrigins))
+	r.Use(middlewares2.DeviceIdentityMiddleware())
 
 	// 静态文件服务（用户上传的文件）
 	r.Static("/static", cfg.Storage.LocalPath)
@@ -193,6 +194,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			videoMerges.GET("", videoMergeHandler.ListMerges)
 			videoMerges.POST("", videoMergeHandler.MergeVideos)
 			videoMerges.GET("/:merge_id", videoMergeHandler.GetMerge)
+			videoMerges.GET("/:merge_id/distributions", videoMergeHandler.ListDistributions)
+			videoMerges.POST("/:merge_id/distribute", videoMergeHandler.DistributeVideo)
 			videoMerges.DELETE("/:merge_id", videoMergeHandler.DeleteMerge)
 		}
 

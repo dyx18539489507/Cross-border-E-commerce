@@ -3,6 +3,12 @@ export interface Drama {
   
   title: string
   description?: string
+  target_country?: string | string[]
+  material_composition?: string
+  marketing_selling_points?: string
+  compliance_score?: number
+  compliance_level?: ComplianceRiskLevel
+  compliance_report?: ComplianceResult
   genre?: string
   style?: string
   total_episodes: number
@@ -21,6 +27,17 @@ export interface Drama {
 }
 
 export type DramaStatus = 'draft' | 'planning' | 'production' | 'completed' | 'archived' | 'generating' | 'error'
+export type ComplianceRiskLevel = 'green' | 'yellow' | 'orange' | 'red'
+
+export interface ComplianceResult {
+  score: number
+  level: ComplianceRiskLevel
+  level_label: string
+  summary: string
+  non_compliance_points: string[]
+  rectification_suggestions: string[]
+  suggested_categories: string[]
+}
 
 export interface Character {
   id: number
@@ -85,9 +102,6 @@ export interface Storyboard {
   image_url?: string
   video_url?: string
   composed_image?: string
-  composed_url?: string
-  background_id?: string | number
-  background_url?: string
   scene_id?: string
   scene?: Scene
   created_at: string
@@ -105,7 +119,6 @@ export interface Scene {
   title?: string
   storyboard_number?: number
   storyboard_count?: number
-  storyboard_id?: string
   image_url?: string
   video_url?: string
   status: string
@@ -117,14 +130,25 @@ export interface Scene {
 
 export interface CreateDramaRequest {
   title: string
-  description?: string
+  description: string
+  target_country: string[]
+  material_composition?: string
+  marketing_selling_points?: string
   genre?: string
   tags?: string
+}
+
+export interface CreateDramaResponse {
+  drama: Drama
+  compliance: ComplianceResult
 }
 
 export interface UpdateDramaRequest {
   title?: string
   description?: string
+  target_country?: string[]
+  material_composition?: string
+  marketing_selling_points?: string
   genre?: string
   tags?: string
   status?: DramaStatus

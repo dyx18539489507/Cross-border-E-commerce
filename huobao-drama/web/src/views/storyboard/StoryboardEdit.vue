@@ -23,4 +23,10 @@ const goBack = () => {
 .storyboard-edit-container {
   padding: 20px;
 }
+
+@media (max-width: 768px) {
+  .storyboard-edit-container {
+    padding: 12px;
+  }
+}
 </style>

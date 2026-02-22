@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -31,13 +34,13 @@ func main() {
 
 	db, err := database.NewDatabase(cfg.Database)
 	if err != nil {
-		logr.Fatal("Failed to connect to database", "error", err)
+		logr.Fatalw("Failed to connect to database", "error", err)
 	}
 	logr.Info("Database connected successfully")
 
 	// 自动迁移数据库表结构
 	if err := database.AutoMigrate(db); err != nil {
-		logr.Fatal("Failed to migrate database", "error", err)
+		logr.Fatalw("Failed to migrate database", "error", err)
 	}
 	logr.Info("Database tables migrated successfully")
 
@@ -46,9 +49,9 @@ func main() {
 	if cfg.Storage.Type == "local" {
 		localStorage, err = storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Storage.BaseURL)
 		if err != nil {
-			logr.Fatal("Failed to initialize local storage", "error", err)
+			logr.Fatalw("Failed to initialize local storage", "error", err)
 		}
-		logr.Info("Local storage initialized successfully", "path", cfg.Storage.LocalPath)
+		logr.Infow("Local storage initialized successfully", "path", cfg.Storage.LocalPath)
 	}
 
 	if cfg.App.Debug {
@@ -57,10 +60,27 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	listenAddr := fmt.Sprintf(":%d", cfg.Server.Port)
+	if cfg.Server.Host != "" && cfg.Server.Host != "0.0.0.0" {
+		listenAddr = net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
+	}
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		if errors.Is(err, syscall.EADDRINUSE) {
+			logr.Fatalw(
+				"Server port is already in use",
+				"port", cfg.Server.Port,
+				"listen_addr", listenAddr,
+				"hint", fmt.Sprintf("Run `lsof -nP -iTCP:%d -sTCP:LISTEN` to find the process, then stop it or set SERVER_PORT to another port", cfg.Server.Port),
+			)
+		}
+		logr.Fatalw("Failed to bind server port", "error", err, "listen_addr", listenAddr)
+	}
+
 	router := routes.SetupRouter(cfg, db, logr, localStorage)
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Addr:         listenAddr,
 		Handler:      router,
 		ReadTimeout:  10 * time.Minute,
 		WriteTimeout: 10 * time.Minute,
@@ -69,6 +89,7 @@ func main() {
 	go func() {
 		logr.Infow("🚀 Server starting...",
 			"port", cfg.Server.Port,
+			"listen_addr", listenAddr,
 			"mode", gin.Mode())
 		logr.Info("📍 Access URLs:")
 		logr.Info(fmt.Sprintf("   Frontend:  http://localhost:%d", cfg.Server.Port))
@@ -79,8 +100,8 @@ func main() {
 		logr.Info(fmt.Sprintf("   Assets:    http://localhost:%d/assets", cfg.Server.Port))
 		logr.Info("✅ Server is ready!")
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logr.Fatal("Failed to start server", "error", err)
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			logr.Fatalw("Failed to start server", "error", err)
 		}
 	}()
 
@@ -96,7 +117,7 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		logr.Fatal("Server forced to shutdown", "error", err)
+		logr.Fatalw("Server forced to shutdown", "error", err)
 	}
 
 	logr.Info("Server exited")

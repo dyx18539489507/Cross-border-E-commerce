@@ -428,4 +428,80 @@ onMounted(() => {
   display: flex;
   justify-content: center;
 }
+
+@media (max-width: 768px) {
+  .image-generation-container {
+    padding: 12px;
+  }
+
+  .page-header :deep(.el-page-header__main) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .page-header :deep(.el-page-header__left),
+  .page-header :deep(.el-page-header__content) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .header-content h2 {
+    font-size: 20px;
+  }
+
+  .filter-card :deep(.el-form) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .filter-card :deep(.el-form-item) {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 0;
+  }
+
+  .filter-card :deep(.el-form-item__content) {
+    width: 100%;
+  }
+
+  .page-header :deep(.el-page-header__extra) {
+    width: 100%;
+    margin-left: 0;
+    display: flex;
+  }
+
+  .page-header :deep(.el-page-header__extra .el-button) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .meta-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .card-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pagination {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .image-generation-container {
+    padding: 8px;
+  }
+
+  .prompt-text {
+    min-height: auto;
+  }
+}
 </style>

@@ -608,13 +608,21 @@
     <!-- 阶段 3: 专业制作（占位，实际跳转到专业UI页面） -->
 
     <!-- 镜头编辑对话框 -->
-    <el-dialog 
-      v-model="shotEditDialogVisible" 
-:title="$t('workflow.editShot')" 
+    <el-dialog
+      v-model="shotEditDialogVisible"
+      :title="$t('workflow.editShot')"
       width="800px"
       :close-on-click-modal="false"
+      class="dialog-form-safe"
     >
-      <el-form v-if="editingShot" label-width="100px" size="default">
+      <el-form
+        v-if="editingShot"
+        ref="shotEditFormRef"
+        label-width="100px"
+        size="default"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('workflow.shotTitle')">
           <el-input v-model="editingShot.title" :placeholder="$t('workflow.shotTitlePlaceholder')" />
         </el-form-item>
@@ -719,12 +727,18 @@
     </el-dialog>
 
     <!-- 提示词编辑对话框 -->
-    <el-dialog 
-      v-model="promptDialogVisible" 
-:title="$t('workflow.editPrompt')" 
+    <el-dialog
+      v-model="promptDialogVisible"
+      :title="$t('workflow.editPrompt')"
       width="600px"
+      class="dialog-form-safe"
     >
-      <el-form label-width="80px">
+      <el-form
+        ref="promptFormRef"
+        label-width="80px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('common.name')">
           <el-input v-model="currentEditItem.name" disabled />
         </el-form-item>
@@ -744,9 +758,9 @@
     </el-dialog>
 
     <!-- 角色库选择对话框 -->
-    <el-dialog 
-      v-model="libraryDialogVisible" 
-:title="$t('workflow.selectFromLibrary')" 
+    <el-dialog
+      v-model="libraryDialogVisible"
+      :title="$t('workflow.selectFromLibrary')"
       width="800px"
     >
       <div class="library-grid">
@@ -766,9 +780,9 @@
     </el-dialog>
 
     <!-- 图片上传对话框 -->
-    <el-dialog 
-      v-model="uploadDialogVisible" 
-:title="$t('tooltip.uploadImage')" 
+    <el-dialog
+      v-model="uploadDialogVisible"
+      :title="$t('tooltip.uploadImage')"
       width="500px"
     >
       <el-upload
@@ -797,12 +811,17 @@
       v-model="digitalHumanDialogVisible"
       title="数字人制作"
       width="560px"
-      class="digital-human-dialog"
+      class="digital-human-dialog dialog-form-safe"
       :lock-scroll="true"
       :append-to-body="true"
       @close="resetDigitalHumanForm"
     >
-        <el-form label-position="top" class="digital-human-form">
+        <el-form
+          ref="digitalHumanDialogFormRef"
+          label-position="top"
+          class="digital-human-form long-form form-enter-flow"
+          @keydown.enter="handleFormEnterNavigation"
+        >
         <el-form-item>
           <template #label>
             <span class="digital-human-required-label">
@@ -1102,12 +1121,15 @@ import {
 } from '@element-plus/icons-vue'
 import { dramaAPI } from '@/api/drama'
 import { generationAPI } from '@/api/generation'
+import { aiAPI } from '@/api/ai'
 import { characterLibraryAPI } from '@/api/character-library'
 import { imageAPI } from '@/api/image'
 import { voiceLibraryAPI } from '@/api/voice-library'
 import type { VoiceLibraryItem } from '@/api/voice-library'
 import { digitalHumanAPI } from '@/api/digital-human'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 import type { Drama } from '@/types/drama'
+import type { AIServiceConfig } from '@/types/ai'
 import { AppHeader } from '@/components/common'
 
 const route = useRoute()
@@ -1244,6 +1266,8 @@ const selectAllScenes = ref(false)
 const promptDialogVisible = ref(false)
 const libraryDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
+const promptFormRef = ref<{ $el?: HTMLElement } | null>(null)
+const digitalHumanDialogFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const currentEditItem = ref<any>({ name: '' })
 const currentEditType = ref<'character' | 'scene'>('character')
 const editPrompt = ref('')
@@ -1395,6 +1419,88 @@ const allImagesGenerated = computed(() => {
   
   return allCharsHaveImages && allScenesHaveImages
 })
+
+const isMissingTextAIConfigError = (message: string) => {
+  const raw = (message || '').toLowerCase()
+  return (
+    raw.includes('no active config found') ||
+    raw.includes('no config found') ||
+    raw.includes('failed to get ai client')
+  )
+}
+
+const pickTextConfigToActivate = (configs: AIServiceConfig[]) => {
+  const getTimeScore = (config: AIServiceConfig) => {
+    const ts = Date.parse(config.updated_at || config.created_at || '')
+    return Number.isNaN(ts) ? 0 : ts
+  }
+
+  return [...configs].sort((a, b) => {
+    const priorityDiff = (b.priority || 0) - (a.priority || 0)
+    if (priorityDiff !== 0) return priorityDiff
+
+    const timeDiff = getTimeScore(b) - getTimeScore(a)
+    if (timeDiff !== 0) return timeDiff
+
+    return b.id - a.id
+  })[0]
+}
+
+const promptOpenTextAIConfig = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '提取角色和场景需要至少一个已启用的文本AI配置，是否前往“设置 > AI服务配置”？',
+      '未配置文本AI服务',
+      {
+        confirmButtonText: '去配置',
+        cancelButtonText: '取消',
+        type: 'warning',
+        distinguishCancelAndClose: true
+      }
+    )
+    router.push('/settings/ai-config')
+  } catch {
+    // user cancelled
+  }
+}
+
+const ensureTextAIConfigReady = async (): Promise<boolean> => {
+  let textConfigs: AIServiceConfig[] = []
+
+  try {
+    textConfigs = await aiAPI.list('text')
+  } catch (error: any) {
+    console.error('检查文本AI配置失败:', error)
+    ElMessage.error(error.message || '无法检查文本AI配置，请稍后重试')
+    return false
+  }
+
+  if (!textConfigs || textConfigs.length === 0) {
+    await promptOpenTextAIConfig()
+    return false
+  }
+
+  if (textConfigs.some(config => config.is_active)) {
+    return true
+  }
+
+  const candidate = pickTextConfigToActivate(textConfigs)
+  if (!candidate) {
+    await promptOpenTextAIConfig()
+    return false
+  }
+
+  try {
+    await aiAPI.update(candidate.id, { is_active: true })
+    ElMessage.success(`已自动启用文本AI配置：${candidate.name}`)
+    return true
+  } catch (error: any) {
+    console.error('自动启用文本AI配置失败:', error)
+    ElMessage.error(error.message || '自动启用文本AI配置失败，请手动检查配置')
+    await promptOpenTextAIConfig()
+    return false
+  }
+}
 
 const goBack = () => {
   // 使用 replace 避免在历史记录中留下当前页面
@@ -1996,6 +2102,11 @@ const handleExtractCharactersAndBackgrounds = async () => {
   if (hasExtractedData.value) {
     ElMessage.info($t('workflow.startReExtracting'))
   }
+
+  const textConfigReady = await ensureTextAIConfigReady()
+  if (!textConfigReady) {
+    return
+  }
   
   await extractCharactersAndBackgrounds()
 }
@@ -2087,15 +2198,8 @@ const extractCharactersAndBackgrounds = async () => {
     const errorData = error.response?.data?.error
     const errorMsg = errorData?.message || error.message || '提取失败'
     
-    if (errorMsg.includes('no config found') || 
-        errorMsg.includes('AI client') ||
-        errorMsg.includes('failed to get AI client')) {
-      ElMessage({
-        type: 'warning',
-        message: '未配置AI服务，请前往"设置 > AI服务配置"添加文本生成服务',
-        duration: 5000,
-        showClose: true
-      })
+    if (isMissingTextAIConfigError(errorMsg)) {
+      await promptOpenTextAIConfig()
     } else {
       ElMessage.error(errorMsg)
     }
@@ -2449,6 +2553,7 @@ const regenerateShots = async () => {
 }
 
 const shotEditDialogVisible = ref(false)
+const shotEditFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const editingShot = ref<any>(null)
 const editingShotIndex = ref<number>(-1)
 const savingShot = ref(false)
@@ -2714,7 +2819,7 @@ onMounted(() => {
    Page Layout / 页面布局 - 紧凑边距
    ======================================== */
 .page-container {
-  min-height: 100vh;
+  min-height: var(--app-vh, 100vh);
   background: var(--bg-primary);
   // padding: var(--space-2) var(--space-3);
   transition: background var(--transition-normal);

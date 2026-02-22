@@ -9,7 +9,7 @@
     <el-card shadow="never" class="main-card">
       <el-tabs v-model="activeTab">
         <el-tab-pane label="基本信息" name="basic">
-          <el-form :model="form" label-width="100px" style="max-width: 600px">
+          <el-form :model="form" label-position="top" style="max-width: 600px">
             <el-form-item label="项目标题">
               <el-input v-model="form.title" />
             </el-form-item>
@@ -135,5 +135,15 @@ onMounted(async () => {
   margin-top: 20px;
   padding: 20px;
   text-align: center;
+}
+
+@media (max-width: 768px) {
+  .drama-settings-container {
+    padding: 12px;
+  }
+
+  .danger-zone {
+    padding: 12px;
+  }
 }
 </style>

@@ -9,8 +9,15 @@
 -- 剧本表
 CREATE TABLE IF NOT EXISTS dramas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL,
     description TEXT,
+    target_country TEXT NOT NULL DEFAULT '',
+    material_composition TEXT,
+    marketing_selling_points TEXT,
+    compliance_score INTEGER NOT NULL DEFAULT 0,
+    compliance_level TEXT NOT NULL DEFAULT 'green',
+    compliance_report TEXT, -- JSON存储
     genre TEXT,
     style TEXT NOT NULL DEFAULT 'realistic',
     total_episodes INTEGER NOT NULL DEFAULT 1,
@@ -25,6 +32,7 @@ CREATE TABLE IF NOT EXISTS dramas (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dramas_status ON dramas(status);
+CREATE INDEX IF NOT EXISTS idx_dramas_device_id ON dramas(device_id);
 CREATE INDEX IF NOT EXISTS idx_dramas_deleted_at ON dramas(deleted_at);
 
 -- 章节表
@@ -225,6 +233,35 @@ CREATE INDEX IF NOT EXISTS idx_video_merges_drama_id ON video_merges(drama_id);
 CREATE INDEX IF NOT EXISTS idx_video_merges_status ON video_merges(status);
 CREATE INDEX IF NOT EXISTS idx_video_merges_deleted_at ON video_merges(deleted_at);
 
+-- 视频分发记录表
+CREATE TABLE IF NOT EXISTS video_distributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    merge_id INTEGER NOT NULL,
+    episode_id INTEGER NOT NULL,
+    drama_id INTEGER NOT NULL,
+    platform TEXT NOT NULL, -- tiktok, youtube, instagram, x
+    title TEXT,
+    description TEXT,
+    hashtags TEXT, -- JSON存储
+    source_url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, processing, published, failed
+    message TEXT,
+    published_url TEXT,
+    error_msg TEXT,
+    started_at DATETIME,
+    completed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_distributions_merge_id ON video_distributions(merge_id);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_episode_id ON video_distributions(episode_id);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_drama_id ON video_distributions(drama_id);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_platform ON video_distributions(platform);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_status ON video_distributions(status);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_deleted_at ON video_distributions(deleted_at);
+
 -- ======================================
 -- 3. 角色库表
 -- ======================================
@@ -232,6 +269,7 @@ CREATE INDEX IF NOT EXISTS idx_video_merges_deleted_at ON video_merges(deleted_a
 -- 角色库表 (开源版本 - 全局共享)
 CREATE TABLE IF NOT EXISTS character_libraries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     category TEXT,
     image_url TEXT NOT NULL,
@@ -244,6 +282,7 @@ CREATE TABLE IF NOT EXISTS character_libraries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_character_libraries_category ON character_libraries(category);
+CREATE INDEX IF NOT EXISTS idx_character_libraries_device_id ON character_libraries(device_id);
 CREATE INDEX IF NOT EXISTS idx_character_libraries_deleted_at ON character_libraries(deleted_at);
 
 -- ======================================
@@ -444,6 +483,7 @@ CREATE INDEX IF NOT EXISTS idx_asset_collection_relations_collection_id ON asset
 -- AI服务配置表 (全局配置，无用户隔离)
 CREATE TABLE IF NOT EXISTS ai_service_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL DEFAULT '',
     service_type TEXT NOT NULL, -- text, image, video
     provider TEXT, -- openai, gemini, volcengine, etc.
     name TEXT NOT NULL,
@@ -462,6 +502,7 @@ CREATE TABLE IF NOT EXISTS ai_service_configs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_service_configs_service_type ON ai_service_configs(service_type);
+CREATE INDEX IF NOT EXISTS idx_ai_service_configs_device_id ON ai_service_configs(device_id);
 CREATE INDEX IF NOT EXISTS idx_ai_service_configs_deleted_at ON ai_service_configs(deleted_at);
 
 -- AI服务提供商表

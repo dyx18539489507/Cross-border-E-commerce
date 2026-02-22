@@ -247,11 +247,37 @@ defineExpose({
 /* Responsive | 响应式 */
 @media (max-width: 768px) {
   .header-content {
-    padding: 0 var(--space-3);
+    height: auto;
+    min-height: 64px;
+    padding: 8px var(--space-3);
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .header-left,
+  .header-right {
+    min-width: 0;
+  }
+
+  .header-right {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .header-center {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
   
   .btn-text {
     display: none;
+  }
+
+  .logo {
+    font-size: 1.35rem;
   }
   
   .header-btn {
@@ -266,6 +292,26 @@ defineExpose({
 
   :deep(.back-btn span) {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-content {
+    padding: 6px var(--space-2);
+  }
+
+  .header-right :deep(.el-button .el-icon + span) {
+    display: none;
+  }
+
+  :deep(.page-title .subtitle) {
+    display: none;
+  }
+
+  :deep(.page-title h1),
+  :deep(.header-title),
+  :deep(.drama-title) {
+    font-size: 0.9375rem;
   }
 }
 </style>

@@ -26,7 +26,7 @@
 
       <div class="character-list">
         <el-row :gutter="20">
-          <el-col :span="6" v-for="character in characters" :key="character.id">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="character in characters" :key="character.id">
             <el-card shadow="hover" class="character-card" :class="{ 'has-image': character.image_url, 'selected': isSelected(character.id) }">
               <el-checkbox 
                 class="card-checkbox" 
@@ -342,5 +342,21 @@ onBeforeUnmount(() => {
 .actions {
   margin-top: 30px;
   text-align: center;
+}
+
+@media (max-width: 768px) {
+  .character-images-container {
+    padding: 12px;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .selection-info {
+    font-size: 13px;
+  }
 }
 </style>

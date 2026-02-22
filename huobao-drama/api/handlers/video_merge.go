@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	services2 "github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/drama-generator/backend/pkg/response"
@@ -23,13 +24,14 @@ func NewVideoMergeHandler(db *gorm.DB, transferService *services2.ResourceTransf
 }
 
 func (h *VideoMergeHandler) MergeVideos(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var req services2.MergeVideoRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request")
 		return
 	}
 
-	merge, err := h.mergeService.MergeVideos(&req)
+	merge, err := h.mergeService.MergeVideos(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to merge videos", "error", err)
 		response.InternalError(c, err.Error())
@@ -43,6 +45,7 @@ func (h *VideoMergeHandler) MergeVideos(c *gin.Context) {
 }
 
 func (h *VideoMergeHandler) GetMerge(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	mergeIDStr := c.Param("merge_id")
 	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
 	if err != nil {
@@ -50,7 +53,7 @@ func (h *VideoMergeHandler) GetMerge(c *gin.Context) {
 		return
 	}
 
-	merge, err := h.mergeService.GetMerge(uint(mergeID))
+	merge, err := h.mergeService.GetMerge(uint(mergeID), deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to get merge", "error", err)
 		response.NotFound(c, "Merge not found")
@@ -61,6 +64,7 @@ func (h *VideoMergeHandler) GetMerge(c *gin.Context) {
 }
 
 func (h *VideoMergeHandler) ListMerges(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	episodeID := c.Query("episode_id")
 	status := c.Query("status")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -71,7 +75,7 @@ func (h *VideoMergeHandler) ListMerges(c *gin.Context) {
 		episodeIDPtr = &episodeID
 	}
 
-	merges, total, err := h.mergeService.ListMerges(episodeIDPtr, status, page, pageSize)
+	merges, total, err := h.mergeService.ListMerges(episodeIDPtr, status, page, pageSize, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to list merges", "error", err)
 		response.InternalError(c, err.Error())
@@ -87,6 +91,7 @@ func (h *VideoMergeHandler) ListMerges(c *gin.Context) {
 }
 
 func (h *VideoMergeHandler) DeleteMerge(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	mergeIDStr := c.Param("merge_id")
 	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
 	if err != nil {
@@ -94,11 +99,60 @@ func (h *VideoMergeHandler) DeleteMerge(c *gin.Context) {
 		return
 	}
 
-	if err := h.mergeService.DeleteMerge(uint(mergeID)); err != nil {
+	if err := h.mergeService.DeleteMerge(uint(mergeID), deviceID); err != nil {
 		h.log.Errorw("Failed to delete merge", "error", err)
 		response.InternalError(c, err.Error())
 		return
 	}
 
 	response.Success(c, gin.H{"message": "Merge deleted successfully"})
+}
+
+func (h *VideoMergeHandler) DistributeVideo(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
+	mergeIDStr := c.Param("merge_id")
+	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
+	if err != nil {
+		response.BadRequest(c, "Invalid merge ID")
+		return
+	}
+
+	var req services2.DistributeVideoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request")
+		return
+	}
+
+	distributions, err := h.mergeService.DistributeVideo(uint(mergeID), &req, deviceID)
+	if err != nil {
+		h.log.Errorw("Failed to distribute merged video", "error", err, "merge_id", mergeID)
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":       "Distribution task created",
+		"distributions": distributions,
+	})
+}
+
+func (h *VideoMergeHandler) ListDistributions(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
+	mergeIDStr := c.Param("merge_id")
+	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
+	if err != nil {
+		response.BadRequest(c, "Invalid merge ID")
+		return
+	}
+
+	distributions, err := h.mergeService.ListDistributions(uint(mergeID), deviceID)
+	if err != nil {
+		h.log.Errorw("Failed to list distributions", "error", err, "merge_id", mergeID)
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"distributions": distributions,
+	})
 }

@@ -61,15 +61,22 @@ type GenerateStoryboardResult struct {
 
 type StoryboardProgressFunc func(progress int, message string)
 
-func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (*GenerateStoryboardResult, error) {
-	return s.generateStoryboard(episodeID, model, nil)
+func firstStoryboardDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
 }
 
-func (s *StoryboardService) GenerateStoryboardWithProgress(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
-	return s.generateStoryboard(episodeID, model, progress)
+func (s *StoryboardService) GenerateStoryboard(episodeID string, model string, deviceIDs ...string) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, model, nil, firstStoryboardDeviceID(deviceIDs))
 }
 
-func (s *StoryboardService) generateStoryboard(episodeID string, model string, progress StoryboardProgressFunc) (*GenerateStoryboardResult, error) {
+func (s *StoryboardService) GenerateStoryboardWithProgress(episodeID string, model string, progress StoryboardProgressFunc, deviceIDs ...string) (*GenerateStoryboardResult, error) {
+	return s.generateStoryboard(episodeID, model, progress, firstStoryboardDeviceID(deviceIDs))
+}
+
+func (s *StoryboardService) generateStoryboard(episodeID string, model string, progress StoryboardProgressFunc, deviceID string) (*GenerateStoryboardResult, error) {
 	var (
 		reportMu     sync.Mutex
 		lastProgress = -1
@@ -107,11 +114,15 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 		DramaID       string
 	}
 
-	err := s.db.Table("episodes").
+	episodeQuery := s.db.Table("episodes").
 		Select("episodes.id, episodes.script_content, episodes.description, episodes.drama_id").
 		Joins("INNER JOIN dramas ON dramas.id = episodes.drama_id").
-		Where("episodes.id = ?", episodeID).
-		First(&episode).Error
+		Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		episodeQuery = episodeQuery.Where("dramas.device_id = ?", deviceID)
+	}
+
+	err := episodeQuery.First(&episode).Error
 
 	if err != nil {
 		return nil, fmt.Errorf("剧集不存在或无权限访问")
@@ -408,15 +419,25 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 	)
 	if model != "" {
 		s.log.Infow("Using specified model for storyboard generation", "model", model)
-		client, getErr := s.aiService.GetAIClientForModel("text", model)
+		client, getErr := s.aiService.GetAIClientForModel("text", model, deviceID)
 		if getErr != nil {
 			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", getErr)
-			text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
+			defaultClient, defaultErr := s.aiService.GetAIClient("text", deviceID)
+			if defaultErr != nil {
+				genErr = defaultErr
+			} else {
+				text, genErr = defaultClient.GenerateText(prompt, "", ai.WithMaxTokens(16000))
+			}
 		} else {
 			text, genErr = client.GenerateText(prompt, "", ai.WithMaxTokens(16000))
 		}
 	} else {
-		text, genErr = s.aiService.GenerateText(prompt, "", ai.WithMaxTokens(16000))
+		defaultClient, defaultErr := s.aiService.GetAIClient("text", deviceID)
+		if defaultErr != nil {
+			genErr = defaultErr
+		} else {
+			text, genErr = defaultClient.GenerateText(prompt, "", ai.WithMaxTokens(16000))
+		}
 	}
 
 	if progressStop != nil {

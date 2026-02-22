@@ -48,6 +48,36 @@ export interface VideoMerge {
   completed_at?: string
 }
 
+export type DistributionPlatform = 'tiktok' | 'youtube' | 'instagram' | 'x'
+export type VideoDistributionStatus = 'pending' | 'processing' | 'published' | 'failed'
+
+export interface DistributeVideoRequest {
+  platforms: DistributionPlatform[]
+  title?: string
+  description?: string
+  hashtags?: string[]
+}
+
+export interface VideoDistribution {
+  id: number
+  merge_id: number
+  episode_id: number
+  drama_id: number
+  platform: DistributionPlatform
+  title?: string
+  description?: string
+  hashtags?: string[]
+  source_url: string
+  status: VideoDistributionStatus
+  message?: string
+  published_url?: string
+  error_msg?: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}
+
 export const videoMergeAPI = {
   async mergeVideos(data: MergeVideoRequest): Promise<VideoMerge> {
     const response = await request.post<{ merge: VideoMerge }>('/video-merges', data)
@@ -74,5 +104,15 @@ export const videoMergeAPI = {
 
   async deleteMerge(mergeId: number): Promise<void> {
     await request.delete(`/video-merges/${mergeId}`)
+  },
+
+  async distributeVideo(mergeId: number, data: DistributeVideoRequest): Promise<VideoDistribution[]> {
+    const response = await request.post<{ distributions: VideoDistribution[] }>(`/video-merges/${mergeId}/distribute`, data)
+    return response.distributions || []
+  },
+
+  async listDistributions(mergeId: number): Promise<VideoDistribution[]> {
+    const response = await request.get<{ distributions: VideoDistribution[] }>(`/video-merges/${mergeId}/distributions`)
+    return response.distributions || []
   }
 }

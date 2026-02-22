@@ -28,6 +28,13 @@ ai:
   default_image_provider: "openai"
   default_video_provider: "doubao"
 
+compliance:
+  enabled: true
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  endpoint: "/chat/completions"
+  api_key: "3ff8f8b3-5112-4954-8e27-27c35bd3fab6"
+  model: "deepseek-v3-2-251201"
+
 sfx:
   default_limit: 20
   request_timeout: 30
@@ -38,3 +45,16 @@ sfx:
   pixabay:
     api_key: ""
     base_url: "https://pixabay.com"
+  translation:
+    enabled: false
+    app_id: ""
+    api_key: ""
+    endpoint: "https://openapi.youdao.com/api"
+    from: "auto"
+    to: "zh-CHS"
+
+# 分发网关（可选，用于接入真实社媒发布）
+# 设置以下环境变量后，一键分发会向网关发起真实发布请求：
+# DISTRIBUTION_GATEWAY_URL=https://your-distribution-gateway/api/publish
+# DISTRIBUTION_GATEWAY_TOKEN=your-token
+# DISTRIBUTION_GATEWAY_TIMEOUT_SECONDS=30

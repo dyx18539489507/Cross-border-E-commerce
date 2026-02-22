@@ -8,20 +8,26 @@ import (
 )
 
 type Drama struct {
-	ID            uint           `gorm:"primaryKey;autoIncrement" json:"id"`
-	Title         string         `gorm:"type:varchar(200);not null" json:"title"`
-	Description   *string        `gorm:"type:text" json:"description"`
-	Genre         *string        `gorm:"type:varchar(50)" json:"genre"`
-	Style         string         `gorm:"type:varchar(50);default:'realistic'" json:"style"`
-	TotalEpisodes int            `gorm:"default:1" json:"total_episodes"`
-	TotalDuration int            `gorm:"default:0" json:"total_duration"`
-	Status        string         `gorm:"type:varchar(20);default:'draft';not null" json:"status"`
-	Thumbnail     *string        `gorm:"type:varchar(500)" json:"thumbnail"`
-	Tags          datatypes.JSON `gorm:"type:json" json:"tags"`
-	Metadata      datatypes.JSON `gorm:"type:json" json:"metadata"`
-	CreatedAt     time.Time      `gorm:"not null;autoCreateTime" json:"created_at"`
-	UpdatedAt     time.Time      `gorm:"not null;autoUpdateTime" json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                     uint           `gorm:"primaryKey;autoIncrement" json:"id"`
+	Title                  string         `gorm:"type:varchar(200);not null" json:"title"`
+	Description            *string        `gorm:"type:text" json:"description"`
+	TargetCountry          string         `gorm:"type:text;not null;default:''" json:"target_country"`
+	MaterialComposition    *string        `gorm:"type:text" json:"material_composition"`
+	MarketingSellingPoints *string        `gorm:"type:text" json:"marketing_selling_points"`
+	ComplianceScore        int            `gorm:"default:0" json:"compliance_score"`
+	ComplianceLevel        string         `gorm:"type:varchar(20);not null;default:'green'" json:"compliance_level"`
+	ComplianceReport       datatypes.JSON `gorm:"type:json" json:"compliance_report"`
+	Genre                  *string        `gorm:"type:varchar(50)" json:"genre"`
+	Style                  string         `gorm:"type:varchar(50);default:'realistic'" json:"style"`
+	TotalEpisodes          int            `gorm:"default:1" json:"total_episodes"`
+	TotalDuration          int            `gorm:"default:0" json:"total_duration"`
+	Status                 string         `gorm:"type:varchar(20);default:'draft';not null" json:"status"`
+	Thumbnail              *string        `gorm:"type:varchar(500)" json:"thumbnail"`
+	Tags                   datatypes.JSON `gorm:"type:json" json:"tags"`
+	Metadata               datatypes.JSON `gorm:"type:json" json:"metadata"`
+	CreatedAt              time.Time      `gorm:"not null;autoCreateTime" json:"created_at"`
+	UpdatedAt              time.Time      `gorm:"not null;autoUpdateTime" json:"updated_at"`
+	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Episodes   []Episode   `gorm:"foreignKey:DramaID" json:"episodes,omitempty"`
 	Characters []Character `gorm:"foreignKey:DramaID" json:"characters,omitempty"`

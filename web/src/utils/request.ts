@@ -1,6 +1,5 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 
 interface CustomAxiosInstance extends Omit<AxiosInstance, 'get' | 'post' | 'put' | 'patch' | 'delete'> {
   get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
@@ -48,9 +47,18 @@ request.interceptors.response.use(
   (error: AxiosError<any>) => {
     // 不在拦截器中自动显示错误提示，让业务代码根据具体情况处理
     // 将后端错误信息转为标准 Error，便于业务层展示
-    const serverMessage = error.response?.data?.error?.message || error.response?.data?.message
+    const serverError = error.response?.data?.error
+    const serverMessage = serverError?.message || error.response?.data?.message
     if (serverMessage) {
-      return Promise.reject(new Error(serverMessage))
+      const wrappedError = new Error(serverMessage) as Error & {
+        code?: string
+        details?: any
+        status?: number
+      }
+      wrappedError.code = serverError?.code
+      wrappedError.details = serverError?.details
+      wrappedError.status = error.response?.status
+      return Promise.reject(wrappedError)
     }
     return Promise.reject(error)
   }

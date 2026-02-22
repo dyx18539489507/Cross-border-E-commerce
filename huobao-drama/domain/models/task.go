@@ -9,6 +9,7 @@ import (
 // AsyncTask 异步任务模型
 type AsyncTask struct {
 	ID          string         `gorm:"primaryKey;size:36" json:"id"`
+	DeviceID    string         `gorm:"size:128;not null;default:'';index" json:"-"`
 	Type        string         `gorm:"size:50;not null;index" json:"type"`   // 任务类型：storyboard_generation
 	Status      string         `gorm:"size:20;not null;index" json:"status"` // pending, processing, completed, failed
 	Progress    int            `gorm:"default:0" json:"progress"`            // 0-100

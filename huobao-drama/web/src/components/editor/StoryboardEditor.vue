@@ -1629,4 +1629,137 @@ watch(() => currentShot.value, () => {
 :deep(.el-scrollbar__view) {
   height: 100%;
 }
+
+@media (max-width: 1024px) {
+  .storyboard-editor {
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .left-panel,
+  .right-panel {
+    width: 100%;
+  }
+
+  .left-panel {
+    max-height: 300px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-primary);
+  }
+
+  .center-panel {
+    min-height: 420px;
+  }
+
+  .right-panel {
+    border-left: 0;
+    border-top: 1px solid var(--border-primary);
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 768px) {
+  .left-panel .panel-header {
+    padding: 12px;
+  }
+
+  .left-panel .scene-list {
+    padding: 6px;
+  }
+
+  .center-panel .preview-header {
+    padding: 10px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .center-panel .preview-header .header-actions {
+    width: 100%;
+  }
+
+  .center-panel .preview-header .header-actions :deep(.el-button-group) {
+    display: flex;
+    width: 100%;
+  }
+
+  .center-panel .preview-header .header-actions :deep(.el-button-group .el-button) {
+    flex: 1 1 auto;
+  }
+
+  .center-panel .preview-area {
+    padding: 10px;
+  }
+
+  .center-panel .timeline-panel {
+    height: 170px;
+  }
+
+  .center-panel .timeline-panel .timeline-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .center-panel .timeline-panel .timeline-header .timeline-zoom {
+    width: 100%;
+  }
+
+  .center-panel .timeline-panel .timeline-header .timeline-zoom :deep(.el-slider) {
+    width: 100% !important;
+  }
+
+  .right-panel .param-section .param-row {
+    grid-template-columns: 1fr;
+  }
+
+  .right-panel .param-section .background-actions-inline {
+    flex-direction: column;
+  }
+
+  .left-panel .scene-list .scene-item {
+    padding: 10px;
+  }
+
+  .left-panel .scene-list .scene-item .scene-number {
+    width: 36px;
+    height: 36px;
+  }
+
+  .center-panel .timeline-panel .timeline-track .timeline-clips .timeline-clip {
+    width: 68px;
+  }
+}
+
+@media (max-width: 480px) {
+  .center-panel .preview-header .header-actions :deep(.el-button-group) {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .center-panel .preview-header .header-actions :deep(.el-button-group .el-button) {
+    width: 100%;
+  }
+
+  .center-panel .timeline-panel .timeline-header .timeline-tools {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .center-panel .timeline-panel .timeline-header .timeline-tools :deep(.el-button-group) {
+    width: 100%;
+    display: flex;
+  }
+
+  .center-panel .timeline-panel .timeline-header .timeline-tools :deep(.el-button-group .el-button) {
+    flex: 1 1 auto;
+  }
+
+  .center-panel .timeline-panel .timeline-track {
+    padding: 6px 8px;
+  }
+}
 </style>

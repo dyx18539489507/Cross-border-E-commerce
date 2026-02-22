@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -24,6 +25,7 @@ func NewScriptGenerationHandler(db *gorm.DB, cfg *config.Config, log *logger.Log
 }
 
 func (h *ScriptGenerationHandler) GenerateCharacters(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var req services.GenerateCharactersRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
@@ -31,7 +33,7 @@ func (h *ScriptGenerationHandler) GenerateCharacters(c *gin.Context) {
 	}
 
 	// 创建异步任务
-	task, err := h.taskService.CreateTask("character_generation", req.DramaID)
+	task, err := h.taskService.CreateTask("character_generation", req.DramaID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create task", "error", err)
 		response.InternalError(c, err.Error())
@@ -42,7 +44,7 @@ func (h *ScriptGenerationHandler) GenerateCharacters(c *gin.Context) {
 	reqCopy := req
 
 	// 启动后台goroutine处理
-	go h.processCharacterGeneration(task.ID, &reqCopy)
+	go h.processCharacterGeneration(task.ID, &reqCopy, deviceID)
 
 	// 立即返回任务ID
 	response.Success(c, gin.H{
@@ -53,7 +55,7 @@ func (h *ScriptGenerationHandler) GenerateCharacters(c *gin.Context) {
 }
 
 // processCharacterGeneration 后台处理角色生成
-func (h *ScriptGenerationHandler) processCharacterGeneration(taskID string, req *services.GenerateCharactersRequest) {
+func (h *ScriptGenerationHandler) processCharacterGeneration(taskID string, req *services.GenerateCharactersRequest, deviceID string) {
 	h.log.Infow("Starting character generation", "task_id", taskID, "drama_id", req.DramaID)
 
 	// 更新任务状态为处理中
@@ -62,7 +64,7 @@ func (h *ScriptGenerationHandler) processCharacterGeneration(taskID string, req 
 	}
 
 	// 调用实际的生成逻辑
-	characters, err := h.scriptService.GenerateCharacters(req)
+	characters, err := h.scriptService.GenerateCharacters(req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate characters", "error", err, "task_id", taskID)
 		if updateErr := h.taskService.UpdateTaskError(taskID, err); updateErr != nil {

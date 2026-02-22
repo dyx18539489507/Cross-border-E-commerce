@@ -23,4 +23,10 @@ const goBack = () => {
 .script-edit-container {
   padding: 20px;
 }
+
+@media (max-width: 768px) {
+  .script-edit-container {
+    padding: 12px;
+  }
+}
 </style>

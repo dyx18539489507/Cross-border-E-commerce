@@ -92,10 +92,7 @@ const handleBack = () => {
   .header-content {
     flex-direction: row;
     align-items: center;
-  }
-  
-  .page-header.with-back .header-content {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
 }
 
@@ -211,6 +208,34 @@ const handleBack = () => {
 @media (min-width: 768px) {
   .header-actions {
     margin-left: auto;
+  }
+}
+
+@media (max-width: 1023px) {
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .header-actions :deep(.el-button) {
+    width: 100%;
+  }
+
+  .header-title {
+    white-space: normal;
+    line-height: 1.3;
+    align-items: flex-start;
+  }
+
+  .header-subtitle {
+    display: block;
+    white-space: normal;
+  }
+}
+
+@media (min-width: 1024px) {
+  .page-header.with-back .header-content {
+    flex-wrap: nowrap;
   }
 }
 

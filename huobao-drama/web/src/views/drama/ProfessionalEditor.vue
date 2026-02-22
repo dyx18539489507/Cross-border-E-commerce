@@ -539,9 +539,9 @@
                     </div>
 
                     <!-- 首尾帧模式 -->
-                    <div v-else-if="selectedReferenceMode === 'first_last'" style="text-align: center;">
+                    <div v-else-if="selectedReferenceMode === 'first_last'" class="first-last-mode" style="text-align: center;">
                       <div class="reference-mode-title">首尾帧</div>
-                      <div style="display: flex; gap: 20px; justify-content: center; align-items: center;">
+                      <div class="first-last-slots" style="display: flex; gap: 20px; justify-content: center; align-items: center;">
                         <div>
                           <div class="frame-label">首帧</div>
                           <div class="image-slot"
@@ -587,11 +587,11 @@
                     </div>
 
                     <!-- 多图模式 -->
-                    <div v-else-if="selectedReferenceMode === 'multiple'" style="text-align: center;">
+                    <div v-else-if="selectedReferenceMode === 'multiple'" class="multiple-mode" style="text-align: center;">
                       <div style="margin-bottom: 12px; font-size: 13px; color: #606266; font-weight: 500;">
                         多图参考 ({{ selectedImagesForVideo.length }}/{{ currentModelCapability?.maxImages || 6 }})
                       </div>
-                      <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                      <div class="multiple-slots" style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                         <div v-for="index in (currentModelCapability?.maxImages || 6)" :key="index"
                           class="image-slot image-slot-small"
                           style="position: relative; width: 80px; height: 52px; border: 2px dashed #dcdfe6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff;"
@@ -666,7 +666,7 @@
                         <div style="display: flex; gap: 4px;">
                           <el-button v-if="video.status === 'completed' && video.video_url" type="success" size="small"
                             :loading="addingToAssets.has(video.id)" @click.stop="addVideoToAssets(video)">
-                            {{ addingToAssets.has(video.id) ? '添加中...' : '添加到素材库' }}
+                            {{ addingToAssets.has(video.id) ? '添加中...' : (isVideoInAssetLibrary(video) ? '已在素材库' : '添加到素材库') }}
                           </el-button>
                         </div>
                       </div>
@@ -773,6 +773,26 @@
                         </el-alert>
                       </div>
 
+                      <!-- 分发状态 -->
+                      <div
+                        v-if="merge.status === 'completed' && getMergeDistributionSummary(merge.id).length"
+                        class="distribution-summary"
+                      >
+                        <span class="distribution-summary-label">分发状态：</span>
+                        <el-tag
+                          v-for="item in getMergeDistributionSummary(merge.id)"
+                          :key="`${merge.id}-${item.platform}`"
+                          :type="getDistributionStatusType(item.status)"
+                          size="small"
+                          effect="plain"
+                          class="distribution-tag"
+                          :class="{ 'is-link': !!item.published_url }"
+                          @click="openDistributionRecord(item)"
+                        >
+                          {{ getPlatformLabel(item.platform) }} · {{ getDistributionStatusText(item.status) }}
+                        </el-tag>
+                      </div>
+
                       <!-- 操作按钮 -->
                       <div class="merge-actions">
                         <template v-if="merge.status === 'completed' && merge.merged_url">
@@ -782,6 +802,9 @@
                           </el-button>
                           <el-button :icon="View" @click="previewMergedVideo(merge.merged_url)" round>
                             在线预览
+                          </el-button>
+                          <el-button type="success" :icon="Connection" @click="openDistributionDialog(merge)" round>
+                            一键分发
                           </el-button>
                         </template>
                         <el-button type="danger" :icon="Delete"
@@ -867,6 +890,64 @@
       </div>
     </el-dialog>
 
+    <!-- 一键分发对话框 -->
+    <el-dialog
+      v-model="distributionDialogVisible"
+      title="一键分发"
+      width="560px"
+      :close-on-click-modal="false"
+      class="distribution-dialog dialog-form-safe"
+    >
+      <el-form label-position="top" class="distribution-form">
+        <el-form-item label="分发平台">
+          <el-checkbox-group v-model="distributionForm.platforms">
+            <el-checkbox
+              v-for="platform in distributionPlatforms"
+              :key="platform.value"
+              :label="platform.value"
+            >
+              {{ platform.label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="视频标题">
+          <el-input
+            v-model="distributionForm.title"
+            maxlength="120"
+            show-word-limit
+            placeholder="请输入发布标题"
+          />
+        </el-form-item>
+        <el-form-item label="发布文案">
+          <el-input
+            v-model="distributionForm.description"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="请输入发布文案，可介绍商品卖点"
+          />
+        </el-form-item>
+        <el-form-item label="话题标签（空格/逗号分隔）">
+          <el-input
+            v-model="distributionForm.hashtagsText"
+            placeholder="#跨境电商 #短剧带货"
+          />
+        </el-form-item>
+        <div class="distribution-target">
+          当前视频：{{ distributionTargetMerge?.title || '-' }}
+        </div>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="distributionDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="submittingDistribution" @click="submitDistribution">
+            {{ submittingDistribution ? '分发中...' : '开始分发' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <!-- 视频预览对话框 -->
     <el-dialog v-model="showVideoPreview" title="视频预览" width="800px" :close-on-click-modal="true" destroy-on-close>
       <div class="video-preview-container" v-if="previewVideo">
@@ -917,12 +998,17 @@ import { imageAPI } from '@/api/image'
 import { videoAPI } from '@/api/video'
 import { aiAPI } from '@/api/ai'
 import { assetAPI } from '@/api/asset'
-import { videoMergeAPI } from '@/api/videoMerge'
+import {
+  videoMergeAPI,
+  type DistributionPlatform,
+  type VideoDistribution,
+  type VideoDistributionStatus,
+  type VideoMerge
+} from '@/api/videoMerge'
 import type { ImageGeneration } from '@/types/image'
 import type { VideoGeneration } from '@/types/video'
 import type { AIServiceConfig } from '@/types/ai'
 import type { Asset } from '@/types/asset'
-import type { VideoMerge } from '@/api/videoMerge'
 import VideoTimelineEditor from '@/components/editor/VideoTimelineEditor.vue'
 import type { Drama, Episode, Storyboard } from '@/types/drama'
 import { AppHeader } from '@/components/common'
@@ -1002,6 +1088,31 @@ let mergePollingTimer: any = null  // 视频合成列表轮询定时器
 // 视频合成列表
 const videoMerges = ref<VideoMerge[]>([])
 const loadingMerges = ref(false)
+
+const distributionPlatforms: Array<{ value: DistributionPlatform; label: string }> = [
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'x', label: 'X' }
+]
+const distributionDialogVisible = ref(false)
+const submittingDistribution = ref(false)
+const distributionTargetMerge = ref<VideoMerge | null>(null)
+const distributionForm = ref<{
+  mergeId: number
+  platforms: DistributionPlatform[]
+  title: string
+  description: string
+  hashtagsText: string
+}>({
+  mergeId: 0,
+  platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+  title: '',
+  description: '',
+  hashtagsText: ''
+})
+const mergeDistributions = ref<Record<number, VideoDistribution[]>>({})
+let distributionPollingTimer: any = null
 
 // 视频模型能力配置
 interface VideoModelCapability {
@@ -1177,6 +1288,18 @@ const loadVideoModels = async () => {
         ...capability
       }
     })
+
+    // 默认优先选择豆包模型，确保参考图组件稳定显示
+    if (videoModelCapabilities.value.length > 0) {
+      const hasCurrent = videoModelCapabilities.value.some(m => m.id === selectedVideoModel.value)
+      if (!selectedVideoModel.value || !hasCurrent) {
+        const preferredModel = videoModelCapabilities.value.find(m => {
+          const id = m.id.toLowerCase()
+          return id.startsWith('doubao') || id.startsWith('seedance') || id.includes('doubao') || id.includes('seedance')
+        })
+        selectedVideoModel.value = (preferredModel || videoModelCapabilities.value[0]).id
+      }
+    }
   } catch (error: any) {
     console.error('加载视频模型配置失败:', error)
     ElMessage.error('加载视频模型失败')
@@ -1201,8 +1324,19 @@ const loadVideoAssets = async () => {
 }
 
 // 当前模型能力
-const currentModelCapability = computed(() => {
-  return videoModelCapabilities.value.find(m => m.id === selectedVideoModel.value)
+const currentModelCapability = computed<VideoModelCapability | null>(() => {
+  if (!selectedVideoModel.value) return null
+  const matched = videoModelCapabilities.value.find(m => m.id === selectedVideoModel.value)
+  if (matched) return matched
+  return {
+    id: selectedVideoModel.value,
+    name: selectedVideoModel.value,
+    supportSingleImage: true,
+    supportMultipleImages: false,
+    supportFirstLastFrame: false,
+    supportTextOnly: true,
+    maxImages: 1
+  }
 })
 
 // 当前模型支持的参考图模式
@@ -1227,6 +1361,19 @@ const availableReferenceModes = computed(() => {
 
   return modes
 })
+
+const pickDefaultReferenceMode = (modes: Array<{ value: string }>) => {
+  if (!modes.length) return ''
+
+  const preferredOrder = ['single', 'first_last', 'multiple', 'none']
+  for (const mode of preferredOrder) {
+    if (modes.some(m => m.value === mode)) {
+      return mode
+    }
+  }
+
+  return modes[0].value
+}
 
 // 帧提示词存储key生成函数
 const getPromptStorageKey = (storyboardId: number | undefined, frameType: FrameType) => {
@@ -1407,11 +1554,25 @@ watch(currentFramePrompt, (newPrompt) => {
 })
 
 // 监听视频模型切换，清空已选图片和参考图模式
-watch(selectedVideoModel, () => {
+watch(selectedVideoModel, async () => {
   selectedImagesForVideo.value = []
   selectedLastImageForVideo.value = null
-  selectedReferenceMode.value = ''
+  await nextTick()
+  selectedReferenceMode.value = pickDefaultReferenceMode(availableReferenceModes.value)
 })
+
+watch(availableReferenceModes, (modes) => {
+  if (!modes.length) {
+    selectedReferenceMode.value = ''
+    return
+  }
+
+  const current = selectedReferenceMode.value
+  const isValid = modes.some(mode => mode.value === current)
+  if (!current || !isValid) {
+    selectedReferenceMode.value = pickDefaultReferenceMode(modes)
+  }
+}, { immediate: true })
 
 // 监听镜头切换，自动更新视频时长
 watch(currentStoryboard, (newStoryboard) => {
@@ -1679,11 +1840,7 @@ const generateFrameImage = async () => {
 
     generatedImages.value.unshift(result)
 
-    // 提示信息
-    const refMsg = referenceImages.length > 0
-      ? ` (已添加${referenceImages.length}张参考图)`
-      : ''
-    ElMessage.success(`图片生成任务已提交${refMsg}`)
+    ElMessage.success('图片生成任务已提交')
 
     // 启动轮询
     startPolling()
@@ -1711,6 +1868,32 @@ const playVideo = (video: VideoGeneration) => {
   showVideoPreview.value = true
 }
 
+const normalizeVideoAssetCompareURL = (raw?: string | null) => {
+  const url = (raw || '').trim()
+  if (!url) return ''
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url
+  return url.replace(/^https?:\/\/[^/]+/i, '')
+}
+
+const isVideoInAssetLibrary = (video: VideoGeneration) => {
+  if (!video) return false
+
+  const videoID = Number(video.id)
+  const videoURL = normalizeVideoAssetCompareURL(video.video_url || video.local_path || '')
+
+  return videoAssets.value.some((asset: any) => {
+    if (asset?.type !== 'video') return false
+
+    const assetVideoGenID = Number(asset.video_gen_id)
+    if (!Number.isNaN(assetVideoGenID) && assetVideoGenID > 0 && assetVideoGenID === videoID) {
+      return true
+    }
+
+    const assetURL = normalizeVideoAssetCompareURL(asset.url || asset.local_path || '')
+    return !!assetURL && !!videoURL && assetURL === videoURL
+  })
+}
+
 // 添加视频到素材库
 const addVideoToAssets = async (video: VideoGeneration) => {
   if (video.status !== 'completed' || !video.video_url) {
@@ -1718,50 +1901,20 @@ const addVideoToAssets = async (video: VideoGeneration) => {
     return
   }
 
+  if (isVideoInAssetLibrary(video)) {
+    ElMessage.warning('该视频已在素材库中，请勿重复添加')
+    return
+  }
+
   addingToAssets.value.add(video.id)
 
   try {
-    // 检查该镜头是否已存在素材
-    let isReplacing = false
-    if (video.storyboard_id) {
-      const existingAsset = videoAssets.value.find(
-        (asset: any) => asset.storyboard_id === video.storyboard_id
-      )
-
-      if (existingAsset) {
-        isReplacing = true
-        // 自动替换：先删除旧素材
-        try {
-          await assetAPI.deleteAsset(existingAsset.id)
-        } catch (error) {
-          console.error('删除旧素材失败:', error)
-        }
-      }
-    }
-
-    // 添加新素材
+    // 直接新增到素材库，允许同一分镜保留多个视频版本
     await assetAPI.importFromVideo(video.id)
     ElMessage.success('已添加到素材库')
 
     // 重新加载素材库列表
     await loadVideoAssets()
-
-    // 如果是替换操作，更新时间线中使用该分镜的所有视频片段
-    if (isReplacing && video.storyboard_id && video.video_url) {
-      console.log('=== 视频替换，准备更新时间线 ===')
-      console.log('timelineEditorRef.value:', timelineEditorRef.value)
-      console.log('video.storyboard_id:', video.storyboard_id)
-      console.log('video.video_url:', video.video_url)
-
-      if (timelineEditorRef.value) {
-        timelineEditorRef.value.updateClipsByStoryboardId(
-          video.storyboard_id,
-          video.video_url
-        )
-      } else {
-        console.warn('⚠️ timelineEditorRef.value 为空，无法更新时间线')
-      }
-    }
   } catch (error: any) {
     ElMessage.error(error.message || '添加失败')
   } finally {
@@ -2133,6 +2286,7 @@ const toggleCharacterInShot = async (charId: number) => {
       ElMessage.success(`已移除角色: ${char.name}`)
     } else {
       ElMessage.success(`已添加角色: ${char.name}`)
+      showCharacterSelector.value = false
     }
   } catch (error: any) {
     ElMessage.error('保存失败: ' + (error.message || '未知错误'))
@@ -2299,6 +2453,203 @@ const goBack = () => {
   })
 }
 
+const parseDistributionHashtags = (input: string): string[] => {
+  if (!input.trim()) {
+    return []
+  }
+
+  const unique = new Set<string>()
+  input
+    .split(/[\s,，]+/)
+    .map(item => item.trim().replace(/^#+/, ''))
+    .filter(Boolean)
+    .forEach((tag) => {
+      if (unique.size < 20) {
+        unique.add(tag)
+      }
+    })
+
+  return Array.from(unique)
+}
+
+const getPlatformLabel = (platform: string) => {
+  const matched = distributionPlatforms.find(item => item.value === platform)
+  return matched?.label || platform
+}
+
+const getDistributionStatusText = (status: VideoDistributionStatus) => {
+  switch (status) {
+    case 'pending':
+      return '待分发'
+    case 'processing':
+      return '分发中'
+    case 'published':
+      return '已发布'
+    case 'failed':
+      return '失败'
+    default:
+      return status
+  }
+}
+
+const getDistributionStatusType = (status: VideoDistributionStatus) => {
+  switch (status) {
+    case 'published':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    case 'pending':
+    case 'processing':
+      return 'warning'
+    default:
+      return 'info'
+  }
+}
+
+const getMergeDistributionSummary = (mergeId: number): VideoDistribution[] => {
+  const distributions = mergeDistributions.value[mergeId] || []
+  if (!distributions.length) {
+    return []
+  }
+
+  const latestByPlatform = new Map<string, VideoDistribution>()
+  distributions.forEach((item) => {
+    if (!latestByPlatform.has(item.platform)) {
+      latestByPlatform.set(item.platform, item)
+    }
+  })
+
+  const order: DistributionPlatform[] = ['tiktok', 'youtube', 'instagram', 'x']
+  return Array.from(latestByPlatform.values()).sort(
+    (a, b) => order.indexOf(a.platform) - order.indexOf(b.platform)
+  )
+}
+
+const resetDistributionForm = () => {
+  distributionForm.value = {
+    mergeId: 0,
+    platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+    title: '',
+    description: '',
+    hashtagsText: ''
+  }
+}
+
+const stopDistributionPolling = () => {
+  if (distributionPollingTimer) {
+    clearInterval(distributionPollingTimer)
+    distributionPollingTimer = null
+  }
+}
+
+const loadMergeDistributions = async (merges: VideoMerge[]) => {
+  const completed = merges.filter((merge) => merge.status === 'completed')
+  if (completed.length === 0) {
+    mergeDistributions.value = {}
+    stopDistributionPolling()
+    return
+  }
+
+  const entries = await Promise.all(
+    completed.map(async (merge) => {
+      try {
+        const distributions = await videoMergeAPI.listDistributions(merge.id)
+        return [merge.id, distributions] as const
+      } catch (error) {
+        console.error('加载分发记录失败:', error)
+        return [merge.id, [] as VideoDistribution[]] as const
+      }
+    })
+  )
+
+  const nextMap: Record<number, VideoDistribution[]> = {}
+  let hasProcessing = false
+  entries.forEach(([mergeId, distributions]) => {
+    nextMap[mergeId] = distributions
+    if (distributions.some(item => item.status === 'pending' || item.status === 'processing')) {
+      hasProcessing = true
+    }
+  })
+  mergeDistributions.value = nextMap
+
+  if (hasProcessing) {
+    startDistributionPolling()
+  } else {
+    stopDistributionPolling()
+  }
+}
+
+const startDistributionPolling = () => {
+  if (distributionPollingTimer) return
+
+  distributionPollingTimer = setInterval(async () => {
+    const merges = videoMerges.value.filter(merge => merge.status === 'completed')
+    if (!merges.length) {
+      stopDistributionPolling()
+      return
+    }
+
+    await loadMergeDistributions(videoMerges.value)
+  }, 3000)
+}
+
+const openDistributionDialog = (merge: VideoMerge) => {
+  distributionTargetMerge.value = merge
+  distributionForm.value = {
+    mergeId: merge.id,
+    platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+    title: merge.title || `${drama.value?.title || '短剧'} 第${episodeNumber}集`,
+    description: '',
+    hashtagsText: ''
+  }
+  distributionDialogVisible.value = true
+}
+
+const submitDistribution = async () => {
+  if (!distributionForm.value.mergeId) {
+    ElMessage.warning('请选择需要分发的视频')
+    return
+  }
+
+  if (!distributionForm.value.platforms.length) {
+    ElMessage.warning('请至少选择一个分发平台')
+    return
+  }
+
+  submittingDistribution.value = true
+  try {
+    const distributions = await videoMergeAPI.distributeVideo(distributionForm.value.mergeId, {
+      platforms: distributionForm.value.platforms,
+      title: distributionForm.value.title.trim(),
+      description: distributionForm.value.description.trim(),
+      hashtags: parseDistributionHashtags(distributionForm.value.hashtagsText)
+    })
+
+    mergeDistributions.value = {
+      ...mergeDistributions.value,
+      [distributionForm.value.mergeId]: distributions
+    }
+
+    ElMessage.success('分发任务已提交')
+    distributionDialogVisible.value = false
+    distributionTargetMerge.value = null
+    resetDistributionForm()
+    startDistributionPolling()
+  } catch (error: any) {
+    ElMessage.error(error.message || '分发失败')
+  } finally {
+    submittingDistribution.value = false
+  }
+}
+
+const openDistributionRecord = (distribution: VideoDistribution) => {
+  if (!distribution.published_url) {
+    ElMessage.warning('该分发记录暂无可打开的发布链接')
+    return
+  }
+  window.open(distribution.published_url, '_blank')
+}
+
 // 加载视频合成列表
 const loadVideoMerges = async () => {
   if (!episodeId.value) return
@@ -2311,6 +2662,7 @@ const loadVideoMerges = async () => {
       page_size: 20
     })
     videoMerges.value = result.merges
+    await loadMergeDistributions(result.merges)
 
     // 检查是否有进行中的任务
     const hasProcessingTasks = result.merges.some(
@@ -2347,6 +2699,7 @@ const startMergePolling = () => {
         page_size: 20
       })
       videoMerges.value = result.merges
+      await loadMergeDistributions(result.merges)
 
       // 检查是否还有进行中的任务
       const hasProcessingTasks = result.merges.some(
@@ -2479,6 +2832,7 @@ onBeforeUnmount(() => {
   stopPolling()
   stopVideoPolling()
   stopMergePolling()
+  stopDistributionPolling()
 })
 </script>
 
@@ -4358,6 +4712,239 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
+}
+
+.distribution-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.distribution-summary-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.distribution-tag.is-link {
+  cursor: pointer;
+}
+
+.distribution-form {
+  .distribution-target {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  :deep(.el-checkbox-group) {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 1280px) {
+  .professional-editor .editor-main .storyboard-panel {
+    width: 240px;
+  }
+
+  .professional-editor .editor-main .edit-panel {
+    width: 420px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .professional-editor {
+    min-height: 100dvh;
+    height: auto;
+  }
+
+  .professional-editor .editor-main {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+
+  .professional-editor .editor-main .storyboard-panel,
+  .professional-editor .editor-main .timeline-area,
+  .professional-editor .editor-main .edit-panel {
+    width: 100%;
+  }
+
+  .professional-editor .editor-main .storyboard-panel {
+    max-height: 320px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-primary);
+  }
+
+  .professional-editor .editor-main .timeline-area {
+    min-height: 420px;
+  }
+
+  .professional-editor .editor-main .edit-panel {
+    border-left: 0;
+    border-top: 1px solid var(--border-primary);
+    min-height: 520px;
+  }
+
+  .professional-editor .editor-main .edit-panel .edit-tabs :deep(.el-tabs__content) {
+    height: auto;
+    max-height: 60vh;
+  }
+
+  .settings-section .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .professional-editor .episode-title {
+    max-width: 48vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .professional-editor .editor-main .storyboard-panel .panel-header {
+    padding: 12px;
+  }
+
+  .professional-editor .editor-main .storyboard-panel .storyboard-list {
+    padding: 6px;
+  }
+
+  .professional-editor .editor-main .edit-panel {
+    min-height: 460px;
+  }
+
+  .shot-editor-new {
+    padding: 12px;
+  }
+
+  .shot-editor-new .settings-section .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shot-editor-new .cast-list .cast-item .cast-remove {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .scene-selector-grid,
+  .character-selector-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .image-generation-section .generation-controls,
+  .video-generation-section .generation-controls {
+    flex-direction: column;
+  }
+
+  .image-generation-section .generation-controls :deep(.el-button),
+  .video-generation-section .generation-controls :deep(.el-button) {
+    width: 100%;
+  }
+
+  .video-generation-section .image-slot {
+    width: 108px;
+    height: 68px;
+  }
+
+  .video-generation-section .image-slot.image-slot-small {
+    width: 72px;
+    height: 46px;
+  }
+
+  .video-generation-section .first-last-slots {
+    flex-wrap: wrap;
+    gap: 10px !important;
+    justify-content: center;
+  }
+
+  .video-generation-section .multiple-slots {
+    gap: 8px !important;
+  }
+
+  .video-generation-section .generation-result .image-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .video-generation-section .generation-result .image-info .el-button {
+    width: 100%;
+    margin: 0;
+    font-size: 11px;
+  }
+
+  .video-generation-section .frame-type-buttons :deep(.el-radio-group) {
+    width: 100%;
+  }
+
+  .video-generation-section .frame-type-buttons :deep(.el-radio-button__inner) {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .video-generation-section .reference-images-section .reference-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .merges-list .merge-item .merge-content {
+    padding: 14px 12px 14px 16px;
+  }
+
+  .merges-list .merge-item .merge-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .merges-list .merge-item .merge-details {
+    grid-template-columns: 1fr;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .merges-list .merge-item .merge-actions {
+    flex-direction: column;
+  }
+
+  .merges-list .merge-item .merge-actions :deep(.el-button) {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .video-generation-section .first-last-slots {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .video-generation-section .first-last-slots > .el-icon {
+    transform: rotate(90deg);
+  }
+
+  .video-generation-section .multiple-slots .image-slot.image-slot-small {
+    width: 66px;
+    height: 44px;
+  }
+
+  .scene-selector-grid,
+  .character-selector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .video-generation-section .reference-images-section .reference-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 </style>
 <style>

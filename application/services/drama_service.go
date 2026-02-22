@@ -5,38 +5,53 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/logger"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 type DramaService struct {
-	db  *gorm.DB
-	log *logger.Logger
+	db                *gorm.DB
+	log               *logger.Logger
+	complianceService *ComplianceService
 }
 
-func NewDramaService(db *gorm.DB, log *logger.Logger) *DramaService {
+var (
+	ErrTargetCountryRequired   = errors.New("target_country is required")
+	ErrComplianceRiskForbidden = errors.New("compliance risk level red, creation forbidden")
+)
+
+func NewDramaService(db *gorm.DB, log *logger.Logger, complianceService *ComplianceService) *DramaService {
 	return &DramaService{
-		db:  db,
-		log: log,
+		db:                db,
+		log:               log,
+		complianceService: complianceService,
 	}
 }
 
 type CreateDramaRequest struct {
-	Title       string `json:"title" binding:"required,min=1,max=100"`
-	Description string `json:"description"`
-	Genre       string `json:"genre"`
-	Tags        string `json:"tags"`
+	Title                  string   `json:"title" binding:"required,min=1,max=50"`
+	Description            string   `json:"description" binding:"required,min=1,max=500"`
+	TargetCountry          []string `json:"target_country" binding:"required,min=1"`
+	MaterialComposition    string   `json:"material_composition" binding:"omitempty,max=200"`
+	MarketingSellingPoints string   `json:"marketing_selling_points" binding:"omitempty,max=200"`
+	Genre                  string   `json:"genre"`
+	Tags                   string   `json:"tags"`
 }
 
 type UpdateDramaRequest struct {
-	Title       string `json:"title" binding:"omitempty,min=1,max=100"`
-	Description string `json:"description"`
-	Genre       string `json:"genre"`
-	Tags        string `json:"tags"`
-	Status      string `json:"status" binding:"omitempty,oneof=draft planning production completed archived"`
+	Title                  string   `json:"title" binding:"omitempty,min=1,max=50"`
+	Description            string   `json:"description" binding:"omitempty,max=500"`
+	TargetCountry          []string `json:"target_country" binding:"omitempty,min=1"`
+	MaterialComposition    string   `json:"material_composition" binding:"omitempty,max=200"`
+	MarketingSellingPoints string   `json:"marketing_selling_points" binding:"omitempty,max=200"`
+	Genre                  string   `json:"genre"`
+	Tags                   string   `json:"tags"`
+	Status                 string   `json:"status" binding:"omitempty,oneof=draft planning production completed archived"`
 }
 
 type DramaListQuery struct {
@@ -47,26 +62,81 @@ type DramaListQuery struct {
 	Keyword  string `form:"keyword"`
 }
 
-func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, error) {
-	drama := &models.Drama{
-		Title:  req.Title,
-		Status: "draft",
+func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *ComplianceResult, error) {
+	title := strings.TrimSpace(req.Title)
+	description := strings.TrimSpace(req.Description)
+	targetCountries := normalizeCountryCodes(req.TargetCountry)
+	if len(targetCountries) == 0 {
+		return nil, nil, ErrTargetCountryRequired
+	}
+	targetCountry := strings.Join(targetCountries, ",")
+	materialComposition := strings.TrimSpace(req.MaterialComposition)
+	marketingSellingPoints := strings.TrimSpace(req.MarketingSellingPoints)
+
+	complianceResult := &ComplianceResult{
+		Score:                    0,
+		Level:                    ComplianceRiskGreen,
+		LevelLabel:               "低",
+		Summary:                  "未进行合规校验",
+		NonCompliancePoints:      []string{},
+		RectificationSuggestions: []string{},
+		SuggestedCategories:      []string{},
+	}
+	if s.complianceService != nil {
+		if evaluated, err := s.complianceService.Evaluate(ComplianceRequest{
+			Title:                  title,
+			Description:            description,
+			TargetCountry:          targetCountries,
+			MaterialComposition:    materialComposition,
+			MarketingSellingPoints: marketingSellingPoints,
+		}); err == nil && evaluated != nil {
+			complianceResult = evaluated
+		} else if err != nil {
+			s.log.Warnw("Compliance evaluation error, continue with default result", "error", err)
+		}
 	}
 
-	if req.Description != "" {
-		drama.Description = &req.Description
+	if complianceResult.Level == ComplianceRiskRed {
+		s.log.Warnw(
+			"Drama creation blocked by compliance red risk",
+			"title", title,
+			"score", complianceResult.Score,
+			"level", complianceResult.Level,
+		)
+		return nil, complianceResult, ErrComplianceRiskForbidden
+	}
+
+	complianceReportJSON, _ := json.Marshal(complianceResult)
+
+	drama := &models.Drama{
+		Title:            title,
+		Status:           "draft",
+		TargetCountry:    targetCountry,
+		ComplianceScore:  complianceResult.Score,
+		ComplianceLevel:  string(complianceResult.Level),
+		ComplianceReport: datatypes.JSON(complianceReportJSON),
+	}
+
+	if description != "" {
+		drama.Description = &description
 	}
 	if req.Genre != "" {
 		drama.Genre = &req.Genre
 	}
+	if materialComposition != "" {
+		drama.MaterialComposition = &materialComposition
+	}
+	if marketingSellingPoints != "" {
+		drama.MarketingSellingPoints = &marketingSellingPoints
+	}
 
 	if err := s.db.Create(drama).Error; err != nil {
 		s.log.Errorw("Failed to create drama", "error", err)
-		return nil, err
+		return nil, nil, err
 	}
 
-	s.log.Infow("Drama created", "drama_id", drama.ID)
-	return drama, nil
+	s.log.Infow("Drama created", "drama_id", drama.ID, "compliance_score", complianceResult.Score, "risk_level", complianceResult.Level)
+	return drama, complianceResult, nil
 }
 
 func (s *DramaService) GetDrama(dramaID string) (*models.Drama, error) {
@@ -202,7 +272,11 @@ func (s *DramaService) ListDramas(query *DramaListQuery) ([]models.Drama, int64,
 	}
 
 	if query.Keyword != "" {
-		db = db.Where("title LIKE ? OR description LIKE ?", "%"+query.Keyword+"%", "%"+query.Keyword+"%")
+		likeKeyword := "%" + query.Keyword + "%"
+		db = db.Where(
+			"title LIKE ? OR description LIKE ? OR target_country LIKE ? OR material_composition LIKE ? OR marketing_selling_points LIKE ?",
+			likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword,
+		)
 	}
 
 	if err := db.Count(&total).Error; err != nil {
@@ -252,10 +326,22 @@ func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest) (*mo
 	updates := make(map[string]interface{})
 
 	if req.Title != "" {
-		updates["title"] = req.Title
+		updates["title"] = strings.TrimSpace(req.Title)
 	}
 	if req.Description != "" {
-		updates["description"] = req.Description
+		updates["description"] = strings.TrimSpace(req.Description)
+	}
+	if len(req.TargetCountry) > 0 {
+		normalizedCountries := normalizeCountryCodes(req.TargetCountry)
+		if len(normalizedCountries) > 0 {
+			updates["target_country"] = strings.Join(normalizedCountries, ",")
+		}
+	}
+	if req.MaterialComposition != "" {
+		updates["material_composition"] = strings.TrimSpace(req.MaterialComposition)
+	}
+	if req.MarketingSellingPoints != "" {
+		updates["marketing_selling_points"] = strings.TrimSpace(req.MarketingSellingPoints)
 	}
 	if req.Genre != "" {
 		updates["genre"] = req.Genre

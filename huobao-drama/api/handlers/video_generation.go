@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/infrastructure/storage"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -24,6 +25,7 @@ func NewVideoGenerationHandler(db *gorm.DB, transferService *services.ResourceTr
 }
 
 func (h *VideoGenerationHandler) GenerateVideo(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var req services.GenerateVideoRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -31,7 +33,7 @@ func (h *VideoGenerationHandler) GenerateVideo(c *gin.Context) {
 		return
 	}
 
-	videoGen, err := h.videoService.GenerateVideo(&req)
+	videoGen, err := h.videoService.GenerateVideo(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate video", "error", err)
 		response.InternalError(c, err.Error())
@@ -42,6 +44,7 @@ func (h *VideoGenerationHandler) GenerateVideo(c *gin.Context) {
 }
 
 func (h *VideoGenerationHandler) GenerateVideoFromImage(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	imageGenID, err := strconv.ParseUint(c.Param("image_gen_id"), 10, 32)
 	if err != nil {
@@ -49,7 +52,7 @@ func (h *VideoGenerationHandler) GenerateVideoFromImage(c *gin.Context) {
 		return
 	}
 
-	videoGen, err := h.videoService.GenerateVideoFromImage(uint(imageGenID))
+	videoGen, err := h.videoService.GenerateVideoFromImage(uint(imageGenID), deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate video from image", "error", err)
 		response.InternalError(c, err.Error())
@@ -60,10 +63,11 @@ func (h *VideoGenerationHandler) GenerateVideoFromImage(c *gin.Context) {
 }
 
 func (h *VideoGenerationHandler) BatchGenerateForEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	episodeID := c.Param("episode_id")
 
-	videos, err := h.videoService.BatchGenerateVideosForEpisode(episodeID)
+	videos, err := h.videoService.BatchGenerateVideosForEpisode(episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to batch generate videos", "error", err)
 		response.InternalError(c, err.Error())
@@ -74,6 +78,7 @@ func (h *VideoGenerationHandler) BatchGenerateForEpisode(c *gin.Context) {
 }
 
 func (h *VideoGenerationHandler) GetVideoGeneration(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	videoGenID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -81,7 +86,7 @@ func (h *VideoGenerationHandler) GetVideoGeneration(c *gin.Context) {
 		return
 	}
 
-	videoGen, err := h.videoService.GetVideoGeneration(uint(videoGenID))
+	videoGen, err := h.videoService.GetVideoGeneration(uint(videoGenID), deviceID)
 	if err != nil {
 		response.NotFound(c, "视频生成记录不存在")
 		return
@@ -91,6 +96,7 @@ func (h *VideoGenerationHandler) GetVideoGeneration(c *gin.Context) {
 }
 
 func (h *VideoGenerationHandler) ListVideoGenerations(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var storyboardID *uint
 	// 优先使用storyboard_id参数
 	if storyboardIDStr := c.Query("storyboard_id"); storyboardIDStr != "" {
@@ -120,7 +126,7 @@ func (h *VideoGenerationHandler) ListVideoGenerations(c *gin.Context) {
 
 	// 计算offset：(page - 1) * pageSize
 	offset := (page - 1) * pageSize
-	videos, total, err := h.videoService.ListVideoGenerations(dramaIDUint, storyboardID, status, pageSize, offset)
+	videos, total, err := h.videoService.ListVideoGenerations(dramaIDUint, storyboardID, status, pageSize, offset, deviceID)
 
 	if err != nil {
 		h.log.Errorw("Failed to list videos", "error", err)
@@ -132,6 +138,7 @@ func (h *VideoGenerationHandler) ListVideoGenerations(c *gin.Context) {
 }
 
 func (h *VideoGenerationHandler) DeleteVideoGeneration(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	videoGenID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -139,7 +146,7 @@ func (h *VideoGenerationHandler) DeleteVideoGeneration(c *gin.Context) {
 		return
 	}
 
-	if err := h.videoService.DeleteVideoGeneration(uint(videoGenID)); err != nil {
+	if err := h.videoService.DeleteVideoGeneration(uint(videoGenID), deviceID); err != nil {
 		h.log.Errorw("Failed to delete video", "error", err)
 		response.InternalError(c, err.Error())
 		return

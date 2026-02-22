@@ -90,4 +90,34 @@ onMounted(() => {
     overflow: hidden;
   }
 }
+
+@media (max-width: 768px) {
+  .timeline-editor-page {
+    min-height: 100dvh;
+    height: auto;
+  }
+
+  .timeline-editor-page .editor-header {
+    padding: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .timeline-editor-page .editor-header h2 {
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .timeline-editor-page .editor-content {
+    overflow: auto;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .timeline-editor-page .editor-header .back-button {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
 </style>

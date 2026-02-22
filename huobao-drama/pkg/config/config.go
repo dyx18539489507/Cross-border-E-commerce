@@ -2,18 +2,21 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	App       AppConfig       `mapstructure:"app"`
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Storage   StorageConfig   `mapstructure:"storage"`
-	AI        AIConfig        `mapstructure:"ai"`
+	App        AppConfig        `mapstructure:"app"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Database   DatabaseConfig   `mapstructure:"database"`
+	Storage    StorageConfig    `mapstructure:"storage"`
+	AI         AIConfig         `mapstructure:"ai"`
 	Volcengine VolcengineConfig `mapstructure:"volcengine"`
-	SFX       SFXConfig       `mapstructure:"sfx"`
+	Compliance ComplianceConfig `mapstructure:"compliance"`
+	SFX        SFXConfig        `mapstructure:"sfx"`
 }
 
 type AppConfig struct {
@@ -64,11 +67,20 @@ type VolcengineConfig struct {
 	VisualHost      string `mapstructure:"visual_host"`
 }
 
+type ComplianceConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	BaseURL  string `mapstructure:"base_url"`
+	Endpoint string `mapstructure:"endpoint"`
+	APIKey   string `mapstructure:"api_key"`
+	Model    string `mapstructure:"model"`
+}
+
 type SFXConfig struct {
-	DefaultLimit   int              `mapstructure:"default_limit"`
-	RequestTimeout int              `mapstructure:"request_timeout"`
-	Freesound      FreesoundConfig  `mapstructure:"freesound"`
-	Pixabay        PixabaySFXConfig `mapstructure:"pixabay"`
+	DefaultLimit   int                  `mapstructure:"default_limit"`
+	RequestTimeout int                  `mapstructure:"request_timeout"`
+	Freesound      FreesoundConfig      `mapstructure:"freesound"`
+	Pixabay        PixabaySFXConfig     `mapstructure:"pixabay"`
+	Translation    SFXTranslationConfig `mapstructure:"translation"`
 }
 
 type FreesoundConfig struct {
@@ -80,6 +92,15 @@ type FreesoundConfig struct {
 type PixabaySFXConfig struct {
 	APIKey  string `mapstructure:"api_key"`
 	BaseURL string `mapstructure:"base_url"`
+}
+
+type SFXTranslationConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	AppID    string `mapstructure:"app_id"`
+	APIKey   string `mapstructure:"api_key"`
+	Endpoint string `mapstructure:"endpoint"`
+	From     string `mapstructure:"from"`
+	To       string `mapstructure:"to"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -99,6 +120,54 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	if envPort := os.Getenv("SERVER_PORT"); envPort != "" {
+		port, err := strconv.Atoi(envPort)
+		if err != nil || port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid SERVER_PORT %q: must be an integer between 1 and 65535", envPort)
+		}
+		config.Server.Port = port
+	}
+
+	// 合规校验配置支持通过环境变量注入，避免在配置文件硬编码敏感信息
+	if config.Compliance.BaseURL == "" {
+		config.Compliance.BaseURL = firstNonEmpty(os.Getenv("COMPLIANCE_BASE_URL"), "https://ark.cn-beijing.volces.com/api/v3")
+	}
+	if config.Compliance.Endpoint == "" {
+		config.Compliance.Endpoint = firstNonEmpty(os.Getenv("COMPLIANCE_ENDPOINT"), "/chat/completions")
+	}
+	if config.Compliance.Model == "" {
+		config.Compliance.Model = firstNonEmpty(os.Getenv("COMPLIANCE_MODEL"), "deepseek-v3-2-251201")
+	}
+	config.Compliance.APIKey = firstNonEmpty(os.Getenv("COMPLIANCE_API_KEY"), os.Getenv("DEEPSEEK_API_KEY"), config.Compliance.APIKey)
+
+	if envEnabled := os.Getenv("COMPLIANCE_ENABLED"); envEnabled != "" {
+		if parsed, err := strconv.ParseBool(envEnabled); err == nil {
+			config.Compliance.Enabled = parsed
+		}
+	} else if !config.Compliance.Enabled {
+		// 未显式配置时，默认启用并在运行期根据 API Key 自动回退
+		config.Compliance.Enabled = true
+	}
+
+	// 音效名称翻译配置（Youdao）
+	if config.SFX.Translation.Endpoint == "" {
+		config.SFX.Translation.Endpoint = firstNonEmpty(os.Getenv("SFX_TRANSLATION_ENDPOINT"), "https://openapi.youdao.com/api")
+	} else {
+		config.SFX.Translation.Endpoint = firstNonEmpty(os.Getenv("SFX_TRANSLATION_ENDPOINT"), config.SFX.Translation.Endpoint)
+	}
+	config.SFX.Translation.AppID = firstNonEmpty(os.Getenv("SFX_TRANSLATION_APP_ID"), os.Getenv("YOUDAO_APP_ID"), config.SFX.Translation.AppID)
+	config.SFX.Translation.APIKey = firstNonEmpty(os.Getenv("SFX_TRANSLATION_API_KEY"), os.Getenv("YOUDAO_API_KEY"), config.SFX.Translation.APIKey)
+	config.SFX.Translation.From = firstNonEmpty(os.Getenv("SFX_TRANSLATION_FROM"), config.SFX.Translation.From, "auto")
+	config.SFX.Translation.To = firstNonEmpty(os.Getenv("SFX_TRANSLATION_TO"), config.SFX.Translation.To, "zh-CHS")
+	if envEnabled := os.Getenv("SFX_TRANSLATION_ENABLED"); envEnabled != "" {
+		if parsed, err := strconv.ParseBool(envEnabled); err == nil {
+			config.SFX.Translation.Enabled = parsed
+		}
+	} else if !config.SFX.Translation.Enabled {
+		// 未显式设置 enabled 时，只要配置了 app_id/api_key 即启用
+		config.SFX.Translation.Enabled = config.SFX.Translation.AppID != "" && config.SFX.Translation.APIKey != ""
+	}
+
 	return &config, nil
 }
 
@@ -115,4 +184,13 @@ func (c *DatabaseConfig) DSN() string {
 		c.Database,
 		c.Charset,
 	)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

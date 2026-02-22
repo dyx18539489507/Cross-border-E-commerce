@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/spf13/viper"
 )
@@ -13,6 +15,7 @@ type Config struct {
 	Storage    StorageConfig    `mapstructure:"storage"`
 	AI         AIConfig         `mapstructure:"ai"`
 	Volcengine VolcengineConfig `mapstructure:"volcengine"`
+	Compliance ComplianceConfig `mapstructure:"compliance"`
 }
 
 type AppConfig struct {
@@ -85,6 +88,14 @@ type VolcengineSpeechConfig struct {
 	CloneProjectName    string `mapstructure:"clone_project_name"`
 }
 
+type ComplianceConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	BaseURL  string `mapstructure:"base_url"`
+	Endpoint string `mapstructure:"endpoint"`
+	APIKey   string `mapstructure:"api_key"`
+	Model    string `mapstructure:"model"`
+}
+
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -100,6 +111,27 @@ func LoadConfig() (*Config, error) {
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// 合规校验配置支持通过环境变量注入，避免在配置文件硬编码敏感信息
+	if config.Compliance.BaseURL == "" {
+		config.Compliance.BaseURL = firstNonEmpty(os.Getenv("COMPLIANCE_BASE_URL"), "https://ark.cn-beijing.volces.com/api/v3")
+	}
+	if config.Compliance.Endpoint == "" {
+		config.Compliance.Endpoint = firstNonEmpty(os.Getenv("COMPLIANCE_ENDPOINT"), "/chat/completions")
+	}
+	if config.Compliance.Model == "" {
+		config.Compliance.Model = firstNonEmpty(os.Getenv("COMPLIANCE_MODEL"), "deepseek-v3-2-251201")
+	}
+	config.Compliance.APIKey = firstNonEmpty(os.Getenv("COMPLIANCE_API_KEY"), os.Getenv("DEEPSEEK_API_KEY"), config.Compliance.APIKey)
+
+	if envEnabled := os.Getenv("COMPLIANCE_ENABLED"); envEnabled != "" {
+		if parsed, err := strconv.ParseBool(envEnabled); err == nil {
+			config.Compliance.Enabled = parsed
+		}
+	} else if !config.Compliance.Enabled {
+		// 未显式配置时，默认启用并在运行期根据 API Key 自动回退
+		config.Compliance.Enabled = true
 	}
 
 	return &config, nil
@@ -118,4 +150,13 @@ func (c *DatabaseConfig) DSN() string {
 		c.Database,
 		c.Charset,
 	)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

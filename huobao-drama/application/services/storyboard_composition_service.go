@@ -25,6 +25,13 @@ func NewStoryboardCompositionService(db *gorm.DB, log *logger.Logger, imageGen *
 	}
 }
 
+func firstCompositionDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
 type SceneCharacterInfo struct {
 	ID       uint    `json:"id"`
 	Name     string  `json:"name"`
@@ -69,10 +76,16 @@ type SceneCompositionInfo struct {
 	VideoGenerationStatus *string              `json:"video_generation_status,omitempty"`
 }
 
-func (s *StoryboardCompositionService) GetScenesForEpisode(episodeID string) ([]SceneCompositionInfo, error) {
+func (s *StoryboardCompositionService) GetScenesForEpisode(episodeID string, deviceIDs ...string) ([]SceneCompositionInfo, error) {
+	deviceID := firstCompositionDeviceID(deviceIDs)
 	// 验证权限
 	var episode models.Episode
-	err := s.db.Preload("Drama").Where("id = ?", episodeID).First(&episode).Error
+	episodeQuery := s.db.Preload("Drama").Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		episodeQuery = episodeQuery.Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	err := episodeQuery.First(&episode).Error
 	if err != nil {
 		s.log.Errorw("Episode not found", "episode_id", episodeID, "error", err)
 		return nil, fmt.Errorf("episode not found")
@@ -275,10 +288,17 @@ type UpdateSceneRequest struct {
 	VideoPrompt *string `json:"video_prompt"`
 }
 
-func (s *StoryboardCompositionService) UpdateScene(sceneID string, req *UpdateSceneRequest) error {
+func (s *StoryboardCompositionService) UpdateScene(sceneID string, req *UpdateSceneRequest, deviceIDs ...string) error {
+	deviceID := firstCompositionDeviceID(deviceIDs)
 	// 获取分镜并验证权限
 	var storyboard models.Storyboard
-	err := s.db.Preload("Episode.Drama").Where("id = ?", sceneID).First(&storyboard).Error
+	query := s.db.Preload("Episode.Drama").Model(&models.Storyboard{}).Where("storyboards.id = ?", sceneID)
+	if deviceID != "" {
+		query = query.Joins("JOIN episodes ON episodes.id = storyboards.episode_id").
+			Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	err := query.First(&storyboard).Error
 	if err != nil {
 		return fmt.Errorf("scene not found")
 	}
@@ -343,18 +363,18 @@ type GenerateSceneImageRequest struct {
 	Model   string `json:"model"`
 }
 
-func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImageRequest) (*models.ImageGeneration, error) {
+func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImageRequest, deviceIDs ...string) (*models.ImageGeneration, error) {
+	deviceID := firstCompositionDeviceID(deviceIDs)
 	// 获取场景并验证权限
 	var scene models.Scene
-	err := s.db.Where("id = ?", req.SceneID).First(&scene).Error
+	query := s.db.Model(&models.Scene{}).Where("scenes.id = ?", req.SceneID)
+	if deviceID != "" {
+		query = query.Joins("JOIN dramas ON dramas.id = scenes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	err := query.First(&scene).Error
 	if err != nil {
 		return nil, fmt.Errorf("scene not found")
-	}
-
-	// 验证权限：通过DramaID查询Drama
-	var drama models.Drama
-	if err := s.db.Where("id = ? ", scene.DramaID).First(&drama).Error; err != nil {
-		return nil, fmt.Errorf("unauthorized")
 	}
 
 	// 构建场景图片生成提示词
@@ -393,7 +413,7 @@ func (s *StoryboardCompositionService) GenerateSceneImage(req *GenerateSceneImag
 		}
 		seed := time.Now().UnixNano()
 		genReq.Seed = &seed
-		imageGen, err := s.imageGen.GenerateImage(genReq)
+		imageGen, err := s.imageGen.GenerateImage(genReq, deviceID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate image: %w", err)
 		}
@@ -418,9 +438,15 @@ type UpdateScenePromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
-func (s *StoryboardCompositionService) UpdateScenePrompt(sceneID string, req *UpdateScenePromptRequest) error {
+func (s *StoryboardCompositionService) UpdateScenePrompt(sceneID string, req *UpdateScenePromptRequest, deviceIDs ...string) error {
+	deviceID := firstCompositionDeviceID(deviceIDs)
 	var scene models.Scene
-	if err := s.db.Where("id = ?", sceneID).First(&scene).Error; err != nil {
+	query := s.db.Model(&models.Scene{}).Where("scenes.id = ?", sceneID)
+	if deviceID != "" {
+		query = query.Joins("JOIN dramas ON dramas.id = scenes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := query.First(&scene).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return fmt.Errorf("scene not found")
 		}
@@ -436,9 +462,15 @@ func (s *StoryboardCompositionService) UpdateScenePrompt(sceneID string, req *Up
 	return nil
 }
 
-func (s *StoryboardCompositionService) DeleteScene(sceneID string) error {
+func (s *StoryboardCompositionService) DeleteScene(sceneID string, deviceIDs ...string) error {
+	deviceID := firstCompositionDeviceID(deviceIDs)
 	var scene models.Scene
-	if err := s.db.Where("id = ?", sceneID).First(&scene).Error; err != nil {
+	query := s.db.Model(&models.Scene{}).Where("scenes.id = ?", sceneID)
+	if deviceID != "" {
+		query = query.Joins("JOIN dramas ON dramas.id = scenes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := query.First(&scene).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return fmt.Errorf("scene not found")
 		}

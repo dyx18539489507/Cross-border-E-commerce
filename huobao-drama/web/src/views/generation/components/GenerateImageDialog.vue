@@ -163,8 +163,7 @@ const rules: FormRules = {
     { required: true, message: t('imageDialog.pleaseSelectDrama'), trigger: 'change' }
   ],
   prompt: [
-    { required: true, message: t('imageDialog.pleaseEnterPrompt'), trigger: 'blur' },
-    { min: 5, message: t('imageDialog.promptMinLength'), trigger: 'blur' }
+    { required: true, message: t('imageDialog.pleaseEnterPrompt'), trigger: 'blur' }
   ]
 }
 

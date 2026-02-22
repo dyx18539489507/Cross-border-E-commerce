@@ -777,7 +777,7 @@ body {
    Utility Classes / 工具类
    ======================================== */
 .page-container {
-  min-height: 100vh;
+  min-height: var(--app-vh);
   background-color: var(--bg-primary);
   /* padding: var(--space-2) var(--space-3); */
   transition: background-color var(--transition-normal);
@@ -798,6 +798,15 @@ body {
 .content-wrapper {
   margin: 0 auto;
   width: 100%;
+}
+
+.long-form .el-form-item {
+  scroll-margin-top: 88px;
+  scroll-margin-bottom: 160px;
+}
+
+.long-form .el-form-item:focus-within .el-form-item__label {
+  color: var(--accent);
 }
 
 /* ========================================
@@ -1138,4 +1147,41 @@ body {
 
 .font-mono {
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+@media (max-width: 768px) {
+  .el-dialog {
+    width: calc(100vw - 12px) !important;
+    max-width: calc(100vw - 12px) !important;
+    margin-top: 3vh !important;
+  }
+
+  .el-dialog__header {
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .el-dialog__body {
+    padding: var(--space-4);
+    max-height: calc(94vh - 128px);
+  }
+
+  .el-dialog__footer {
+    padding: var(--space-3) var(--space-4);
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+    z-index: 2;
+  }
+
+  .el-dialog.dialog-form-safe .el-dialog__body {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+
+  input,
+  textarea,
+  select,
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 16px !important;
+  }
 }

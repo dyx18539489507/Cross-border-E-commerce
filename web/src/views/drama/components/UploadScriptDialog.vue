@@ -4,9 +4,15 @@
     title="上传剧本"
     width="800px"
     :close-on-click-modal="false"
+    class="dialog-form-safe"
     @close="handleClose"
   >
-    <el-form :model="form" label-width="100px">
+    <el-form
+      :model="form"
+      label-width="100px"
+      class="long-form form-enter-flow"
+      @keydown.enter="handleFormEnterNavigation"
+    >
       <el-form-item label="剧本内容" required>
         <el-input
           v-model="form.script_content"
@@ -95,6 +101,7 @@ import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { generationAPI } from '@/api/generation'
 import type { ParseScriptResult } from '@/types/generation'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 interface Props {
   modelValue: boolean

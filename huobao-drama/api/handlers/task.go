@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/drama-generator/backend/pkg/response"
@@ -22,9 +23,10 @@ func NewTaskHandler(db *gorm.DB, log *logger.Logger) *TaskHandler {
 
 // GetTaskStatus 获取任务状态
 func (h *TaskHandler) GetTaskStatus(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	taskID := c.Param("task_id")
 
-	task, err := h.taskService.GetTask(taskID)
+	task, err := h.taskService.GetTask(taskID, deviceID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			response.NotFound(c, "任务不存在")
@@ -40,13 +42,14 @@ func (h *TaskHandler) GetTaskStatus(c *gin.Context) {
 
 // GetResourceTasks 获取资源相关的所有任务
 func (h *TaskHandler) GetResourceTasks(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	resourceID := c.Query("resource_id")
 	if resourceID == "" {
 		response.BadRequest(c, "缺少resource_id参数")
 		return
 	}
 
-	tasks, err := h.taskService.GetTasksByResource(resourceID)
+	tasks, err := h.taskService.GetTasksByResource(resourceID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to get resource tasks", "error", err, "resource_id", resourceID)
 		response.InternalError(c, err.Error())

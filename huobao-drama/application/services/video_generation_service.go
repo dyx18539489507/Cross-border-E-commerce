@@ -53,6 +53,21 @@ func NewVideoGenerationService(db *gorm.DB, transferService *ResourceTransferSer
 	return service
 }
 
+func firstVideoDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
+func (s *VideoGenerationService) applyVideoDeviceScope(query *gorm.DB, deviceID string) *gorm.DB {
+	if deviceID == "" {
+		return query
+	}
+	dramaSubQuery := s.db.Model(&models.Drama{}).Select("id").Where("device_id = ?", deviceID)
+	return query.Where("drama_id IN (?)", dramaSubQuery)
+}
+
 type GenerateVideoRequest struct {
 	StoryboardID *uint  `json:"storyboard_id"`
 	DramaID      string `json:"drama_id" binding:"required"`
@@ -83,10 +98,17 @@ type GenerateVideoRequest struct {
 	Seed         *int64  `json:"seed"`
 }
 
-func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest) (*models.VideoGeneration, error) {
+func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest, deviceIDs ...string) (*models.VideoGeneration, error) {
+	deviceID := firstVideoDeviceID(deviceIDs)
 	if request.StoryboardID != nil {
 		var storyboard models.Storyboard
-		if err := s.db.Preload("Episode").Where("id = ?", *request.StoryboardID).First(&storyboard).Error; err != nil {
+		storyboardQuery := s.db.Preload("Episode").Where("storyboards.id = ?", *request.StoryboardID)
+		if deviceID != "" {
+			storyboardQuery = storyboardQuery.Joins("JOIN episodes ON episodes.id = storyboards.episode_id").
+				Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+				Where("dramas.device_id = ?", deviceID)
+		}
+		if err := storyboardQuery.First(&storyboard).Error; err != nil {
 			return nil, fmt.Errorf("storyboard not found")
 		}
 		if fmt.Sprintf("%d", storyboard.Episode.DramaID) != request.DramaID {
@@ -96,7 +118,9 @@ func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest) (*
 
 	if request.ImageGenID != nil {
 		var imageGen models.ImageGeneration
-		if err := s.db.Where("id = ?", *request.ImageGenID).First(&imageGen).Error; err != nil {
+		imageQuery := s.db.Model(&models.ImageGeneration{}).Where("id = ?", *request.ImageGenID)
+		imageQuery = s.applyVideoDeviceScope(imageQuery, deviceID)
+		if err := imageQuery.First(&imageGen).Error; err != nil {
 			return nil, fmt.Errorf("image generation not found")
 		}
 		if request.ImageURL == "" {
@@ -112,11 +136,36 @@ func (s *VideoGenerationService) GenerateVideo(request *GenerateVideoRequest) (*
 			request.Prompt = imageGen.Prompt
 		}
 	}
+
+	dramaQuery := s.db.Where("id = ?", request.DramaID)
+	if deviceID != "" {
+		dramaQuery = dramaQuery.Where("device_id = ?", deviceID)
+	}
+	var drama models.Drama
+	if err := dramaQuery.First(&drama).Error; err != nil {
+		return nil, fmt.Errorf("drama not found")
+	}
 	if request.ImageURL != "" {
 		request.ImageURL = s.normalizeMediaURL(request.ImageURL)
 	}
 
-	provider := request.Provider
+	provider := strings.TrimSpace(request.Provider)
+	if s.aiService != nil {
+		if request.Model != "" {
+			if cfg, err := s.aiService.GetConfigForModel("video", request.Model, drama.DeviceID); err == nil {
+				if p := strings.TrimSpace(cfg.Provider); p != "" {
+					provider = p
+				}
+			}
+		}
+		if provider == "" {
+			if cfg, err := s.aiService.GetDefaultConfig("video", drama.DeviceID); err == nil {
+				if p := strings.TrimSpace(cfg.Provider); p != "" {
+					provider = p
+				}
+			}
+		}
+	}
 	if provider == "" {
 		provider = "doubao"
 	}
@@ -210,7 +259,7 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 
 	s.db.Model(&videoGen).Update("status", models.VideoStatusProcessing)
 
-	client, err := s.getVideoClient(videoGen.Provider, videoGen.Model)
+	client, err := s.getVideoClient(videoGen.Provider, videoGen.Model, videoGen.DramaID)
 	if err != nil {
 		s.log.Errorw("Failed to get video client", "error", err, "provider", videoGen.Provider, "model", videoGen.Model)
 		s.updateVideoGenError(videoGenID, err.Error())
@@ -302,7 +351,14 @@ func (s *VideoGenerationService) ProcessVideoGeneration(videoGenID uint) {
 }
 
 func (s *VideoGenerationService) pollTaskStatus(videoGenID uint, taskID string, provider string, model string) {
-	client, err := s.getVideoClient(provider, model)
+	var videoGen models.VideoGeneration
+	if err := s.db.Select("drama_id").Where("id = ?", videoGenID).First(&videoGen).Error; err != nil {
+		s.log.Errorw("Failed to load video generation for polling", "error", err, "id", videoGenID)
+		s.updateVideoGenError(videoGenID, "failed to load generation record")
+		return
+	}
+
+	client, err := s.getVideoClient(provider, model, videoGen.DramaID)
 	if err != nil {
 		s.log.Errorw("Failed to get video client for polling", "error", err)
 		s.updateVideoGenError(videoGenID, "failed to get video client")
@@ -479,26 +535,7 @@ func (s *VideoGenerationService) resolveLocalStorageFilePath(raw string) string 
 		return ""
 	}
 
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-
-	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
-	rel := ""
-
-	switch {
-	case baseURL != "" && strings.HasPrefix(trimmed, baseURL):
-		rel = strings.TrimPrefix(trimmed, baseURL)
-	case strings.HasPrefix(trimmed, "/static/"):
-		rel = strings.TrimPrefix(trimmed, "/static/")
-	case strings.HasPrefix(trimmed, "static/"):
-		rel = strings.TrimPrefix(trimmed, "static/")
-	default:
-		return ""
-	}
-
-	rel = strings.TrimPrefix(rel, "/")
+	rel := s.localStaticRelativePath(raw)
 	if rel == "" {
 		return ""
 	}
@@ -558,6 +595,52 @@ func (s *VideoGenerationService) toStablePlaybackURL(raw string) string {
 	return trimmed
 }
 
+func (s *VideoGenerationService) localStaticRelativePath(raw string) string {
+	if s.localStorage == nil {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	baseURL := strings.TrimSuffix(strings.TrimSpace(s.localStorage.BaseURL()), "/")
+	if baseURL != "" && strings.HasPrefix(trimmed, baseURL) {
+		rel := strings.TrimPrefix(trimmed, baseURL)
+		rel = strings.TrimPrefix(rel, "/")
+		if strings.HasPrefix(rel, "static/") {
+			rel = strings.TrimPrefix(rel, "static/")
+		}
+		return strings.TrimPrefix(rel, "/")
+	}
+
+	switch {
+	case strings.HasPrefix(trimmed, "/static/"):
+		return strings.TrimPrefix(trimmed, "/static/")
+	case strings.HasPrefix(trimmed, "static/"):
+		return strings.TrimPrefix(trimmed, "static/")
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return ""
+	}
+	if strings.HasPrefix(parsed.Path, "/static/") && s.isLoopbackHost(parsed.Hostname()) {
+		return strings.TrimPrefix(parsed.Path, "/static/")
+	}
+
+	return ""
+}
+
+func (s *VideoGenerationService) isLoopbackHost(host string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(host))
+	return normalized == "localhost" ||
+		normalized == "127.0.0.1" ||
+		normalized == "0.0.0.0" ||
+		normalized == "host.docker.internal"
+}
+
 func (s *VideoGenerationService) updateVideoGenError(videoGenID uint, errorMsg string) {
 	if err := s.db.Model(&models.VideoGeneration{}).Where("id = ?", videoGenID).Updates(map[string]interface{}{
 		"status":    models.VideoStatusFailed,
@@ -567,22 +650,29 @@ func (s *VideoGenerationService) updateVideoGenError(videoGenID uint, errorMsg s
 	}
 }
 
-func (s *VideoGenerationService) getVideoClient(provider string, modelName string) (video.VideoClient, error) {
+func (s *VideoGenerationService) getVideoClient(provider string, modelName string, dramaID uint) (video.VideoClient, error) {
 	// 根据模型名称获取AI配置
 	var config *models.AIServiceConfig
 	var err error
+	deviceID := ""
+	if dramaID != 0 {
+		var drama models.Drama
+		if e := s.db.Select("device_id").Where("id = ?", dramaID).First(&drama).Error; e == nil {
+			deviceID = drama.DeviceID
+		}
+	}
 
 	if modelName != "" {
-		config, err = s.aiService.GetConfigForModel("video", modelName)
+		config, err = s.aiService.GetConfigForModel("video", modelName, deviceID)
 		if err != nil {
 			s.log.Warnw("Failed to get config for model, using default", "model", modelName, "error", err)
-			config, err = s.aiService.GetDefaultConfig("video")
+			config, err = s.aiService.GetDefaultConfig("video", deviceID)
 			if err != nil {
 				return nil, fmt.Errorf("no video AI config found: %w", err)
 			}
 		}
 	} else {
-		config, err = s.aiService.GetDefaultConfig("video")
+		config, err = s.aiService.GetDefaultConfig("video", deviceID)
 		if err != nil {
 			return nil, fmt.Errorf("no video AI config found: %w", err)
 		}
@@ -597,18 +687,11 @@ func (s *VideoGenerationService) getVideoClient(provider string, modelName strin
 	}
 
 	// 根据配置中的 provider 创建对应的客户端
-	var endpoint string
-	var queryEndpoint string
-
 	switch config.Provider {
 	case "chatfire":
-		endpoint = "/video/generations"
-		queryEndpoint = "/video/task/{taskId}"
-		return video.NewChatfireClient(baseURL, apiKey, model, endpoint, queryEndpoint), nil
+		return video.NewChatfireClient(baseURL, apiKey, model, "/video/generations", "/video/task/{taskId}"), nil
 	case "doubao", "volcengine", "volces":
-		endpoint = "/contents/generations/tasks"
-		queryEndpoint = "/contents/generations/tasks/{taskId}"
-		return video.NewVolcesArkClient(baseURL, apiKey, model, endpoint, queryEndpoint), nil
+		return video.NewVolcesArkClient(baseURL, apiKey, model, "/contents/generations/tasks", "/contents/generations/tasks/{taskId}"), nil
 	case "openai":
 		// OpenAI Sora 使用 /v1/videos 端点
 		return video.NewOpenAISoraClient(baseURL, apiKey, model), nil
@@ -619,7 +702,7 @@ func (s *VideoGenerationService) getVideoClient(provider string, modelName strin
 	case "minimax":
 		return video.NewMinimaxClient(baseURL, apiKey, model), nil
 	default:
-		return nil, fmt.Errorf("unsupported video provider: %s", provider)
+		return nil, fmt.Errorf("unsupported video provider: %s (requested: %s)", config.Provider, provider)
 	}
 }
 
@@ -661,20 +744,26 @@ func (s *VideoGenerationService) resolveMediaInputURLForProvider(raw string, pro
 	if normalized == "" || strings.HasPrefix(normalized, "data:") {
 		return normalized
 	}
+
+	providerKey := strings.ToLower(strings.TrimSpace(provider))
 	isLocal := s.isLocalMediaURL(normalized)
-	// doubao/volces 更倾向使用公网 URL
-	if isLocal && (provider == "doubao" || provider == "volces" || provider == "volcengine") {
-		if publicURL, err := s.uploadPublicMedia(normalized); err == nil && publicURL != "" {
-			return publicURL
-		}
-	}
-	if isLocal || provider == "openai" {
+
+	// 本地静态资源优先转 data URL，避免依赖临时公网域名或第三方中转
+	if isLocal && (providerKey == "openai" || providerKey == "doubao" || providerKey == "volces" || providerKey == "volcengine" || providerKey == "chatfire") {
 		dataURL, err := s.tryLocalToDataURL(normalized)
 		if err == nil && dataURL != "" {
 			return dataURL
 		}
 	}
-	if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+
+	// 对 doubao/volces/chatfire 保留公网 URL 中转兜底
+	if isLocal && (providerKey == "doubao" || providerKey == "volces" || providerKey == "volcengine" || providerKey == "chatfire") {
+		if publicURL, err := s.uploadPublicMedia(normalized); err == nil && publicURL != "" {
+			return publicURL
+		}
+	}
+
+	if providerKey == "openai" && (strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://")) {
 		remoteDataURL, fetchErr := s.fetchURLToDataURL(normalized)
 		if fetchErr == nil && remoteDataURL != "" {
 			return remoteDataURL
@@ -687,22 +776,12 @@ func (s *VideoGenerationService) tryLocalToDataURL(url string) (string, error) {
 	if s.localStorage == nil {
 		return "", fmt.Errorf("local storage not available")
 	}
-	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
-	rel := ""
-	if baseURL != "" && strings.HasPrefix(url, baseURL) {
-		rel = strings.TrimPrefix(url, baseURL)
-	} else if strings.HasPrefix(url, "/static/") {
-		rel = strings.TrimPrefix(url, "/static/")
-	} else if strings.HasPrefix(url, "static/") {
-		rel = strings.TrimPrefix(url, "static/")
-	}
+
+	rel := s.localStaticRelativePath(url)
 	if rel == "" {
 		return "", fmt.Errorf("not a local static url")
 	}
-	rel = strings.TrimPrefix(rel, "/")
-	if rel == "" {
-		return "", fmt.Errorf("empty local path")
-	}
+
 	localPath := filepath.Join(s.localStorage.BasePath(), filepath.FromSlash(rel))
 	data, err := os.ReadFile(localPath)
 	if err != nil {
@@ -751,31 +830,22 @@ func (s *VideoGenerationService) fetchURLToDataURL(url string) (string, error) {
 }
 
 func (s *VideoGenerationService) isLocalMediaURL(raw string) bool {
-	if strings.HasPrefix(raw, "/static/") || strings.HasPrefix(raw, "static/") {
+	if s.localStaticRelativePath(raw) != "" {
 		return true
 	}
-	u, err := url.Parse(raw)
+	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return false
 	}
-	host := strings.ToLower(u.Hostname())
-	return host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
+	return s.isLoopbackHost(u.Hostname())
 }
 
 func (s *VideoGenerationService) uploadPublicMedia(raw string) (string, error) {
 	if s.localStorage == nil {
 		return "", fmt.Errorf("local storage not available")
 	}
-	baseURL := strings.TrimSuffix(s.localStorage.BaseURL(), "/")
-	rel := ""
-	if baseURL != "" && strings.HasPrefix(raw, baseURL) {
-		rel = strings.TrimPrefix(raw, baseURL)
-	} else if strings.HasPrefix(raw, "/static/") {
-		rel = strings.TrimPrefix(raw, "/static/")
-	} else if strings.HasPrefix(raw, "static/") {
-		rel = strings.TrimPrefix(raw, "static/")
-	}
-	rel = strings.TrimPrefix(rel, "/")
+
+	rel := s.localStaticRelativePath(raw)
 	if rel == "" {
 		return "", fmt.Errorf("invalid local url")
 	}
@@ -1071,19 +1141,24 @@ func parseVideoCacheTimestamp(fileName string) (time.Time, bool) {
 	return parsed, true
 }
 
-func (s *VideoGenerationService) GetVideoGeneration(id uint) (*models.VideoGeneration, error) {
+func (s *VideoGenerationService) GetVideoGeneration(id uint, deviceIDs ...string) (*models.VideoGeneration, error) {
+	deviceID := firstVideoDeviceID(deviceIDs)
 	var videoGen models.VideoGeneration
-	if err := s.db.First(&videoGen, id).Error; err != nil {
+	query := s.db.Model(&models.VideoGeneration{}).Where("id = ?", id)
+	query = s.applyVideoDeviceScope(query, deviceID)
+	if err := query.First(&videoGen).Error; err != nil {
 		return nil, err
 	}
 	return &videoGen, nil
 }
 
-func (s *VideoGenerationService) ListVideoGenerations(dramaID *uint, storyboardID *uint, status string, limit int, offset int) ([]*models.VideoGeneration, int64, error) {
+func (s *VideoGenerationService) ListVideoGenerations(dramaID *uint, storyboardID *uint, status string, limit int, offset int, deviceIDs ...string) ([]*models.VideoGeneration, int64, error) {
+	deviceID := firstVideoDeviceID(deviceIDs)
 	var videos []*models.VideoGeneration
 	var total int64
 
 	query := s.db.Model(&models.VideoGeneration{})
+	query = s.applyVideoDeviceScope(query, deviceID)
 
 	if dramaID != nil {
 		query = query.Where("drama_id = ?", *dramaID)
@@ -1106,9 +1181,12 @@ func (s *VideoGenerationService) ListVideoGenerations(dramaID *uint, storyboardI
 	return videos, total, nil
 }
 
-func (s *VideoGenerationService) GenerateVideoFromImage(imageGenID uint) (*models.VideoGeneration, error) {
+func (s *VideoGenerationService) GenerateVideoFromImage(imageGenID uint, deviceIDs ...string) (*models.VideoGeneration, error) {
+	deviceID := firstVideoDeviceID(deviceIDs)
 	var imageGen models.ImageGeneration
-	if err := s.db.First(&imageGen, imageGenID).Error; err != nil {
+	query := s.db.Model(&models.ImageGeneration{}).Where("id = ?", imageGenID)
+	query = s.applyVideoDeviceScope(query, deviceID)
+	if err := query.First(&imageGen).Error; err != nil {
 		return nil, fmt.Errorf("image generation not found")
 	}
 
@@ -1134,16 +1212,21 @@ func (s *VideoGenerationService) GenerateVideoFromImage(imageGenID uint) (*model
 		ImageGenID:   &imageGenID,
 		ImageURL:     *imageGen.ImageURL,
 		Prompt:       imageGen.Prompt,
-		Provider:     "doubao",
 		Duration:     duration,
 	}
 
-	return s.GenerateVideo(req)
+	return s.GenerateVideo(req, deviceID)
 }
 
-func (s *VideoGenerationService) BatchGenerateVideosForEpisode(episodeID string) ([]*models.VideoGeneration, error) {
+func (s *VideoGenerationService) BatchGenerateVideosForEpisode(episodeID string, deviceIDs ...string) ([]*models.VideoGeneration, error) {
+	deviceID := firstVideoDeviceID(deviceIDs)
 	var episode models.Episode
-	if err := s.db.Preload("Storyboards").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	episodeQuery := s.db.Preload("Storyboards").Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		episodeQuery = episodeQuery.Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := episodeQuery.First(&episode).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
 	}
 
@@ -1160,7 +1243,7 @@ func (s *VideoGenerationService) BatchGenerateVideosForEpisode(episodeID string)
 			continue
 		}
 
-		videoGen, err := s.GenerateVideoFromImage(imageGen.ID)
+		videoGen, err := s.GenerateVideoFromImage(imageGen.ID, deviceID)
 		if err != nil {
 			s.log.Errorw("Failed to generate video", "storyboard_id", storyboard.ID, "error", err)
 			continue
@@ -1172,6 +1255,9 @@ func (s *VideoGenerationService) BatchGenerateVideosForEpisode(episodeID string)
 	return results, nil
 }
 
-func (s *VideoGenerationService) DeleteVideoGeneration(id uint) error {
-	return s.db.Delete(&models.VideoGeneration{}, id).Error
+func (s *VideoGenerationService) DeleteVideoGeneration(id uint, deviceIDs ...string) error {
+	deviceID := firstVideoDeviceID(deviceIDs)
+	query := s.db.Model(&models.VideoGeneration{}).Where("id = ?", id)
+	query = s.applyVideoDeviceScope(query, deviceID)
+	return query.Delete(&models.VideoGeneration{}).Error
 }

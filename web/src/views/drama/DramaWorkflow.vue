@@ -131,12 +131,17 @@
         v-model="digitalHumanDialogVisible"
         title="数字人制作"
         width="560px"
-        class="digital-human-dialog"
+        class="digital-human-dialog dialog-form-safe"
         :lock-scroll="true"
         :append-to-body="true"
         @close="resetDigitalHumanForm"
       >
-        <el-form label-position="top" class="digital-human-form">
+        <el-form
+          ref="digitalHumanDialogFormRef"
+          label-position="top"
+          class="digital-human-form long-form form-enter-flow"
+          @keydown.enter="handleFormEnterNavigation"
+        >
           <el-form-item>
           <template #label>
             <span class="digital-human-required-label">
@@ -707,8 +712,14 @@
     </div>
 
     <!-- 编辑角色描述对话框 -->
-    <el-dialog v-model="editDescDialogVisible" title="编辑角色描述" width="600px">
-      <el-form v-if="editingCharacter" label-width="100px">
+    <el-dialog v-model="editDescDialogVisible" title="编辑角色描述" width="600px" class="dialog-form-safe">
+      <el-form
+        v-if="editingCharacter"
+        ref="editDescFormRef"
+        label-width="100px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item label="角色名称">
           <el-input v-model="editingCharacter.name" disabled />
         </el-form-item>
@@ -750,8 +761,14 @@
     </el-dialog>
 
     <!-- 添加角色对话框 -->
-    <el-dialog v-model="addCharacterDialogVisible" title="添加新角色" width="600px">
-      <el-form :model="newCharacter" label-width="80px">
+    <el-dialog v-model="addCharacterDialogVisible" title="添加新角色" width="600px" class="dialog-form-safe">
+      <el-form
+        ref="addCharacterFormRef"
+        :model="newCharacter"
+        label-width="80px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item label="角色名称" required>
           <el-input v-model="newCharacter.name" placeholder="请输入角色名称" />
         </el-form-item>
@@ -855,6 +872,7 @@ import { digitalHumanAPI } from '@/api/digital-human'
 import { voiceLibraryAPI } from '@/api/voice-library'
 import type { VoiceLibraryItem } from '@/api/voice-library'
 import request from '@/utils/request'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 import type { Drama, DramaStatus } from '@/types/drama'
 import { AppHeader } from '@/components/common'
 
@@ -873,6 +891,7 @@ const scriptContent = ref('')
 const showScriptInput = ref(false) // 控制是否显示剧本输入框
 
 const digitalHumanDialogVisible = ref(false)
+const digitalHumanDialogFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const digitalHumanLoading = ref(false)
 const digitalHumanResultUrl = ref('')
 const digitalHumanImageList = ref<UploadUserFile[]>([])
@@ -1068,6 +1087,8 @@ const editDescDialogVisible = ref(false)
 const editingCharacter = ref<any>(null)
 const saving = ref(false)
 const addCharacterDialogVisible = ref(false)
+const editDescFormRef = ref<{ $el?: HTMLElement } | null>(null)
+const addCharacterFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const newCharacter = ref({
   name: '',
   role: 'supporting',
@@ -2105,7 +2126,7 @@ onMounted(() => {
 
 <style scoped>
 .workflow-container {
-  min-height: 100vh;
+  min-height: var(--app-vh, 100vh);
   background: #f8fafc;
   transition: background var(--transition-normal);
 }

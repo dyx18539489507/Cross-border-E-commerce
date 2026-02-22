@@ -690,7 +690,7 @@
                         <div style="display: flex; gap: 4px;">
                           <el-button v-if="video.status === 'completed' && video.video_url" type="success" size="small"
                             :loading="addingToAssets.has(video.id)" @click.stop="addVideoToAssets(video)">
-                            {{ addingToAssets.has(video.id) ? '添加中...' : '添加到素材库' }}
+                            {{ addingToAssets.has(video.id) ? '添加中...' : (isVideoInAssetLibrary(video) ? '已在素材库' : '添加到素材库') }}
                           </el-button>
                         </div>
                       </div>
@@ -770,7 +770,7 @@
                   -->
                 </div>
 
-                <div class="audio-list" v-loading="showAudioListOverlay">
+                <div ref="audioListRef" class="audio-list" v-loading="showAudioListOverlay">
                   <div v-if="audioSearch.trim() && audioSearchLoading" class="audio-search-status">
                     <el-icon class="rotating"><Loading /></el-icon>
                     <span>正在加载中...</span>
@@ -796,7 +796,7 @@
                         </div>
                         <div class="audio-info">
                           <div class="audio-name">{{ asset.name }}</div>
-                          <div v-if="asset.artist" class="audio-artist">{{ asset.artist }}</div>
+                          <div v-if="asset.artist && asset.source !== 'sfx'" class="audio-artist">{{ asset.artist }}</div>
                           <div class="audio-meta">
                             <el-tag v-if="asset.category" size="small">{{ asset.category }}</el-tag>
                             <el-tag v-if="isDouyinHot(asset)" size="small" type="danger">抖音热门</el-tag>
@@ -830,6 +830,19 @@
                         </el-button>
                       </div>
                     </div>
+                  </div>
+                  <div
+                    v-if="isAudioScrollLoading"
+                    class="audio-scroll-loading"
+                  >
+                    <el-icon class="rotating"><Loading /></el-icon>
+                    <span>正在加载中...</span>
+                  </div>
+                  <div
+                    v-else-if="showAudioLazyTip"
+                    class="audio-lazy-tip"
+                  >
+                    下滑加载更多
                   </div>
                   <div v-if="audioMode === 'music' && audioSearch.trim() && neteaseSearchTotal > 0" class="audio-pagination">
                     <span class="audio-total">共搜索到 {{ neteaseSearchTotal }} 条</span>
@@ -934,6 +947,26 @@
                         </el-alert>
                       </div>
 
+                      <!-- 分发状态 -->
+                      <div
+                        v-if="merge.status === 'completed' && getMergeDistributionSummary(merge.id).length"
+                        class="distribution-summary"
+                      >
+                        <span class="distribution-summary-label">分发状态：</span>
+                        <el-tag
+                          v-for="item in getMergeDistributionSummary(merge.id)"
+                          :key="`${merge.id}-${item.platform}`"
+                          :type="getDistributionStatusType(item.status)"
+                          size="small"
+                          effect="plain"
+                          class="distribution-tag"
+                          :class="{ 'is-link': !!item.published_url }"
+                          @click="openDistributionRecord(item)"
+                        >
+                          {{ getPlatformLabel(item.platform) }} · {{ getDistributionStatusText(item.status) }}
+                        </el-tag>
+                      </div>
+
                       <!-- 操作按钮 -->
                       <div class="merge-actions">
                         <template v-if="merge.status === 'completed' && merge.merged_url">
@@ -943,6 +976,9 @@
                           </el-button>
                           <el-button :icon="View" @click="previewMergedVideo(merge.merged_url)" round>
                             在线预览
+                          </el-button>
+                          <el-button type="success" :icon="Connection" @click="openDistributionDialog(merge)" round>
+                            一键分发
                           </el-button>
                         </template>
                         <el-button type="danger" :icon="Delete"
@@ -1028,6 +1064,64 @@
       </div>
     </el-dialog>
 
+    <!-- 一键分发对话框 -->
+    <el-dialog
+      v-model="distributionDialogVisible"
+      title="一键分发"
+      width="560px"
+      :close-on-click-modal="false"
+      class="distribution-dialog dialog-form-safe"
+    >
+      <el-form label-position="top" class="distribution-form">
+        <el-form-item label="分发平台">
+          <el-checkbox-group v-model="distributionForm.platforms">
+            <el-checkbox
+              v-for="platform in distributionPlatforms"
+              :key="platform.value"
+              :label="platform.value"
+            >
+              {{ platform.label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="视频标题">
+          <el-input
+            v-model="distributionForm.title"
+            maxlength="120"
+            show-word-limit
+            placeholder="请输入发布标题"
+          />
+        </el-form-item>
+        <el-form-item label="发布文案">
+          <el-input
+            v-model="distributionForm.description"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="请输入发布文案，可介绍商品卖点"
+          />
+        </el-form-item>
+        <el-form-item label="话题标签（空格/逗号分隔）">
+          <el-input
+            v-model="distributionForm.hashtagsText"
+            placeholder="#跨境电商 #短剧带货"
+          />
+        </el-form-item>
+        <div class="distribution-target">
+          当前视频：{{ distributionTargetMerge?.title || '-' }}
+        </div>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="distributionDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="submittingDistribution" @click="submitDistribution">
+            {{ submittingDistribution ? '分发中...' : '开始分发' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <!-- 视频预览对话框 -->
     <el-dialog v-model="showVideoPreview" title="视频预览" width="800px" :close-on-click-modal="true" destroy-on-close>
       <div class="video-preview-container" v-if="previewVideo">
@@ -1078,12 +1172,17 @@ import { imageAPI } from '@/api/image'
 import { videoAPI } from '@/api/video'
 import { aiAPI } from '@/api/ai'
 import { assetAPI } from '@/api/asset'
-import { videoMergeAPI } from '@/api/videoMerge'
+import {
+  videoMergeAPI,
+  type DistributionPlatform,
+  type VideoDistribution,
+  type VideoDistributionStatus,
+  type VideoMerge
+} from '@/api/videoMerge'
 import type { ImageGeneration } from '@/types/image'
 import type { VideoGeneration } from '@/types/video'
 import type { AIServiceConfig } from '@/types/ai'
 import type { Asset } from '@/types/asset'
-import type { VideoMerge } from '@/api/videoMerge'
 import VideoTimelineEditor from '@/components/editor/VideoTimelineEditor.vue'
 import type { Drama, Episode, Storyboard } from '@/types/drama'
 import { AppHeader } from '@/components/common'
@@ -1159,6 +1258,9 @@ const douyinMusicUpdatedAt = ref<string | null>(null)
 const sfxAssets = ref<AudioListItem[]>([])
 const loadingSfx = ref(false)
 const sfxCategory = ref('热门')
+const sfxPage = ref(1)
+const sfxHasMore = ref(true)
+const sfxLoadingMore = ref(false)
 const neteaseSearchResults = ref<AudioListItem[]>([])
 const neteaseSearchTotal = ref(0)
 const loadingNeteaseSearch = ref(false)
@@ -1169,6 +1271,8 @@ const audioSearchPage = ref(1)
 const audioSearchPageSize = ref(10)
 const audioCategory = ref('all')
 const audioHotOnly = ref(true)
+const audioListRef = ref<HTMLElement | null>(null)
+const hotMusicVisibleCount = ref(20)
 const previewingAudioId = ref<string | null>(null)
 const previewLoadingAudioId = ref<string | null>(null)
 const previewAudioPlayer = ref<HTMLAudioElement | null>(null)
@@ -1185,6 +1289,31 @@ let mergePollingTimer: any = null  // 视频合成列表轮询定时器
 // 视频合成列表
 const videoMerges = ref<VideoMerge[]>([])
 const loadingMerges = ref(false)
+
+const distributionPlatforms: Array<{ value: DistributionPlatform; label: string }> = [
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'x', label: 'X' }
+]
+const distributionDialogVisible = ref(false)
+const submittingDistribution = ref(false)
+const distributionTargetMerge = ref<VideoMerge | null>(null)
+const distributionForm = ref<{
+  mergeId: number
+  platforms: DistributionPlatform[]
+  title: string
+  description: string
+  hashtagsText: string
+}>({
+  mergeId: 0,
+  platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+  title: '',
+  description: '',
+  hashtagsText: ''
+})
+const mergeDistributions = ref<Record<number, VideoDistribution[]>>({})
+let distributionPollingTimer: any = null
 
 // 视频模型能力配置
 interface VideoModelCapability {
@@ -1218,6 +1347,12 @@ type AudioListItem = {
   rank?: number
   updatedAt?: string
   isFavorite?: boolean
+}
+
+type HotMusicFallbackCursor = {
+  keyword: string
+  page: number
+  exhausted: boolean
 }
 
 
@@ -1437,7 +1572,11 @@ const loadAudioAssets = async () => {
   }
 }
 
-const DOUYIN_MUSIC_SOURCE = 'https://raw.githubusercontent.com/lonnyzhang423/douyin-hot-hub/main/README.md'
+const DOUYIN_MUSIC_RAW_SOURCE = 'https://raw.githubusercontent.com/lonnyzhang423/douyin-hot-hub/main/README.md'
+const DOUYIN_MUSIC_SOURCE_CANDIDATES = [
+  `/api/v1/media/proxy?url=${encodeURIComponent(DOUYIN_MUSIC_RAW_SOURCE)}`,
+  DOUYIN_MUSIC_RAW_SOURCE
+]
 
 const FRONTEND_FETCH_TIMEOUT_MS = 45000
 const MUSIC_SEARCH_TIMEOUT_MS = 60000
@@ -1447,6 +1586,11 @@ const SFX_FETCH_TIMEOUT_MS = 45000
 const SEARCH_PREVIEW_FALLBACK_TIMEOUT_MS = 30000
 const HOT_MUSIC_FALLBACK_TIMEOUT_MS = 45000
 const DOUYIN_MUSIC_FETCH_TIMEOUT_MS = 45000
+const HOT_MUSIC_MAX_ITEMS = 500
+const HOT_MUSIC_FALLBACK_PAGE_SIZE = 50
+const HOT_MUSIC_LAZY_BATCH_SIZE = 20
+const HOT_MUSIC_FALLBACK_MAX_PAGES = 30
+const SFX_LAZY_PAGE_SIZE = 20
 
 const createTimeoutSignal = (timeoutMs: number, externalSignal?: AbortSignal) => {
   const timeoutController = new AbortController()
@@ -1535,6 +1679,79 @@ const parseDurationToSeconds = (value: any) => {
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
   if (parts.length === 2) return parts[0] * 60 + parts[1]
   return undefined
+}
+
+const containsChinese = (text: string) => /[\u4E00-\u9FFF]/.test(text)
+
+const normalizeSfxDisplayName = (name: string) => {
+  return (name || '')
+    .replace(/\.(wav|mp3|ogg|flac|m4a|aac)$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const localizeSfxName = (rawName: string, category: string, rank: number) => {
+  const cleaned = normalizeSfxDisplayName(rawName)
+  if (!cleaned) return `${category}音效 ${rank}`
+  if (containsChinese(cleaned)) return cleaned
+
+  const exactMap: Record<string, string> = {
+    'cash register': '收银机提示音',
+    'cash register purchase': '收银成交提示音',
+    'cha ching': '到账提示音',
+    'till with bell': '收银铃声',
+    'cash register fake': '收银机模拟提示音',
+    'whoosh': '转场呼啸音效',
+    'laugh': '欢笑音效',
+    'record scratch': '尴尬打断音效',
+    'dramatic hit': '震惊重击音效'
+  }
+
+  const normalized = cleaned.toLowerCase()
+  if (exactMap[normalized]) return exactMap[normalized]
+
+  const replacementRules: Array<{ pattern: RegExp, replacement: string }> = [
+    { pattern: /\bcash\s*register\b/gi, replacement: '收银机' },
+    { pattern: /\bregister\b/gi, replacement: '收银' },
+    { pattern: /\bpurchase\b/gi, replacement: '成交' },
+    { pattern: /\bcheckout\b/gi, replacement: '结账' },
+    { pattern: /\bcha\s*ching\b/gi, replacement: '到账提示' },
+    { pattern: /\btill\b/gi, replacement: '收银台' },
+    { pattern: /\bbell\b/gi, replacement: '铃声' },
+    { pattern: /\bcoin\b/gi, replacement: '硬币' },
+    { pattern: /\bding\b/gi, replacement: '提示' },
+    { pattern: /\bbeep\b/gi, replacement: '提示音' },
+    { pattern: /\bclick\b/gi, replacement: '点击声' },
+    { pattern: /\bwhoosh\b/gi, replacement: '转场呼啸' },
+    { pattern: /\blaugh(ter)?\b/gi, replacement: '欢笑' },
+    { pattern: /\brecord\s*scratch\b/gi, replacement: '尴尬打断' },
+    { pattern: /\bawkward\b/gi, replacement: '尴尬' },
+    { pattern: /\bdramatic\b/gi, replacement: '震撼' },
+    { pattern: /\bhit\b/gi, replacement: '重击' },
+    { pattern: /\bshock\b/gi, replacement: '震惊' },
+    { pattern: /\bsurprise\b/gi, replacement: '惊讶' },
+    { pattern: /\bfake\b/gi, replacement: '模拟' },
+    { pattern: /\bsound\s*effect(s)?\b/gi, replacement: '音效' },
+    { pattern: /\bsfx\b/gi, replacement: '音效' }
+  ]
+
+  let localized = normalized
+  replacementRules.forEach(({ pattern, replacement }) => {
+    localized = localized.replace(pattern, replacement)
+  })
+
+  localized = localized
+    .replace(/\b(with|and|the|a|an|of|for|to|in|on)\b/gi, ' ')
+    .replace(/[^0-9\u4E00-\u9FFF\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (containsChinese(localized)) {
+    return localized.replace(/\s+/g, '')
+  }
+
+  return `${category}音效 ${rank}`
 }
 
 const formatDuration = (seconds?: number) => {
@@ -1811,6 +2028,7 @@ const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] =>
       const sourceName = `${item.source || ''}`.trim().toLowerCase()
       const sourceLabel = sourceName === 'pixabay' ? 'Pixabay' : (sourceName === 'freesound' ? 'Freesound' : '')
       const category = item.category || fallbackCategory || '热门音效'
+      const rank = Number(item.rank || index + 1)
       const url = resolveAudioUrl(item.url || item.audio_url || item.file_url || item.file_path || item.preview_url)
       if (!url) {
         return null
@@ -1823,7 +2041,7 @@ const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] =>
 
       return {
         id: item.id ? String(item.id) : `sfx-${sourceName || 'mix'}-${category}-${index}-${now}`,
-        name: item.name || item.title || `${category}-${index + 1}`,
+        name: localizeSfxName(item.name || item.title || '', category, rank),
         url,
         category,
         duration: parseDurationToSeconds(item.duration ?? item.length),
@@ -1833,7 +2051,7 @@ const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] =>
         description: item.description || (sourceLabel ? `来源：${sourceLabel}` : ''),
         tags: tags.map((name) => ({ name })),
         source: 'sfx' as const,
-        rank: Number(item.rank || index + 1)
+        rank
       } as AudioListItem
     })
 
@@ -1843,11 +2061,21 @@ const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] =>
   return mapped
 }
 
-const loadSfx = async () => {
-  loadingSfx.value = true
+const loadSfx = async (append = false) => {
+  const query = audioSearch.value.trim()
+  const isAppendMode = append && !query
+  if (isAppendMode) {
+    if (sfxLoadingMore.value || !sfxHasMore.value) return
+    sfxLoadingMore.value = true
+  } else {
+    loadingSfx.value = true
+    sfxPage.value = 1
+    sfxHasMore.value = true
+  }
+
+  const targetPage = isAppendMode ? (sfxPage.value + 1) : 1
   try {
-    const query = audioSearch.value.trim()
-    const params = new URLSearchParams({ limit: '20' })
+    const params = new URLSearchParams({ limit: String(SFX_LAZY_PAGE_SIZE), page: String(targetPage) })
     if (query) {
       params.set('keywords', query)
     } else {
@@ -1856,16 +2084,46 @@ const loadSfx = async () => {
 
     const data = await fetchJsonWithTimeout(`/api/v1/sfx?${params.toString()}`, SFX_FETCH_TIMEOUT_MS)
     const { items } = resolveListPayload(data)
-    sfxAssets.value = mapSfxItems(items, sfxCategory.value)
+    const mapped = mapSfxItems(items, sfxCategory.value)
+    const hasMoreFromResponse = typeof data?.has_more === 'boolean'
+      ? data.has_more
+      : mapped.length >= SFX_LAZY_PAGE_SIZE
+
+    if (isAppendMode) {
+      const existingKeys = new Set(
+        sfxAssets.value.map((asset) => `${asset.source || ''}|${asset.id}|${asset.url || ''}`)
+      )
+      const appended = mapped.filter((asset) => {
+        const key = `${asset.source || ''}|${asset.id}|${asset.url || ''}`
+        if (existingKeys.has(key)) return false
+        existingKeys.add(key)
+        return true
+      })
+      sfxAssets.value = [...sfxAssets.value, ...appended]
+      sfxPage.value = targetPage
+      sfxHasMore.value = hasMoreFromResponse && mapped.length > 0
+    } else {
+      sfxAssets.value = mapped
+      sfxPage.value = targetPage
+      sfxHasMore.value = hasMoreFromResponse && mapped.length > 0
+    }
+
     const warnings = Array.isArray(data?.warnings) ? data.warnings : []
     if (warnings.length > 0) {
       console.warn('音效部分数据源不可用:', warnings)
     }
   } catch (error: any) {
     console.error('加载音效失败:', error)
-    sfxAssets.value = []
+    if (!isAppendMode) {
+      sfxAssets.value = []
+    }
+    sfxHasMore.value = false
   } finally {
-    loadingSfx.value = false
+    if (isAppendMode) {
+      sfxLoadingMore.value = false
+    } else {
+      loadingSfx.value = false
+    }
   }
 }
 
@@ -2043,63 +2301,188 @@ const parseDouyinMusic = (content: string) => {
   return { items, updatedAt }
 }
 
-const loadFallbackHotMusic = async () => {
-  if (douyinMusicAssets.value.length > 0) return
+const HOT_MUSIC_FALLBACK_KEYWORDS = ['抖音热歌', '热门歌曲', '热歌榜']
 
-  const keywords = ['抖音热歌', '热门歌曲', '热歌榜']
-  for (const keyword of keywords) {
-    try {
-      const data = await fetchJsonWithTimeout(`/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=30`, HOT_MUSIC_FALLBACK_TIMEOUT_MS)
-      const { items } = resolveListPayload(data)
-      if (!items.length) continue
+const buildHotMusicDedupeKey = (asset: AudioListItem) => {
+  return [
+    asset.source || 'unknown',
+    asset.sourceId || '',
+    asset.sourceMid || '',
+    asset.sourceHash || '',
+    asset.sourceContentId || '',
+    normalizeSongText(asset.name || ''),
+    normalizeSongText(asset.artist || '')
+  ].join('|')
+}
 
-      douyinMusicAssets.value = items.map((song: any, index: number) => {
-        const source = resolveSongSource(song)
-        const name = song.title || song.name || ''
-        const artist = song.artist || ''
-        return {
-          id: `fallback-hot-${source}-${song.id || song.mid || song.hash || index}`,
-          name,
-          url: buildMusicStreamUrl(song, name),
-          category: '热门配乐',
-          duration: parseDurationToSeconds(song.duration),
-          view_count: Math.max(0, 1000 - index),
-          artist: artist || undefined,
-          description: '热门推荐',
-          tags: [{ name: '热门配乐' }],
-          source: (source || 'netease') as AudioListItem['source'],
-          sourceId: song.id ? String(song.id) : undefined,
-          sourceSongUrl: song.song_url || undefined,
-          sourceMid: song.mid ? String(song.mid) : undefined,
-          sourceHash: song.hash ? String(song.hash) : undefined,
-          sourceContentId: song.content_id ? String(song.content_id) : undefined,
-          rank: index + 1
-        }
-      })
-      return
-    } catch (error) {
-      console.warn('加载热门配乐兜底失败:', keyword, error)
+const resetHotMusicFallbackCursors = () => {
+  hotMusicFallbackCursors = HOT_MUSIC_FALLBACK_KEYWORDS.map((keyword) => ({
+    keyword,
+    page: 1,
+    exhausted: false
+  }))
+  hotMusicFallbackCursorIndex = 0
+}
+
+const hasMoreHotMusicFallbackPages = () => {
+  return hotMusicFallbackCursors.some(cursor => !cursor.exhausted && cursor.page <= HOT_MUSIC_FALLBACK_MAX_PAGES)
+}
+
+const pickNextHotMusicFallbackCursor = (): HotMusicFallbackCursor | null => {
+  if (!hasMoreHotMusicFallbackPages()) return null
+  if (hotMusicFallbackCursors.length === 0) return null
+
+  for (let i = 0; i < hotMusicFallbackCursors.length; i += 1) {
+    const idx = (hotMusicFallbackCursorIndex + i) % hotMusicFallbackCursors.length
+    const cursor = hotMusicFallbackCursors[idx]
+    if (!cursor.exhausted && cursor.page <= HOT_MUSIC_FALLBACK_MAX_PAGES) {
+      hotMusicFallbackCursorIndex = (idx + 1) % hotMusicFallbackCursors.length
+      return cursor
     }
+  }
+  return null
+}
+
+const toFallbackHotMusicItem = (song: any, rank: number): AudioListItem | null => {
+  const source = resolveSongSource(song)
+  const name = song.title || song.name || ''
+  const artist = song.artist || ''
+  const sourceId = song.id ? String(song.id) : (song.song_id ? String(song.song_id) : (song.songId ? String(song.songId) : ''))
+  const sourceMid = song.mid ? String(song.mid) : (song.songmid ? String(song.songmid) : (song.songMid ? String(song.songMid) : ''))
+  const sourceHash = song.hash ? String(song.hash) : (song.fileHash ? String(song.fileHash) : '')
+  const sourceContentID = song.content_id ? String(song.content_id) : (song.contentId ? String(song.contentId) : '')
+  const streamUrl = buildMusicStreamUrl(song, name)
+  if (!name || !streamUrl) return null
+
+  return {
+    id: `fallback-hot-${source || 'netease'}-${sourceId || sourceMid || sourceHash || rank}`,
+    name,
+    url: streamUrl,
+    category: '热门配乐',
+    duration: parseDurationToSeconds(song.duration),
+    view_count: Math.max(0, 1000 - rank + 1),
+    artist: artist || undefined,
+    description: '抖音热门推荐',
+    tags: [{ name: '热门配乐' }, { name: '抖音音乐榜' }],
+    source: (source || 'netease') as AudioListItem['source'],
+    sourceId: sourceId || undefined,
+    sourceSongUrl: song.song_url || undefined,
+    sourceMid: sourceMid || undefined,
+    sourceHash: sourceHash || undefined,
+    sourceContentId: sourceContentID || undefined,
+    rank
+  }
+}
+
+const loadFallbackHotMusic = async (seedItems: AudioListItem[] = [], requestCount = HOT_MUSIC_FALLBACK_KEYWORDS.length) => {
+  if (hotMusicFallbackLoading.value) return
+  if (hotMusicFallbackCursors.length === 0) {
+    resetHotMusicFallbackCursors()
+  }
+
+  hotMusicFallbackLoading.value = true
+  try {
+    const merged = new Map<string, AudioListItem>()
+    let rank = 0
+    const baseItems = seedItems.length > 0 ? seedItems : douyinMusicAssets.value
+
+    baseItems.forEach((asset) => {
+      if (!asset?.name || !asset?.url) return
+      const key = buildHotMusicDedupeKey(asset)
+      if (merged.has(key)) return
+      rank += 1
+      merged.set(key, {
+        ...asset,
+        rank: asset.rank && asset.rank > 0 ? asset.rank : rank
+      })
+    })
+
+    let requestsUsed = 0
+    while (requestsUsed < requestCount && merged.size < HOT_MUSIC_MAX_ITEMS) {
+      const cursor = pickNextHotMusicFallbackCursor()
+      if (!cursor) break
+      requestsUsed += 1
+
+      try {
+        const data = await fetchJsonWithTimeout(
+          `/api/v1/music/search?keywords=${encodeURIComponent(cursor.keyword)}&page=${cursor.page}&page_size=${HOT_MUSIC_FALLBACK_PAGE_SIZE}`,
+          HOT_MUSIC_FALLBACK_TIMEOUT_MS
+        )
+        const { items, total } = resolveListPayload(data)
+        if (!items.length) {
+          cursor.exhausted = true
+          continue
+        }
+
+        items.forEach((song: any) => {
+          if (merged.size >= HOT_MUSIC_MAX_ITEMS) return
+          const item = toFallbackHotMusicItem(song, rank + 1)
+          if (!item) return
+          const key = buildHotMusicDedupeKey(item)
+          if (merged.has(key)) return
+          rank += 1
+          item.rank = rank
+          item.view_count = Math.max(0, 1000 - rank + 1)
+          merged.set(key, item)
+        })
+
+        cursor.page += 1
+        const reachedTotal = Number(total) > 0 && ((cursor.page - 1) * HOT_MUSIC_FALLBACK_PAGE_SIZE >= Number(total))
+        const reachedSizeEnd = items.length < HOT_MUSIC_FALLBACK_PAGE_SIZE
+        const reachedPageLimit = cursor.page > HOT_MUSIC_FALLBACK_MAX_PAGES
+        if (reachedTotal || reachedSizeEnd || reachedPageLimit) {
+          cursor.exhausted = true
+        }
+      } catch (error) {
+        cursor.exhausted = true
+        console.warn('加载热门配乐兜底失败:', cursor.keyword, error)
+      }
+    }
+
+    douyinMusicAssets.value = Array.from(merged.values()).slice(0, HOT_MUSIC_MAX_ITEMS)
+  } finally {
+    hotMusicFallbackLoading.value = false
   }
 }
 
 const loadDouyinMusic = async () => {
   loadingDouyinMusic.value = true
+  resetHotMusicFallbackCursors()
   try {
-    const content = await fetchTextWithTimeout(DOUYIN_MUSIC_SOURCE, DOUYIN_MUSIC_FETCH_TIMEOUT_MS)
-    const parsed = parseDouyinMusic(content)
-    douyinMusicAssets.value = parsed.items
-    if (parsed.updatedAt) {
-      douyinMusicUpdatedAt.value = parsed.updatedAt
-    } else if (parsed.items.length > 0) {
-      const latest = parsed.items.reduce((max, item) => {
+    let parsedItems: AudioListItem[] = []
+    let parsedUpdatedAt: string | null = null
+    let loaded = false
+
+    for (const sourceUrl of DOUYIN_MUSIC_SOURCE_CANDIDATES) {
+      try {
+        const content = await fetchTextWithTimeout(sourceUrl, DOUYIN_MUSIC_FETCH_TIMEOUT_MS)
+        const parsed = parseDouyinMusic(content)
+        parsedItems = parsed.items
+        parsedUpdatedAt = parsed.updatedAt || null
+        loaded = true
+        if (parsed.items.length > 0) {
+          break
+        }
+      } catch (error) {
+        console.warn('加载抖音音乐榜源失败:', sourceUrl, error)
+      }
+    }
+
+    douyinMusicAssets.value = parsedItems
+    if (parsedUpdatedAt) {
+      douyinMusicUpdatedAt.value = parsedUpdatedAt
+    } else if (parsedItems.length > 0) {
+      const latest = parsedItems.reduce((max, item) => {
         if (!item.updatedAt) return max
         return item.updatedAt > max ? item.updatedAt : max
       }, '')
       douyinMusicUpdatedAt.value = latest || null
     }
-    if (parsed.items.length === 0) {
+
+    if (!loaded || parsedItems.length === 0) {
       await loadFallbackHotMusic()
+    } else if (parsedItems.length < HOT_MUSIC_MAX_ITEMS) {
+      await loadFallbackHotMusic(parsedItems)
     }
   } catch (error) {
     console.error('加载抖音音乐榜失败:', error)
@@ -2110,6 +2493,9 @@ const loadDouyinMusic = async () => {
 }
 
 const getAudioHotScore = (asset: AudioListItem) => {
+  if (asset.source === 'sfx' && asset.rank && asset.rank > 0) {
+    return 1_000_000 - asset.rank
+  }
   if (asset.view_count && asset.view_count > 0) {
     return asset.view_count + (asset.isFavorite ? 1000 : 0)
   }
@@ -2214,21 +2600,163 @@ const filteredAudioAssets = computed(() => {
   if (audioMode.value === 'music' && !query && audioHotOnly.value) {
     const douyinHot = assets.filter(asset => isDouyinHot(asset))
     if (douyinHot.length > 0) {
-      return douyinHot.slice(0, 30)
+      return douyinHot.slice(0, HOT_MUSIC_MAX_ITEMS)
     }
-    return assets.slice(0, 30)
+    return assets.slice(0, HOT_MUSIC_MAX_ITEMS)
   }
 
   return assets
 })
 
+const isHotMusicLazyMode = computed(() => {
+  return audioMode.value === 'music' && !audioSearch.value.trim()
+})
+
+const isSfxLazyMode = computed(() => {
+  return audioMode.value === 'sfx' && !audioSearch.value.trim()
+})
+
+const isAudioLazyMode = computed(() => {
+  return isHotMusicLazyMode.value || isSfxLazyMode.value
+})
+
+const isAudioScrollLoading = computed(() => {
+  return isAudioLazyMode.value && (hotMusicScrollLoading.value || hotMusicFallbackLoading.value || sfxLoadingMore.value)
+})
+
+const showAudioLazyTip = computed(() => {
+  if (!isAudioLazyMode.value || isAudioScrollLoading.value) return false
+  if (isSfxLazyMode.value) {
+    return sfxHasMore.value
+  }
+  return pagedAudioAssets.value.length < filteredAudioAssets.value.length || canLoadMoreHotMusicFromSource()
+})
+
 const pagedAudioAssets = computed(() => {
   const assets = filteredAudioAssets.value
-  if (!audioSearch.value.trim()) return assets
+  if (isHotMusicLazyMode.value) {
+    return assets.slice(0, Math.min(hotMusicVisibleCount.value, assets.length))
+  }
   return assets
 })
 
+const getScrollContainer = (el: HTMLElement | null): HTMLElement | null => {
+  let current = el?.parentElement || null
+  while (current) {
+    const style = window.getComputedStyle(current)
+    const overflowY = style.overflowY
+    const canScroll = (overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight
+    if (canScroll) {
+      return current
+    }
+    current = current.parentElement
+  }
+  return null
+}
+
+const growHotMusicVisibleCount = () => {
+  if (!isHotMusicLazyMode.value) return
+  if (hotMusicVisibleCount.value >= filteredAudioAssets.value.length) return
+  hotMusicVisibleCount.value = Math.min(
+    filteredAudioAssets.value.length,
+    hotMusicVisibleCount.value + HOT_MUSIC_LAZY_BATCH_SIZE
+  )
+}
+
+const isNearBottom = (container: HTMLElement) => {
+  const remain = container.scrollHeight - container.scrollTop - container.clientHeight
+  return remain <= 120
+}
+
+const canLoadMoreHotMusicFromSource = () => {
+  return hasMoreHotMusicFallbackPages() && douyinMusicAssets.value.length < HOT_MUSIC_MAX_ITEMS
+}
+
+const tryLoadMoreHotMusicWhileScrolling = async () => {
+  if (!isAudioLazyMode.value || !hotMusicScrollContainer) return
+
+  if (isSfxLazyMode.value) {
+    if (sfxLoadingMore.value || !sfxHasMore.value) return
+    await loadSfx(true)
+    return
+  }
+
+  if (hotMusicScrollLoading.value) return
+
+  hotMusicScrollLoading.value = true
+  try {
+    let guard = 0
+    while (guard < 12 && hotMusicScrollContainer && isNearBottom(hotMusicScrollContainer)) {
+      if (hotMusicVisibleCount.value < filteredAudioAssets.value.length) {
+        growHotMusicVisibleCount()
+        guard += 1
+        await nextTick()
+        continue
+      }
+
+      if (!canLoadMoreHotMusicFromSource()) {
+        break
+      }
+
+      const before = filteredAudioAssets.value.length
+      await loadFallbackHotMusic([], 1)
+      guard += 1
+      await nextTick()
+      if (filteredAudioAssets.value.length <= before) {
+        if (!canLoadMoreHotMusicFromSource()) {
+          break
+        }
+        continue
+      }
+    }
+  } finally {
+    hotMusicScrollLoading.value = false
+  }
+}
+
+const handleHotMusicScroll = () => {
+  if (!hotMusicScrollContainer) return
+  if (hotMusicScrollRAF) {
+    window.cancelAnimationFrame(hotMusicScrollRAF)
+  }
+  hotMusicScrollRAF = window.requestAnimationFrame(() => {
+    hotMusicScrollRAF = 0
+    void tryLoadMoreHotMusicWhileScrolling()
+  })
+}
+
+const unbindHotMusicScroll = () => {
+  if (hotMusicScrollContainer && hotMusicScrollBound) {
+    hotMusicScrollContainer.removeEventListener('scroll', handleHotMusicScroll)
+  }
+  hotMusicScrollContainer = null
+  hotMusicScrollBound = false
+  hotMusicScrollLoading.value = false
+  if (hotMusicScrollRAF) {
+    window.cancelAnimationFrame(hotMusicScrollRAF)
+    hotMusicScrollRAF = 0
+  }
+}
+
+const bindHotMusicScroll = async () => {
+  unbindHotMusicScroll()
+  if (!isAudioLazyMode.value || activeTab.value !== 'audio') return
+
+  await nextTick()
+  hotMusicScrollContainer = getScrollContainer(audioListRef.value)
+  if (!hotMusicScrollContainer) return
+
+  hotMusicScrollContainer.addEventListener('scroll', handleHotMusicScroll, { passive: true })
+  hotMusicScrollBound = true
+  void tryLoadMoreHotMusicWhileScrolling()
+}
+
+const resetHotMusicVisibleCount = () => {
+  hotMusicVisibleCount.value = HOT_MUSIC_LAZY_BATCH_SIZE
+}
+
 watch(audioMode, () => {
+  resetHotMusicVisibleCount()
   audioCategory.value = 'all'
   audioSearchPage.value = 1
   if (audioMode.value === 'sfx') {
@@ -2239,6 +2767,7 @@ watch(audioMode, () => {
     neteaseSearchResults.value = []
     neteaseSearchTotal.value = 0
     loadSfx()
+    void bindHotMusicScroll()
     return
   }
 
@@ -2247,6 +2776,7 @@ watch(audioMode, () => {
   } else if (douyinMusicAssets.value.length === 0) {
     loadDouyinMusic()
   }
+  void bindHotMusicScroll()
 })
 
 watch(audioCategoryOptions, (options) => {
@@ -2258,12 +2788,21 @@ watch(audioCategoryOptions, (options) => {
 watch(sfxCategory, () => {
   if (audioMode.value === 'sfx' && !audioSearch.value.trim()) {
     loadSfx()
+    void bindHotMusicScroll()
   }
 })
 
 let audioSearchTimer: number | null = null
 let neteaseSearchAbortController: AbortController | null = null
+let hotMusicScrollContainer: HTMLElement | null = null
+let hotMusicScrollBound = false
+let hotMusicScrollRAF = 0
+let hotMusicFallbackCursors: HotMusicFallbackCursor[] = []
+let hotMusicFallbackCursorIndex = 0
+const hotMusicScrollLoading = ref(false)
+const hotMusicFallbackLoading = ref(false)
 watch(audioSearch, (value) => {
+  resetHotMusicVisibleCount()
   const query = value.trim()
   audioSearchPage.value = 1
   if (audioSearchTimer) {
@@ -2322,6 +2861,7 @@ const stopAudioPreview = (resetLoading = true) => {
 
 watch(activeTab, (tab) => {
   if (tab !== 'audio') {
+    unbindHotMusicScroll()
     stopAudioPreview()
     return
   }
@@ -2330,7 +2870,27 @@ watch(activeTab, (tab) => {
   } else if (douyinMusicAssets.value.length === 0) {
     loadDouyinMusic()
   }
+  void bindHotMusicScroll()
 })
+
+watch(
+  [isAudioLazyMode, () => filteredAudioAssets.value.length, activeTab, isHotMusicLazyMode],
+  async ([lazyMode, , , hotLazyMode]) => {
+    if (!lazyMode || activeTab.value !== 'audio') {
+      unbindHotMusicScroll()
+      return
+    }
+    if (hotLazyMode) {
+      if (hotMusicVisibleCount.value > filteredAudioAssets.value.length) {
+        hotMusicVisibleCount.value = filteredAudioAssets.value.length
+      }
+      if (hotMusicVisibleCount.value < HOT_MUSIC_LAZY_BATCH_SIZE) {
+        hotMusicVisibleCount.value = HOT_MUSIC_LAZY_BATCH_SIZE
+      }
+    }
+    await bindHotMusicScroll()
+  }
+)
 
 const buildAssetResolverUrl = (asset: AudioListItem) => {
   const source = (asset.source || '').toLowerCase()
@@ -2596,8 +3156,19 @@ const addAudioToTimeline = async (asset: AudioListItem) => {
 }
 
 // 当前模型能力
-const currentModelCapability = computed(() => {
-  return videoModelCapabilities.value.find(m => m.id === selectedVideoModel.value)
+const currentModelCapability = computed<VideoModelCapability | null>(() => {
+  if (!selectedVideoModel.value) return null
+  const matched = videoModelCapabilities.value.find(m => m.id === selectedVideoModel.value)
+  if (matched) return matched
+  return {
+    id: selectedVideoModel.value,
+    name: selectedVideoModel.value,
+    supportSingleImage: true,
+    supportMultipleImages: false,
+    supportFirstLastFrame: false,
+    supportTextOnly: true,
+    maxImages: 1
+  }
 })
 
 // 当前模型支持的参考图模式
@@ -2622,6 +3193,19 @@ const availableReferenceModes = computed(() => {
 
   return modes
 })
+
+const pickDefaultReferenceMode = (modes: Array<{ value: string }>) => {
+  if (!modes.length) return ''
+
+  const preferredOrder = ['single', 'first_last', 'multiple', 'none']
+  for (const mode of preferredOrder) {
+    if (modes.some(m => m.value === mode)) {
+      return mode
+    }
+  }
+
+  return modes[0].value
+}
 
 // 帧提示词存储key生成函数
 const getPromptStorageKey = (storyboardId: number | string | undefined, frameType: FrameType) => {
@@ -2802,11 +3386,25 @@ watch(currentFramePrompt, (newPrompt) => {
 })
 
 // 监听视频模型切换，清空已选图片和参考图模式
-watch(selectedVideoModel, () => {
+watch(selectedVideoModel, async () => {
   selectedImagesForVideo.value = []
   selectedLastImageForVideo.value = null
-  selectedReferenceMode.value = ''
+  await nextTick()
+  selectedReferenceMode.value = pickDefaultReferenceMode(availableReferenceModes.value)
 })
+
+watch(availableReferenceModes, (modes) => {
+  if (!modes.length) {
+    selectedReferenceMode.value = ''
+    return
+  }
+
+  const current = selectedReferenceMode.value
+  const isValid = modes.some(mode => mode.value === current)
+  if (!current || !isValid) {
+    selectedReferenceMode.value = pickDefaultReferenceMode(modes)
+  }
+}, { immediate: true })
 
 // 监听镜头切换，自动更新视频时长
 watch(currentStoryboard, (newStoryboard) => {
@@ -3074,11 +3672,7 @@ const generateFrameImage = async () => {
 
     generatedImages.value.unshift(result)
 
-    // 提示信息
-    const refMsg = referenceImages.length > 0
-      ? ` (已添加${referenceImages.length}张参考图)`
-      : ''
-    ElMessage.success(`图片生成任务已提交${refMsg}`)
+    ElMessage.success('图片生成任务已提交')
 
     // 启动轮询
     startPolling()
@@ -3131,6 +3725,32 @@ const openVideoUrl = (url?: string | null) => {
   window.open(resolved, '_blank')
 }
 
+const normalizeVideoAssetCompareURL = (raw?: string | null) => {
+  const fixed = fixMediaUrl(raw || '')
+  if (!fixed) return ''
+  if (fixed.startsWith('data:') || fixed.startsWith('blob:')) return fixed
+  return fixed.replace(/^https?:\/\/[^/]+/i, '')
+}
+
+const isVideoInAssetLibrary = (video: VideoGeneration) => {
+  if (!video) return false
+
+  const videoID = Number(video.id)
+  const videoURL = normalizeVideoAssetCompareURL(video.video_url || video.local_path || video.minio_url || '')
+
+  return videoAssets.value.some((asset: any) => {
+    if (asset?.type !== 'video') return false
+
+    const assetVideoGenID = Number(asset.video_gen_id)
+    if (!Number.isNaN(assetVideoGenID) && assetVideoGenID > 0 && assetVideoGenID === videoID) {
+      return true
+    }
+
+    const assetURL = normalizeVideoAssetCompareURL(asset.url || asset.local_path || '')
+    return !!assetURL && !!videoURL && assetURL === videoURL
+  })
+}
+
 // 添加视频到素材库
 const addVideoToAssets = async (video: VideoGeneration) => {
   if (video.status !== 'completed' || !video.video_url) {
@@ -3138,50 +3758,20 @@ const addVideoToAssets = async (video: VideoGeneration) => {
     return
   }
 
+  if (isVideoInAssetLibrary(video)) {
+    ElMessage.warning('该视频已在素材库中，请勿重复添加')
+    return
+  }
+
   addingToAssets.value.add(video.id)
 
   try {
-    // 检查该镜头是否已存在素材
-    let isReplacing = false
-    if (video.storyboard_id) {
-      const existingAsset = videoAssets.value.find(
-        (asset: any) => asset.storyboard_id === video.storyboard_id
-      )
-
-      if (existingAsset) {
-        isReplacing = true
-        // 自动替换：先删除旧素材
-        try {
-          await assetAPI.deleteAsset(existingAsset.id)
-        } catch (error) {
-          console.error('删除旧素材失败:', error)
-        }
-      }
-    }
-
-    // 添加新素材
+    // 直接新增到素材库，允许同一分镜保留多个视频版本
     await assetAPI.importFromVideo(video.id)
     ElMessage.success('已添加到素材库')
 
     // 重新加载素材库列表
     await loadVideoAssets()
-
-    // 如果是替换操作，更新时间线中使用该分镜的所有视频片段
-    if (isReplacing && video.storyboard_id && video.video_url) {
-      console.log('=== 视频替换，准备更新时间线 ===')
-      console.log('timelineEditorRef.value:', timelineEditorRef.value)
-      console.log('video.storyboard_id:', video.storyboard_id)
-      console.log('video.video_url:', video.video_url)
-
-      if (timelineEditorRef.value) {
-        timelineEditorRef.value.updateClipsByStoryboardId(
-          video.storyboard_id,
-          resolveVideoUrl(video.video_url)
-        )
-      } else {
-        console.warn('⚠️ timelineEditorRef.value 为空，无法更新时间线')
-      }
-    }
   } catch (error: any) {
     ElMessage.error(error.message || '添加失败')
   } finally {
@@ -3554,6 +4144,7 @@ const toggleCharacterInShot = async (charId: number) => {
       ElMessage.success(`已移除角色: ${char.name}`)
     } else {
       ElMessage.success(`已添加角色: ${char.name}`)
+      showCharacterSelector.value = false
     }
   } catch (error: any) {
     ElMessage.error('保存失败: ' + (error.message || '未知错误'))
@@ -3794,6 +4385,203 @@ const goBack = () => {
   })
 }
 
+const parseDistributionHashtags = (input: string): string[] => {
+  if (!input.trim()) {
+    return []
+  }
+
+  const unique = new Set<string>()
+  input
+    .split(/[\s,，]+/)
+    .map(item => item.trim().replace(/^#+/, ''))
+    .filter(Boolean)
+    .forEach((tag) => {
+      if (unique.size < 20) {
+        unique.add(tag)
+      }
+    })
+
+  return Array.from(unique)
+}
+
+const getPlatformLabel = (platform: string) => {
+  const matched = distributionPlatforms.find(item => item.value === platform)
+  return matched?.label || platform
+}
+
+const getDistributionStatusText = (status: VideoDistributionStatus) => {
+  switch (status) {
+    case 'pending':
+      return '待分发'
+    case 'processing':
+      return '分发中'
+    case 'published':
+      return '已发布'
+    case 'failed':
+      return '失败'
+    default:
+      return status
+  }
+}
+
+const getDistributionStatusType = (status: VideoDistributionStatus) => {
+  switch (status) {
+    case 'published':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    case 'pending':
+    case 'processing':
+      return 'warning'
+    default:
+      return 'info'
+  }
+}
+
+const getMergeDistributionSummary = (mergeId: number): VideoDistribution[] => {
+  const distributions = mergeDistributions.value[mergeId] || []
+  if (!distributions.length) {
+    return []
+  }
+
+  const latestByPlatform = new Map<string, VideoDistribution>()
+  distributions.forEach((item) => {
+    if (!latestByPlatform.has(item.platform)) {
+      latestByPlatform.set(item.platform, item)
+    }
+  })
+
+  const order: DistributionPlatform[] = ['tiktok', 'youtube', 'instagram', 'x']
+  return Array.from(latestByPlatform.values()).sort(
+    (a, b) => order.indexOf(a.platform) - order.indexOf(b.platform)
+  )
+}
+
+const resetDistributionForm = () => {
+  distributionForm.value = {
+    mergeId: 0,
+    platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+    title: '',
+    description: '',
+    hashtagsText: ''
+  }
+}
+
+const stopDistributionPolling = () => {
+  if (distributionPollingTimer) {
+    clearInterval(distributionPollingTimer)
+    distributionPollingTimer = null
+  }
+}
+
+const loadMergeDistributions = async (merges: VideoMerge[]) => {
+  const completed = merges.filter((merge) => merge.status === 'completed')
+  if (completed.length === 0) {
+    mergeDistributions.value = {}
+    stopDistributionPolling()
+    return
+  }
+
+  const entries = await Promise.all(
+    completed.map(async (merge) => {
+      try {
+        const distributions = await videoMergeAPI.listDistributions(merge.id)
+        return [merge.id, distributions] as const
+      } catch (error) {
+        console.error('加载分发记录失败:', error)
+        return [merge.id, [] as VideoDistribution[]] as const
+      }
+    })
+  )
+
+  const nextMap: Record<number, VideoDistribution[]> = {}
+  let hasProcessing = false
+  entries.forEach(([mergeId, distributions]) => {
+    nextMap[mergeId] = distributions
+    if (distributions.some(item => item.status === 'pending' || item.status === 'processing')) {
+      hasProcessing = true
+    }
+  })
+  mergeDistributions.value = nextMap
+
+  if (hasProcessing) {
+    startDistributionPolling()
+  } else {
+    stopDistributionPolling()
+  }
+}
+
+const startDistributionPolling = () => {
+  if (distributionPollingTimer) return
+
+  distributionPollingTimer = setInterval(async () => {
+    const merges = videoMerges.value.filter(merge => merge.status === 'completed')
+    if (!merges.length) {
+      stopDistributionPolling()
+      return
+    }
+
+    await loadMergeDistributions(videoMerges.value)
+  }, 3000)
+}
+
+const openDistributionDialog = (merge: VideoMerge) => {
+  distributionTargetMerge.value = merge
+  distributionForm.value = {
+    mergeId: merge.id,
+    platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+    title: merge.title || `${drama.value?.title || '短剧'} 第${episodeNumber}集`,
+    description: '',
+    hashtagsText: ''
+  }
+  distributionDialogVisible.value = true
+}
+
+const submitDistribution = async () => {
+  if (!distributionForm.value.mergeId) {
+    ElMessage.warning('请选择需要分发的视频')
+    return
+  }
+
+  if (!distributionForm.value.platforms.length) {
+    ElMessage.warning('请至少选择一个分发平台')
+    return
+  }
+
+  submittingDistribution.value = true
+  try {
+    const distributions = await videoMergeAPI.distributeVideo(distributionForm.value.mergeId, {
+      platforms: distributionForm.value.platforms,
+      title: distributionForm.value.title.trim(),
+      description: distributionForm.value.description.trim(),
+      hashtags: parseDistributionHashtags(distributionForm.value.hashtagsText)
+    })
+
+    mergeDistributions.value = {
+      ...mergeDistributions.value,
+      [distributionForm.value.mergeId]: distributions
+    }
+
+    ElMessage.success('分发任务已提交')
+    distributionDialogVisible.value = false
+    distributionTargetMerge.value = null
+    resetDistributionForm()
+    startDistributionPolling()
+  } catch (error: any) {
+    ElMessage.error(error.message || '分发失败')
+  } finally {
+    submittingDistribution.value = false
+  }
+}
+
+const openDistributionRecord = (distribution: VideoDistribution) => {
+  if (!distribution.published_url) {
+    ElMessage.warning('该分发记录暂无可打开的发布链接')
+    return
+  }
+  window.open(distribution.published_url, '_blank')
+}
+
 // 加载视频合成列表
 const loadVideoMerges = async () => {
   if (!episodeId.value) return
@@ -3806,6 +4594,7 @@ const loadVideoMerges = async () => {
       page_size: 20
     })
     videoMerges.value = result.merges
+    await loadMergeDistributions(result.merges)
 
     // 检查是否有进行中的任务
     const hasProcessingTasks = result.merges.some(
@@ -3842,6 +4631,7 @@ const startMergePolling = () => {
         page_size: 20
       })
       videoMerges.value = result.merges
+      await loadMergeDistributions(result.merges)
 
       // 检查是否还有进行中的任务
       const hasProcessingTasks = result.merges.some(
@@ -3979,6 +4769,8 @@ onBeforeUnmount(() => {
   stopPolling()
   stopVideoPolling()
   stopMergePolling()
+  stopDistributionPolling()
+  unbindHotMusicScroll()
   stopAudioPreview()
 })
 </script>
@@ -4602,6 +5394,25 @@ onBeforeUnmount(() => {
     padding: 8px 0 4px;
     align-items: center;
     gap: 12px;
+  }
+
+  .audio-lazy-tip {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 6px 0 2px;
+  }
+
+  .audio-scroll-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: center;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.08);
+    color: var(--text-secondary);
+    font-size: 12px;
   }
 
   .audio-total {
@@ -6147,6 +6958,38 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
+}
+
+.distribution-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.distribution-summary-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.distribution-tag.is-link {
+  cursor: pointer;
+}
+
+.distribution-form {
+  .distribution-target {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  :deep(.el-checkbox-group) {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
 }
 </style>
 <style>

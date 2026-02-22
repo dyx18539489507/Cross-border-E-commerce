@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	services2 "github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/drama-generator/backend/pkg/response"
@@ -21,9 +22,10 @@ func NewSceneHandler(db *gorm.DB, log *logger.Logger, imageGenService *services2
 }
 
 func (h *SceneHandler) GetStoryboardsForEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	episodeID := c.Param("episode_id")
 
-	storyboards, err := h.sceneService.GetScenesForEpisode(episodeID)
+	storyboards, err := h.sceneService.GetScenesForEpisode(episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to get storyboards for episode", "error", err, "episode_id", episodeID)
 		response.InternalError(c, err.Error())
@@ -37,6 +39,7 @@ func (h *SceneHandler) GetStoryboardsForEpisode(c *gin.Context) {
 }
 
 func (h *SceneHandler) UpdateScene(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	sceneID := c.Param("scene_id")
 
 	var req services2.UpdateSceneRequest
@@ -45,7 +48,7 @@ func (h *SceneHandler) UpdateScene(c *gin.Context) {
 		return
 	}
 
-	if err := h.sceneService.UpdateScene(sceneID, &req); err != nil {
+	if err := h.sceneService.UpdateScene(sceneID, &req, deviceID); err != nil {
 		h.log.Errorw("Failed to update scene", "error", err, "scene_id", sceneID)
 		response.InternalError(c, err.Error())
 		return
@@ -55,13 +58,14 @@ func (h *SceneHandler) UpdateScene(c *gin.Context) {
 }
 
 func (h *SceneHandler) GenerateSceneImage(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var req services2.GenerateSceneImageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request")
 		return
 	}
 
-	imageGen, err := h.sceneService.GenerateSceneImage(&req)
+	imageGen, err := h.sceneService.GenerateSceneImage(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate scene image", "error", err)
 		response.InternalError(c, err.Error())
@@ -75,6 +79,7 @@ func (h *SceneHandler) GenerateSceneImage(c *gin.Context) {
 }
 
 func (h *SceneHandler) UpdateScenePrompt(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	sceneID := c.Param("scene_id")
 
 	var req services2.UpdateScenePromptRequest
@@ -83,7 +88,7 @@ func (h *SceneHandler) UpdateScenePrompt(c *gin.Context) {
 		return
 	}
 
-	if err := h.sceneService.UpdateScenePrompt(sceneID, &req); err != nil {
+	if err := h.sceneService.UpdateScenePrompt(sceneID, &req, deviceID); err != nil {
 		h.log.Errorw("Failed to update scene prompt", "error", err, "scene_id", sceneID)
 		if err.Error() == "scene not found" {
 			response.NotFound(c, "场景不存在")
@@ -97,9 +102,10 @@ func (h *SceneHandler) UpdateScenePrompt(c *gin.Context) {
 }
 
 func (h *SceneHandler) DeleteScene(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	sceneID := c.Param("scene_id")
 
-	if err := h.sceneService.DeleteScene(sceneID); err != nil {
+	if err := h.sceneService.DeleteScene(sceneID, deviceID); err != nil {
 		h.log.Errorw("Failed to delete scene", "error", err, "scene_id", sceneID)
 		if err.Error() == "scene not found" {
 			response.NotFound(c, "场景不存在")

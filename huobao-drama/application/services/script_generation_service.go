@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/ai"
@@ -39,9 +40,21 @@ type GenerateCharactersRequest struct {
 	Model       string  `json:"model"` // 指定使用的文本模型
 }
 
-func (s *ScriptGenerationService) GenerateCharacters(req *GenerateCharactersRequest) ([]models.Character, error) {
+func firstScriptDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
+func (s *ScriptGenerationService) GenerateCharacters(req *GenerateCharactersRequest, deviceIDs ...string) ([]models.Character, error) {
+	deviceID := firstScriptDeviceID(deviceIDs)
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", req.DramaID).First(&drama).Error; err != nil {
+	dramaQuery := s.db.Where("id = ?", req.DramaID)
+	if deviceID != "" {
+		dramaQuery = dramaQuery.Where("device_id = ?", deviceID)
+	}
+	if err := dramaQuery.First(&drama).Error; err != nil {
 		return nil, fmt.Errorf("drama not found")
 	}
 
@@ -69,15 +82,25 @@ func (s *ScriptGenerationService) GenerateCharacters(req *GenerateCharactersRequ
 	var err error
 	if req.Model != "" {
 		s.log.Infow("Using specified model for character generation", "model", req.Model)
-		client, getErr := s.aiService.GetAIClientForModel("text", req.Model)
+		client, getErr := s.aiService.GetAIClientForModel("text", req.Model, drama.DeviceID)
 		if getErr != nil {
 			s.log.Warnw("Failed to get client for specified model, using default", "model", req.Model, "error", getErr)
-			text, err = s.aiService.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
+			defaultClient, defaultErr := s.aiService.GetAIClient("text", drama.DeviceID)
+			if defaultErr != nil {
+				err = defaultErr
+			} else {
+				text, err = defaultClient.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
+			}
 		} else {
 			text, err = client.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
 		}
 	} else {
-		text, err = s.aiService.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
+		defaultClient, defaultErr := s.aiService.GetAIClient("text", drama.DeviceID)
+		if defaultErr != nil {
+			err = defaultErr
+		} else {
+			text, err = defaultClient.GenerateText(userPrompt, systemPrompt, ai.WithTemperature(temperature))
+		}
 	}
 
 	if err != nil {

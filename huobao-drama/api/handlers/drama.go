@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"errors"
+
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/config"
@@ -18,15 +21,17 @@ type DramaHandler struct {
 }
 
 func NewDramaHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger, transferService *services.ResourceTransferService) *DramaHandler {
+	complianceService := services.NewComplianceService(cfg.Compliance, log)
 	return &DramaHandler{
 		db:                db,
-		dramaService:      services.NewDramaService(db, log),
+		dramaService:      services.NewDramaService(db, log, complianceService),
 		videoMergeService: services.NewVideoMergeService(db, transferService, cfg.Storage.LocalPath, cfg.Storage.BaseURL, log),
 		log:               log,
 	}
 }
 
 func (h *DramaHandler) CreateDrama(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var req services.CreateDramaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -34,20 +39,38 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 		return
 	}
 
-	drama, err := h.dramaService.CreateDrama(&req)
+	drama, compliance, err := h.dramaService.CreateDrama(&req, deviceID)
 	if err != nil {
+		if errors.Is(err, services.ErrTargetCountryRequired) {
+			response.BadRequest(c, "请选择目标国家")
+			return
+		}
+		if errors.Is(err, services.ErrComplianceRiskForbidden) {
+			response.ErrorWithDetails(
+				c,
+				400,
+				"COMPLIANCE_BLOCKED",
+				"风险评级为红色（>=80），禁止创建，请先根据整改建议完善商品信息后重试",
+				gin.H{"compliance": compliance},
+			)
+			return
+		}
 		response.InternalError(c, "创建失败")
 		return
 	}
 
-	response.Created(c, drama)
+	response.Created(c, gin.H{
+		"drama":      drama,
+		"compliance": compliance,
+	})
 }
 
 func (h *DramaHandler) GetDrama(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
-	drama, err := h.dramaService.GetDrama(dramaID)
+	drama, err := h.dramaService.GetDrama(dramaID, deviceID)
 	if err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
@@ -61,6 +84,7 @@ func (h *DramaHandler) GetDrama(c *gin.Context) {
 }
 
 func (h *DramaHandler) ListDramas(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var query services.DramaListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
@@ -75,7 +99,7 @@ func (h *DramaHandler) ListDramas(c *gin.Context) {
 		query.PageSize = 20
 	}
 
-	dramas, total, err := h.dramaService.ListDramas(&query)
+	dramas, total, err := h.dramaService.ListDramas(&query, deviceID)
 	if err != nil {
 		response.InternalError(c, "获取列表失败")
 		return
@@ -85,6 +109,7 @@ func (h *DramaHandler) ListDramas(c *gin.Context) {
 }
 
 func (h *DramaHandler) UpdateDrama(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
@@ -94,7 +119,7 @@ func (h *DramaHandler) UpdateDrama(c *gin.Context) {
 		return
 	}
 
-	drama, err := h.dramaService.UpdateDrama(dramaID, &req)
+	drama, err := h.dramaService.UpdateDrama(dramaID, &req, deviceID)
 	if err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
@@ -108,10 +133,11 @@ func (h *DramaHandler) UpdateDrama(c *gin.Context) {
 }
 
 func (h *DramaHandler) DeleteDrama(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
-	if err := h.dramaService.DeleteDrama(dramaID); err != nil {
+	if err := h.dramaService.DeleteDrama(dramaID, deviceID); err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
 			return
@@ -124,8 +150,9 @@ func (h *DramaHandler) DeleteDrama(c *gin.Context) {
 }
 
 func (h *DramaHandler) GetDramaStats(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
-	stats, err := h.dramaService.GetDramaStats()
+	stats, err := h.dramaService.GetDramaStats(deviceID)
 	if err != nil {
 		response.InternalError(c, "获取统计失败")
 		return
@@ -135,6 +162,7 @@ func (h *DramaHandler) GetDramaStats(c *gin.Context) {
 }
 
 func (h *DramaHandler) SaveOutline(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
@@ -144,7 +172,7 @@ func (h *DramaHandler) SaveOutline(c *gin.Context) {
 		return
 	}
 
-	if err := h.dramaService.SaveOutline(dramaID, &req); err != nil {
+	if err := h.dramaService.SaveOutline(dramaID, &req, deviceID); err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
 			return
@@ -157,6 +185,7 @@ func (h *DramaHandler) SaveOutline(c *gin.Context) {
 }
 
 func (h *DramaHandler) GetCharacters(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 	episodeID := c.Query("episode_id") // 可选：如果提供则只返回该章节的角色
@@ -166,7 +195,7 @@ func (h *DramaHandler) GetCharacters(c *gin.Context) {
 		episodeIDPtr = &episodeID
 	}
 
-	characters, err := h.dramaService.GetCharacters(dramaID, episodeIDPtr)
+	characters, err := h.dramaService.GetCharacters(dramaID, episodeIDPtr, deviceID)
 	if err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
@@ -184,6 +213,7 @@ func (h *DramaHandler) GetCharacters(c *gin.Context) {
 }
 
 func (h *DramaHandler) SaveCharacters(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
@@ -193,7 +223,7 @@ func (h *DramaHandler) SaveCharacters(c *gin.Context) {
 		return
 	}
 
-	if err := h.dramaService.SaveCharacters(dramaID, &req); err != nil {
+	if err := h.dramaService.SaveCharacters(dramaID, &req, deviceID); err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
 			return
@@ -206,6 +236,7 @@ func (h *DramaHandler) SaveCharacters(c *gin.Context) {
 }
 
 func (h *DramaHandler) SaveEpisodes(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
@@ -215,7 +246,7 @@ func (h *DramaHandler) SaveEpisodes(c *gin.Context) {
 		return
 	}
 
-	if err := h.dramaService.SaveEpisodes(dramaID, &req); err != nil {
+	if err := h.dramaService.SaveEpisodes(dramaID, &req, deviceID); err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
 			return
@@ -228,6 +259,7 @@ func (h *DramaHandler) SaveEpisodes(c *gin.Context) {
 }
 
 func (h *DramaHandler) SaveProgress(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	dramaID := c.Param("id")
 
@@ -237,7 +269,7 @@ func (h *DramaHandler) SaveProgress(c *gin.Context) {
 		return
 	}
 
-	if err := h.dramaService.SaveProgress(dramaID, &req); err != nil {
+	if err := h.dramaService.SaveProgress(dramaID, &req, deviceID); err != nil {
 		if err.Error() == "drama not found" {
 			response.NotFound(c, "剧本不存在")
 			return
@@ -251,6 +283,7 @@ func (h *DramaHandler) SaveProgress(c *gin.Context) {
 
 // FinalizeEpisode 完成集数制作（触发视频合成）
 func (h *DramaHandler) FinalizeEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	episodeID := c.Param("episode_id")
 	if episodeID == "" {
@@ -269,7 +302,7 @@ func (h *DramaHandler) FinalizeEpisode(c *gin.Context) {
 	}
 
 	// 触发视频合成任务
-	result, err := h.videoMergeService.FinalizeEpisode(episodeID, timelineData)
+	result, err := h.videoMergeService.FinalizeEpisode(episodeID, timelineData, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to finalize episode", "error", err, "episode_id", episodeID)
 		response.InternalError(c, err.Error())
@@ -281,6 +314,7 @@ func (h *DramaHandler) FinalizeEpisode(c *gin.Context) {
 
 // DownloadEpisodeVideo 下载剧集视频
 func (h *DramaHandler) DownloadEpisodeVideo(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	episodeID := c.Param("episode_id")
 	if episodeID == "" {
@@ -290,7 +324,10 @@ func (h *DramaHandler) DownloadEpisodeVideo(c *gin.Context) {
 
 	// 查询episode
 	var episode models.Episode
-	if err := h.db.Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	if err := h.db.Preload("Drama").
+		Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+		Where("episodes.id = ? AND dramas.device_id = ?", episodeID, deviceID).
+		First(&episode).Error; err != nil {
 		response.NotFound(c, "剧集不存在")
 		return
 	}

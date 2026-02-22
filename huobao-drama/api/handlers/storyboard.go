@@ -3,6 +3,7 @@ package handlers
 import (
 	"sync"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -27,6 +28,7 @@ func NewStoryboardHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger) *
 
 // GenerateStoryboard 生成分镜头（异步）
 func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	episodeID := c.Param("episode_id")
 
 	// 接收可选的 model 参数
@@ -39,7 +41,7 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 	}
 
 	// 创建异步任务
-	task, err := h.taskService.CreateTask("storyboard_generation", episodeID)
+	task, err := h.taskService.CreateTask("storyboard_generation", episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create task", "error", err)
 		response.InternalError(c, err.Error())
@@ -47,7 +49,7 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 	}
 
 	// 启动后台goroutine处理
-	go h.processStoryboardGeneration(task.ID, episodeID, req.Model)
+	go h.processStoryboardGeneration(task.ID, episodeID, req.Model, deviceID)
 
 	// 立即返回任务ID
 	response.Success(c, gin.H{
@@ -58,7 +60,7 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 }
 
 // processStoryboardGeneration 后台处理分镜生成
-func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model string) {
+func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model, deviceID string) {
 	h.log.Infow("Starting storyboard generation", "task_id", taskID, "episode_id", episodeID, "model", model)
 
 	var (
@@ -95,7 +97,7 @@ func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model
 	reportProgress(10, "开始生成分镜...")
 
 	// 调用实际的生成逻辑
-	result, err := h.storyboardService.GenerateStoryboardWithProgress(episodeID, model, reportProgress)
+	result, err := h.storyboardService.GenerateStoryboardWithProgress(episodeID, model, reportProgress, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate storyboard", "error", err, "task_id", taskID)
 		if updateErr := h.taskService.UpdateTaskError(taskID, err); updateErr != nil {
@@ -115,6 +117,7 @@ func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model
 
 // UpdateStoryboard 更新分镜
 func (h *StoryboardHandler) UpdateStoryboard(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	storyboardID := c.Param("id")
 
 	var req map[string]interface{}
@@ -124,7 +127,7 @@ func (h *StoryboardHandler) UpdateStoryboard(c *gin.Context) {
 		return
 	}
 
-	err := h.storyboardService.UpdateStoryboard(storyboardID, req)
+	err := h.storyboardService.UpdateStoryboard(storyboardID, req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to update storyboard", "error", err)
 		response.InternalError(c, err.Error())
@@ -136,9 +139,10 @@ func (h *StoryboardHandler) UpdateStoryboard(c *gin.Context) {
 
 // DeleteStoryboard 删除分镜
 func (h *StoryboardHandler) DeleteStoryboard(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	storyboardID := c.Param("id")
 
-	if err := h.storyboardService.DeleteStoryboard(storyboardID); err != nil {
+	if err := h.storyboardService.DeleteStoryboard(storyboardID, deviceID); err != nil {
 		h.log.Errorw("Failed to delete storyboard", "error", err)
 		response.InternalError(c, err.Error())
 		return

@@ -61,12 +61,15 @@
       :title="isEdit ? $t('aiConfig.editConfig') : $t('aiConfig.addConfig')"
       width="600px"
       :close-on-click-modal="false"
+      class="dialog-form-safe"
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
         label-width="100px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
       >
         <el-form-item :label="$t('aiConfig.form.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('aiConfig.form.namePlaceholder')" />
@@ -166,6 +169,7 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { Plus, ArrowLeft } from '@element-plus/icons-vue'
 import { aiAPI } from '@/api/ai'
 import { PageHeader } from '@/components/common'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 import type { AIServiceConfig, AIServiceType, CreateAIConfigRequest, UpdateAIConfigRequest } from '@/types/ai'
 import ConfigList from './components/ConfigList.vue'
 
@@ -626,7 +630,7 @@ onMounted(() => {
    Page Layout / 页面布局 - 紧凑边距
    ======================================== */
 .page-container {
-  min-height: 100vh;
+  min-height: var(--app-vh, 100vh);
   background: var(--bg-primary);
   padding: var(--space-2) var(--space-3);
   transition: background var(--transition-normal);

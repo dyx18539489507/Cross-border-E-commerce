@@ -25,7 +25,7 @@
       <el-empty v-if="characters.length === 0" :description="$t('character.empty')" />
 
       <el-row :gutter="20" v-else>
-        <el-col :span="8" v-for="character in characters" :key="character.id">
+        <el-col :xs="24" :sm="12" :md="8" v-for="character in characters" :key="character.id">
           <el-card shadow="hover" class="character-card">
             <template #header>
               <div class="character-header">
@@ -206,5 +206,32 @@ onMounted(() => {
 .actions {
   margin-top: 30px;
   text-align: center;
+}
+
+@media (max-width: 768px) {
+  .character-extraction-container {
+    padding: 12px;
+  }
+
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .header-actions .el-button {
+    width: 100%;
+  }
+
+  .character-header {
+    gap: 12px;
+  }
 }
 </style>

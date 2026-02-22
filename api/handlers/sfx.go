@@ -48,6 +48,11 @@ type GenerateSFXRequest struct {
 
 func (h *SFXHandler) ListSFX(c *gin.Context) {
 	category := strings.TrimSpace(c.DefaultQuery("category", "热门"))
+	prompt := mapSFXCategoryToEcommercePrompt(category)
+	displayCategory := category
+	if displayCategory == "" || strings.EqualFold(displayCategory, "all") {
+		displayCategory = "热门"
+	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if limit <= 0 {
 		limit = 20
@@ -55,7 +60,10 @@ func (h *SFXHandler) ListSFX(c *gin.Context) {
 	if limit > 50 {
 		limit = 50
 	}
-	items := h.generateSFXItems(category, limit, false)
+	items := h.generateSFXItems(prompt, limit, false)
+	for i := range items {
+		items[i].Category = displayCategory
+	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
@@ -252,4 +260,26 @@ func hashSeed(prompt string, index int, aiMode bool) int64 {
 	_, _ = h.Write([]byte(prompt))
 	_, _ = h.Write([]byte(fmt.Sprintf("-%d-%t", index, aiMode)))
 	return int64(h.Sum64())
+}
+
+func mapSFXCategoryToEcommercePrompt(category string) string {
+	normalized := strings.ToLower(strings.TrimSpace(category))
+	switch normalized {
+	case "", "all", "热门", "hot":
+		return "电商带货成交提示音"
+	case "转场", "transition":
+		return "电商直播转场切换"
+	case "笑声", "laugh", "laughter":
+		return "直播间欢笑互动"
+	case "尴尬", "awkward":
+		return "直播间冷场尴尬"
+	case "震惊", "shock", "surprise":
+		return "直播间爆单震惊"
+	default:
+		trimmed := strings.TrimSpace(category)
+		if trimmed == "" {
+			return "电商带货提示音"
+		}
+		return trimmed
+	}
 }

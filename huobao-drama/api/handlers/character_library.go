@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	services2 "github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/infrastructure/storage"
 	"github.com/drama-generator/backend/pkg/config"
@@ -28,6 +29,7 @@ func NewCharacterLibraryHandler(db *gorm.DB, cfg *config.Config, log *logger.Log
 
 // ListLibraryItems 获取角色库列表
 func (h *CharacterLibraryHandler) ListLibraryItems(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var query services2.CharacterLibraryQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
@@ -42,7 +44,7 @@ func (h *CharacterLibraryHandler) ListLibraryItems(c *gin.Context) {
 		query.PageSize = 20
 	}
 
-	items, total, err := h.libraryService.ListLibraryItems(&query)
+	items, total, err := h.libraryService.ListLibraryItems(&query, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to list library items", "error", err)
 		response.InternalError(c, "获取角色库失败")
@@ -54,6 +56,7 @@ func (h *CharacterLibraryHandler) ListLibraryItems(c *gin.Context) {
 
 // CreateLibraryItem 添加到角色库
 func (h *CharacterLibraryHandler) CreateLibraryItem(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var req services2.CreateLibraryItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,7 +64,7 @@ func (h *CharacterLibraryHandler) CreateLibraryItem(c *gin.Context) {
 		return
 	}
 
-	item, err := h.libraryService.CreateLibraryItem(&req)
+	item, err := h.libraryService.CreateLibraryItem(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create library item", "error", err)
 		response.InternalError(c, "添加到角色库失败")
@@ -73,10 +76,11 @@ func (h *CharacterLibraryHandler) CreateLibraryItem(c *gin.Context) {
 
 // GetLibraryItem 获取角色库项详情
 func (h *CharacterLibraryHandler) GetLibraryItem(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	itemID := c.Param("id")
 
-	item, err := h.libraryService.GetLibraryItem(itemID)
+	item, err := h.libraryService.GetLibraryItem(itemID, deviceID)
 	if err != nil {
 		if err.Error() == "library item not found" {
 			response.NotFound(c, "角色库项不存在")
@@ -92,10 +96,11 @@ func (h *CharacterLibraryHandler) GetLibraryItem(c *gin.Context) {
 
 // DeleteLibraryItem 删除角色库项
 func (h *CharacterLibraryHandler) DeleteLibraryItem(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	itemID := c.Param("id")
 
-	if err := h.libraryService.DeleteLibraryItem(itemID); err != nil {
+	if err := h.libraryService.DeleteLibraryItem(itemID, deviceID); err != nil {
 		if err.Error() == "library item not found" {
 			response.NotFound(c, "角色库项不存在")
 			return
@@ -110,6 +115,7 @@ func (h *CharacterLibraryHandler) DeleteLibraryItem(c *gin.Context) {
 
 // UploadCharacterImage 上传角色图片
 func (h *CharacterLibraryHandler) UploadCharacterImage(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	characterID := c.Param("id")
 
@@ -125,7 +131,7 @@ func (h *CharacterLibraryHandler) UploadCharacterImage(c *gin.Context) {
 		return
 	}
 
-	if err := h.libraryService.UploadCharacterImage(characterID, req.ImageURL); err != nil {
+	if err := h.libraryService.UploadCharacterImage(characterID, req.ImageURL, deviceID); err != nil {
 		if err.Error() == "character not found" {
 			response.NotFound(c, "角色不存在")
 			return
@@ -144,6 +150,7 @@ func (h *CharacterLibraryHandler) UploadCharacterImage(c *gin.Context) {
 
 // ApplyLibraryItemToCharacter 从角色库应用形象
 func (h *CharacterLibraryHandler) ApplyLibraryItemToCharacter(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	characterID := c.Param("id")
 
@@ -156,7 +163,7 @@ func (h *CharacterLibraryHandler) ApplyLibraryItemToCharacter(c *gin.Context) {
 		return
 	}
 
-	if err := h.libraryService.ApplyLibraryItemToCharacter(characterID, req.LibraryItemID); err != nil {
+	if err := h.libraryService.ApplyLibraryItemToCharacter(characterID, req.LibraryItemID, deviceID); err != nil {
 		if err.Error() == "library item not found" {
 			response.NotFound(c, "角色库项不存在")
 			return
@@ -179,6 +186,7 @@ func (h *CharacterLibraryHandler) ApplyLibraryItemToCharacter(c *gin.Context) {
 
 // AddCharacterToLibrary 将角色添加到角色库
 func (h *CharacterLibraryHandler) AddCharacterToLibrary(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	characterID := c.Param("id")
 
@@ -191,7 +199,7 @@ func (h *CharacterLibraryHandler) AddCharacterToLibrary(c *gin.Context) {
 		req.Category = nil
 	}
 
-	item, err := h.libraryService.AddCharacterToLibrary(characterID, req.Category)
+	item, err := h.libraryService.AddCharacterToLibrary(characterID, req.Category, deviceID)
 	if err != nil {
 		if err.Error() == "character not found" {
 			response.NotFound(c, "角色不存在")
@@ -215,6 +223,7 @@ func (h *CharacterLibraryHandler) AddCharacterToLibrary(c *gin.Context) {
 
 // UpdateCharacter 更新角色信息
 func (h *CharacterLibraryHandler) UpdateCharacter(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	characterID := c.Param("id")
 
@@ -230,7 +239,7 @@ func (h *CharacterLibraryHandler) UpdateCharacter(c *gin.Context) {
 		return
 	}
 
-	if err := h.libraryService.UpdateCharacter(characterID, &req); err != nil {
+	if err := h.libraryService.UpdateCharacter(characterID, &req, deviceID); err != nil {
 		if err.Error() == "character not found" {
 			response.NotFound(c, "角色不存在")
 			return
@@ -249,6 +258,7 @@ func (h *CharacterLibraryHandler) UpdateCharacter(c *gin.Context) {
 
 // DeleteCharacter 删除单个角色
 func (h *CharacterLibraryHandler) DeleteCharacter(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	characterIDStr := c.Param("id")
 	characterID, err := strconv.ParseUint(characterIDStr, 10, 32)
@@ -257,7 +267,7 @@ func (h *CharacterLibraryHandler) DeleteCharacter(c *gin.Context) {
 		return
 	}
 
-	if err := h.libraryService.DeleteCharacter(uint(characterID)); err != nil {
+	if err := h.libraryService.DeleteCharacter(uint(characterID), deviceID); err != nil {
 		h.log.Errorw("Failed to delete character", "error", err, "id", characterID)
 		if err.Error() == "character not found" {
 			response.NotFound(c, "角色不存在")

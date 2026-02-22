@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/infrastructure/storage"
 	"github.com/drama-generator/backend/pkg/config"
@@ -27,6 +28,7 @@ func NewImageGenerationHandler(db *gorm.DB, cfg *config.Config, log *logger.Logg
 }
 
 func (h *ImageGenerationHandler) GenerateImage(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var req services.GenerateImageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -34,7 +36,7 @@ func (h *ImageGenerationHandler) GenerateImage(c *gin.Context) {
 		return
 	}
 
-	imageGen, err := h.imageService.GenerateImage(&req)
+	imageGen, err := h.imageService.GenerateImage(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate image", "error", err)
 		response.InternalError(c, err.Error())
@@ -46,13 +48,14 @@ func (h *ImageGenerationHandler) GenerateImage(c *gin.Context) {
 
 // CreateImageRecord 手动上传图片后创建记录
 func (h *ImageGenerationHandler) CreateImageRecord(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var req services.CreateImageRecordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	imageGen, err := h.imageService.CreateImageRecord(&req)
+	imageGen, err := h.imageService.CreateImageRecord(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create image record", "error", err)
 		response.InternalError(c, err.Error())
@@ -63,10 +66,11 @@ func (h *ImageGenerationHandler) CreateImageRecord(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) GenerateImagesForScene(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	sceneID := c.Param("scene_id")
 
-	images, err := h.imageService.GenerateImagesForScene(sceneID)
+	images, err := h.imageService.GenerateImagesForScene(sceneID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to generate images for scene", "error", err)
 		response.InternalError(c, err.Error())
@@ -77,10 +81,11 @@ func (h *ImageGenerationHandler) GenerateImagesForScene(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) GetBackgroundsForEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	episodeID := c.Param("episode_id")
 
-	backgrounds, err := h.imageService.GetScencesForEpisode(episodeID)
+	backgrounds, err := h.imageService.GetScencesForEpisode(episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to get backgrounds", "error", err)
 		response.InternalError(c, err.Error())
@@ -91,6 +96,7 @@ func (h *ImageGenerationHandler) GetBackgroundsForEpisode(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	episodeID := c.Param("episode_id")
 
 	// 接收可选的 model 参数
@@ -103,7 +109,7 @@ func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
 	}
 
 	// 创建异步任务
-	task, err := h.taskService.CreateTask("background_extraction", episodeID)
+	task, err := h.taskService.CreateTask("background_extraction", episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create task", "error", err)
 		response.InternalError(c, err.Error())
@@ -111,7 +117,7 @@ func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
 	}
 
 	// 启动后台goroutine处理
-	go h.processBackgroundExtraction(task.ID, episodeID, req.Model)
+	go h.processBackgroundExtraction(task.ID, episodeID, req.Model, deviceID)
 
 	// 立即返回任务ID
 	response.Success(c, gin.H{
@@ -122,7 +128,7 @@ func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
 }
 
 // processBackgroundExtraction 后台处理场景提取
-func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID, model string) {
+func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID, model, deviceID string) {
 	h.log.Infow("Starting background extraction", "task_id", taskID, "episode_id", episodeID, "model", model)
 
 	// 更新任务状态为处理中
@@ -131,7 +137,7 @@ func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID, 
 	}
 
 	// 调用实际的提取逻辑
-	backgrounds, err := h.imageService.ExtractBackgroundsForEpisode(episodeID, model)
+	backgrounds, err := h.imageService.ExtractBackgroundsForEpisode(episodeID, model, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to extract backgrounds", "error", err, "task_id", taskID)
 		if updateErr := h.taskService.UpdateTaskError(taskID, err); updateErr != nil {
@@ -154,10 +160,11 @@ func (h *ImageGenerationHandler) processBackgroundExtraction(taskID, episodeID, 
 }
 
 func (h *ImageGenerationHandler) BatchGenerateForEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	episodeID := c.Param("episode_id")
 
-	images, err := h.imageService.BatchGenerateImagesForEpisode(episodeID)
+	images, err := h.imageService.BatchGenerateImagesForEpisode(episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to batch generate images", "error", err)
 		response.InternalError(c, err.Error())
@@ -168,6 +175,7 @@ func (h *ImageGenerationHandler) BatchGenerateForEpisode(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) GetImageGeneration(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	imageGenID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -175,7 +183,7 @@ func (h *ImageGenerationHandler) GetImageGeneration(c *gin.Context) {
 		return
 	}
 
-	imageGen, err := h.imageService.GetImageGeneration(uint(imageGenID))
+	imageGen, err := h.imageService.GetImageGeneration(uint(imageGenID), deviceID)
 	if err != nil {
 		response.NotFound(c, "图片生成记录不存在")
 		return
@@ -185,6 +193,7 @@ func (h *ImageGenerationHandler) GetImageGeneration(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) ListImageGenerations(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var sceneID *uint
 	if sceneIDStr := c.Query("scene_id"); sceneIDStr != "" {
 		id, err := strconv.ParseUint(sceneIDStr, 10, 32)
@@ -222,7 +231,7 @@ func (h *ImageGenerationHandler) ListImageGenerations(c *gin.Context) {
 		dramaIDUint = &didUint
 	}
 
-	images, total, err := h.imageService.ListImageGenerations(dramaIDUint, sceneID, storyboardID, frameType, status, page, pageSize)
+	images, total, err := h.imageService.ListImageGenerations(dramaIDUint, sceneID, storyboardID, frameType, status, page, pageSize, deviceID)
 
 	if err != nil {
 		h.log.Errorw("Failed to list images", "error", err)
@@ -234,6 +243,7 @@ func (h *ImageGenerationHandler) ListImageGenerations(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) DeleteImageGeneration(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	imageGenID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -241,7 +251,7 @@ func (h *ImageGenerationHandler) DeleteImageGeneration(c *gin.Context) {
 		return
 	}
 
-	if err := h.imageService.DeleteImageGeneration(uint(imageGenID)); err != nil {
+	if err := h.imageService.DeleteImageGeneration(uint(imageGenID), deviceID); err != nil {
 		h.log.Errorw("Failed to delete image", "error", err)
 		response.InternalError(c, err.Error())
 		return

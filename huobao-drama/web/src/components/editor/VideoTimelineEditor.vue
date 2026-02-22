@@ -187,7 +187,7 @@
               :class="{ selected: selectedClipId === clip.id }"
               :style="getClipStyle(clip)"
               @click.stop="selectClip(clip)"
-              @mousedown="startDragClip($event, clip)"
+              @pointerdown="startDragClip($event, clip)"
             >
               <div class="clip-content">
                 <div class="clip-thumbnail">
@@ -198,8 +198,8 @@
                   <div class="clip-duration">{{ clip.duration.toFixed(1) }}s</div>
                 </div>
               </div>
-              <div class="clip-resize-left" @mousedown.stop="startResizeClip($event, clip, 'left')"></div>
-              <div class="clip-resize-right" @mousedown.stop="startResizeClip($event, clip, 'right')"></div>
+              <div class="clip-resize-left" @pointerdown.stop="startResizeClip($event, clip, 'left')"></div>
+              <div class="clip-resize-right" @pointerdown.stop="startResizeClip($event, clip, 'right')"></div>
               <div class="clip-remove" @click.stop="removeClip(clip)">
                 <el-icon><Close /></el-icon>
               </div>
@@ -247,7 +247,7 @@
               :class="{ selected: selectedAudioClipId === audio.id }"
               :style="getClipStyle(audio)"
               @click.stop="selectAudioClip(audio)"
-              @mousedown="startDragAudioClip($event, audio)"
+              @pointerdown="startDragAudioClip($event, audio)"
             >
               <div class="clip-content">
                 <div class="audio-waveform">
@@ -258,8 +258,8 @@
                   <div class="clip-duration">{{ audio.duration.toFixed(1) }}s</div>
                 </div>
               </div>
-              <div class="clip-resize-left" @mousedown.stop="startResizeAudioClip($event, audio, 'left')"></div>
-              <div class="clip-resize-right" @mousedown.stop="startResizeAudioClip($event, audio, 'right')"></div>
+              <div class="clip-resize-left" @pointerdown.stop="startResizeAudioClip($event, audio, 'left')"></div>
+              <div class="clip-resize-right" @pointerdown.stop="startResizeAudioClip($event, audio, 'right')"></div>
               <div class="clip-remove" @click.stop="removeAudioClip(audio)">
                 <el-icon><Close /></el-icon>
               </div>
@@ -383,7 +383,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   VideoPlay, VideoPause, Plus, FolderAdd, ArrowLeft, ArrowRight,
@@ -474,6 +474,7 @@ const availableStoryboards = computed(() => {
 })
 const timelineClips = ref<TimelineClip[]>([])
 const audioClips = ref<AudioClip[]>([])
+const manualPreviewUrl = ref('')
 const selectedClipId = ref<string | null>(null)
 const selectedAudioClipId = ref<string | null>(null)
 const previewPlayer = ref<HTMLVideoElement | null>(null)
@@ -539,6 +540,7 @@ const getSceneDesc = (scene: Scene) => {
 
 // 预览相关
 const currentPreviewUrl = computed(() => {
+  if (manualPreviewUrl.value) return manualPreviewUrl.value
   if (timelineClips.value.length === 0) return ''
   // 根据当前时间找到应该播放的片段
   const clip = timelineClips.value.find(c => 
@@ -558,10 +560,18 @@ const currentAudioUrl = computed(() => {
 })
 
 const previewScene = (scene: Scene) => {
-  if (previewPlayer.value) {
-    previewPlayer.value.src = scene.video_url
-    previewPlayer.value.play()
-  }
+  if (!scene.video_url) return
+
+  pauseTimeline()
+  manualPreviewUrl.value = scene.video_url
+
+  nextTick(() => {
+    if (previewPlayer.value) {
+      previewPlayer.value.currentTime = 0
+      previewPlayer.value.play().catch(() => {})
+      isPlaying.value = true
+    }
+  })
 }
 
 const handlePreviewLoaded = () => {
@@ -609,6 +619,7 @@ const handleAudioEnded = () => {
 
 const handlePreviewTimeUpdate = () => {
   if (!isPlaying.value || !previewPlayer.value) return
+  if (manualPreviewUrl.value) return
   
   // 找到当前播放的片段
   const currentClip = timelineClips.value.find(c => 
@@ -741,6 +752,11 @@ const switchToClip = async (clip: TimelineClip) => {
 }
 
 const handlePreviewEnded = () => {
+  if (manualPreviewUrl.value) {
+    pauseTimeline()
+    return
+  }
+
   // 视频自然结束，尝试播放下一个片段
   const currentClip = timelineClips.value.find(c => 
     currentTime.value >= c.position && currentTime.value < c.position + c.duration
@@ -832,7 +848,7 @@ const getVideoDuration = (videoUrl: string): Promise<number> => {
   })
 }
 
-const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
+const addClipToTimeline = async (scene: Scene, insertAtPosition?: number, options?: { silent?: boolean }) => {
   // 获取视频真实时长
   let videoDuration = scene.duration || 5
   if (scene.video_url) {
@@ -906,8 +922,10 @@ const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
   // 选中新添加的片段
   selectedClipId.value = newClip.id
   
-  const insertInfo = insertAfterIndex !== null ? '（已插入到选中片段后）' : ''
-  ElMessage.success(`已添加到时间线${insertInfo}`)
+  if (!options?.silent) {
+    const insertInfo = insertAfterIndex !== null ? '（已插入到选中片段后）' : ''
+    ElMessage.success(`已添加到时间线${insertInfo}`)
+  }
 }
 
 // 一键添加全部场景
@@ -927,7 +945,7 @@ const addAllScenesInOrder = async () => {
 
   // 批量添加（顺序添加以确保正确的时长）
   for (const scene of sortedScenes) {
-    await addClipToTimeline(scene)
+    await addClipToTimeline(scene, undefined, { silent: true })
   }
 
   ElMessage.success(`已批量添加 ${sortedScenes.length} 个场景到时间线`)
@@ -1029,6 +1047,7 @@ const applyTransition = () => {
 
 // 选择和删除片段
 const selectClip = (clip: TimelineClip) => {
+  manualPreviewUrl.value = ''
   selectedClipId.value = clip.id
 }
 
@@ -1160,11 +1179,39 @@ const updateAudioClipOrders = () => {
   })
 }
 
+const lockTimelineInteraction = () => {
+  document.documentElement.classList.add('timeline-interacting')
+}
+
+const unlockTimelineInteraction = () => {
+  document.documentElement.classList.remove('timeline-interacting')
+}
+
+const addPointerListeners = (
+  moveHandler: (event: PointerEvent) => void,
+  endHandler: (event: PointerEvent) => void
+) => {
+  document.addEventListener('pointermove', moveHandler, { passive: false })
+  document.addEventListener('pointerup', endHandler)
+  document.addEventListener('pointercancel', endHandler)
+}
+
+const removePointerListeners = (
+  moveHandler: (event: PointerEvent) => void,
+  endHandler: (event: PointerEvent) => void
+) => {
+  document.removeEventListener('pointermove', moveHandler)
+  document.removeEventListener('pointerup', endHandler)
+  document.removeEventListener('pointercancel', endHandler)
+}
+
 // 拖拽音频片段
-const startDragAudioClip = (event: MouseEvent, audio: AudioClip) => {
+const startDragAudioClip = (event: PointerEvent, audio: AudioClip) => {
   if (dragState.value.isResizing) return
   
+  event.preventDefault()
   event.stopPropagation()
+  lockTimelineInteraction()
   dragState.value = {
     isDragging: true,
     isResizing: false,
@@ -1176,12 +1223,12 @@ const startDragAudioClip = (event: MouseEvent, audio: AudioClip) => {
   }
   
   selectedAudioClipId.value = audio.id
-  document.addEventListener('mousemove', handleDragAudioMove)
-  document.addEventListener('mouseup', handleDragAudioEnd)
+  addPointerListeners(handleDragAudioMove, handleDragAudioEnd)
 }
 
-const handleDragAudioMove = (event: MouseEvent) => {
+const handleDragAudioMove = (event: PointerEvent) => {
   if (!dragState.value.isDragging || !dragState.value.clipId) return
+  event.preventDefault()
   
   const audio = audioClips.value.find(a => a.id === dragState.value.clipId)
   if (!audio) return
@@ -1197,8 +1244,8 @@ const handleDragAudioEnd = () => {
   dragState.value.isDragging = false
   dragState.value.clipId = null
   
-  document.removeEventListener('mousemove', handleDragAudioMove)
-  document.removeEventListener('mouseup', handleDragAudioEnd)
+  removePointerListeners(handleDragAudioMove, handleDragAudioEnd)
+  unlockTimelineInteraction()
   
   // 重新排序
   audioClips.value.sort((a, b) => a.position - b.position)
@@ -1206,8 +1253,10 @@ const handleDragAudioEnd = () => {
 }
 
 // 调整音频片段大小
-const startResizeAudioClip = (event: MouseEvent, audio: AudioClip, side: 'left' | 'right') => {
+const startResizeAudioClip = (event: PointerEvent, audio: AudioClip, side: 'left' | 'right') => {
+  event.preventDefault()
   event.stopPropagation()
+  lockTimelineInteraction()
   
   dragState.value = {
     isDragging: false,
@@ -1221,12 +1270,12 @@ const startResizeAudioClip = (event: MouseEvent, audio: AudioClip, side: 'left' 
   }
   
   selectedAudioClipId.value = audio.id
-  document.addEventListener('mousemove', handleResizeAudioMove)
-  document.addEventListener('mouseup', handleResizeAudioEnd)
+  addPointerListeners(handleResizeAudioMove, handleResizeAudioEnd)
 }
 
-const handleResizeAudioMove = (event: MouseEvent) => {
+const handleResizeAudioMove = (event: PointerEvent) => {
   if (!dragState.value.isResizing || !dragState.value.clipId) return
+  event.preventDefault()
   
   const audio = audioClips.value.find(a => a.id === dragState.value.clipId)
   if (!audio) return
@@ -1254,8 +1303,8 @@ const handleResizeAudioEnd = () => {
   dragState.value.isResizing = false
   dragState.value.clipId = null
   
-  document.removeEventListener('mousemove', handleResizeAudioMove)
-  document.removeEventListener('mouseup', handleResizeAudioEnd)
+  removePointerListeners(handleResizeAudioMove, handleResizeAudioEnd)
+  unlockTimelineInteraction()
 }
 
 // 拖拽和调整片段
@@ -1281,10 +1330,12 @@ const dragState = ref<DragState>({
 })
 
 // 拖拽移动片段位置
-const startDragClip = (event: MouseEvent, clip: TimelineClip) => {
+const startDragClip = (event: PointerEvent, clip: TimelineClip) => {
   if (dragState.value.isResizing) return
   
+  event.preventDefault()
   event.stopPropagation()
+  lockTimelineInteraction()
   dragState.value = {
     isDragging: true,
     isResizing: false,
@@ -1296,12 +1347,12 @@ const startDragClip = (event: MouseEvent, clip: TimelineClip) => {
   }
   
   selectedClipId.value = clip.id
-  document.addEventListener('mousemove', handleDragMove)
-  document.addEventListener('mouseup', handleDragEnd)
+  addPointerListeners(handleDragMove, handleDragEnd)
 }
 
-const handleDragMove = (event: MouseEvent) => {
+const handleDragMove = (event: PointerEvent) => {
   if (!dragState.value.clipId) return
+  event.preventDefault()
   
   const clip = timelineClips.value.find(c => c.id === dragState.value.clipId)
   if (!clip) return
@@ -1333,8 +1384,8 @@ const handleDragEnd = () => {
     originalDuration: 0
   }
   
-  document.removeEventListener('mousemove', handleDragMove)
-  document.removeEventListener('mouseup', handleDragEnd)
+  removePointerListeners(handleDragMove, handleDragEnd)
+  unlockTimelineInteraction()
   
   // 重新排序片段并紧密连接
   timelineClips.value.sort((a, b) => a.position - b.position)
@@ -1352,8 +1403,10 @@ const compactClips = () => {
 }
 
 // 调整片段时长
-const startResizeClip = (event: MouseEvent, clip: TimelineClip, side: 'left' | 'right') => {
+const startResizeClip = (event: PointerEvent, clip: TimelineClip, side: 'left' | 'right') => {
+  event.preventDefault()
   event.stopPropagation()
+  lockTimelineInteraction()
   
   dragState.value = {
     isDragging: false,
@@ -1367,11 +1420,10 @@ const startResizeClip = (event: MouseEvent, clip: TimelineClip, side: 'left' | '
   }
   
   selectedClipId.value = clip.id
-  document.addEventListener('mousemove', handleDragMove)
-  document.addEventListener('mouseup', handleDragEnd)
+  addPointerListeners(handleDragMove, handleDragEnd)
 }
 
-const handleResizeMove = (event: MouseEvent, clip: TimelineClip) => {
+const handleResizeMove = (event: PointerEvent, clip: TimelineClip) => {
   const deltaX = event.clientX - dragState.value.startX
   const deltaTime = deltaX / pixelsPerSecond.value
   
@@ -1462,17 +1514,25 @@ const zoomReset = () => {
   zoom.value = 1
 }
 
+const getTrackLabelWidth = () => {
+  if (window.innerWidth <= 480) return 56
+  if (window.innerWidth <= 768) return 72
+  return 100
+}
+
 // 时间线点击跳转
 const clickTimeline = (event: MouseEvent) => {
   if (dragState.value.isDragging || dragState.value.isResizing) return
+  manualPreviewUrl.value = ''
   
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const clickX = event.clientX - rect.left - 100
+  const clickX = event.clientX - rect.left - getTrackLabelWidth()
   const newTime = Math.max(0, clickX / pixelsPerSecond.value)
   seekToTime(newTime)
 }
 
 const seekToTime = (time: number) => {
+  manualPreviewUrl.value = ''
   currentTime.value = time
   
   // 找到对应时间的视频片段并播放
@@ -1530,6 +1590,7 @@ const playTimeline = () => {
     return
   }
   
+  manualPreviewUrl.value = ''
   isPlaying.value = true
   
   // 找到当前时间对应的视频片段
@@ -1584,6 +1645,11 @@ const pauseTimeline = () => {
 const togglePlay = () => {
   if (isPlaying.value) {
     pauseTimeline()
+  } else if (manualPreviewUrl.value && previewPlayer.value) {
+    isPlaying.value = true
+    previewPlayer.value.play().catch(() => {
+      isPlaying.value = false
+    })
   } else {
     playTimeline()
   }
@@ -1637,8 +1703,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyPress)
-  document.removeEventListener('mousemove', handleDragMove)
-  document.removeEventListener('mouseup', handleDragEnd)
+  removePointerListeners(handleDragMove, handleDragEnd)
+  removePointerListeners(handleDragAudioMove, handleDragAudioEnd)
+  removePointerListeners(handleResizeAudioMove, handleResizeAudioEnd)
+  unlockTimelineInteraction()
 })
 
 // 进度显示辅助函数
@@ -1912,7 +1980,6 @@ const updateClipsByStoryboardId = (storyboardId: string | number, newVideoUrl: s
   
   if (updated) {
     console.log('✅ 时间线视频已更新')
-    ElMessage.success('时间线中的视频已自动更新')
   } else {
     console.log('⚠️ 没有找到匹配的时间线片段')
   }
@@ -2360,6 +2427,7 @@ defineExpose({
       overflow-x: auto;
       overflow-y: hidden;
       background: var(--bg-primary);
+      touch-action: pan-x;
 
       .timeline-ruler {
         height: 30px;
@@ -2461,6 +2529,9 @@ defineExpose({
             cursor: move;
             transition: all 0.15s;
             overflow: hidden;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
 
             &:hover {
               border-color: var(--accent-hover);
@@ -2525,6 +2596,7 @@ defineExpose({
               width: 8px;
               cursor: ew-resize;
               z-index: 10;
+              touch-action: none;
 
               &:hover {
                 background: rgba(52, 152, 219, 0.3);
@@ -2553,6 +2625,7 @@ defineExpose({
               cursor: pointer;
               opacity: 0;
               transition: opacity 0.2s;
+              touch-action: manipulation;
 
               &:hover {
                 background: var(--error);
@@ -2700,6 +2773,164 @@ defineExpose({
         }
       }
     }
+  }
+}
+
+@media (max-width: 1024px) {
+  .video-timeline-editor .editor-workspace {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .video-timeline-editor .editor-workspace .preview-panel {
+    flex: none;
+    min-height: 280px;
+  }
+
+  .video-timeline-editor .editor-workspace .media-library .media-grid {
+    max-height: 260px;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .video-timeline-editor .timeline-panel {
+    flex: 0 0 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  .video-timeline-editor .editor-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .video-timeline-editor .editor-toolbar .toolbar-left,
+  .video-timeline-editor .editor-toolbar .toolbar-right {
+    width: 100%;
+  }
+
+  .video-timeline-editor .editor-toolbar .toolbar-left {
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .video-timeline-editor .editor-toolbar .toolbar-left .time-display {
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  .video-timeline-editor .editor-toolbar .toolbar-right .el-button {
+    width: 100%;
+  }
+
+  .video-timeline-editor .editor-workspace .preview-panel {
+    min-height: 220px;
+  }
+
+  .video-timeline-editor .editor-workspace .preview-panel .preview-controls {
+    padding: 8px 10px;
+  }
+
+  .video-timeline-editor .editor-workspace .media-library .library-header {
+    padding: 10px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .video-timeline-editor .editor-workspace .media-library .library-header .el-button {
+    width: 100%;
+  }
+
+  .video-timeline-editor .editor-workspace .media-library .media-grid {
+    padding: 8px;
+    gap: 8px;
+    max-height: 220px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .video-timeline-editor .timeline-panel {
+    flex: 0 0 220px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-header {
+    padding: 6px 8px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-label {
+    width: 72px;
+    padding-left: 8px;
+    font-size: 11px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips {
+    padding-left: 72px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips .track-clip .clip-content {
+    gap: 6px;
+    padding: 4px 6px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips .track-clip .clip-content .clip-thumbnail,
+  .video-timeline-editor .timeline-panel .timeline-container .audio-track .audio-clip .audio-waveform {
+    width: 42px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips .track-clip .clip-resize-left,
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips .track-clip .clip-resize-right {
+    width: 14px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips .track-clip .clip-remove {
+    opacity: 1;
+    width: 22px;
+    height: 22px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips .transition-indicator {
+    width: 34px;
+    height: 34px;
+  }
+
+  .video-timeline-editor :deep(.el-dialog .el-form-item__label) {
+    width: 100% !important;
+    text-align: left !important;
+    margin-bottom: 6px;
+  }
+
+  .video-timeline-editor :deep(.el-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .video-timeline-editor .editor-toolbar .toolbar-left :deep(.el-button-group) {
+    width: 100%;
+    display: flex;
+  }
+
+  .video-timeline-editor .editor-toolbar .toolbar-left :deep(.el-button-group .el-button) {
+    flex: 1 1 auto;
+  }
+
+  .video-timeline-editor .editor-workspace .media-library .media-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-ruler .ruler-tick .tick-label {
+    display: none;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-label {
+    width: 56px;
+    padding-left: 6px;
+  }
+
+  .video-timeline-editor .timeline-panel .timeline-container .timeline-track .track-clips {
+    padding-left: 56px;
   }
 }
 </style>

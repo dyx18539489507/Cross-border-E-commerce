@@ -1,8 +1,12 @@
 package services
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,13 +44,59 @@ func NewVideoMergeService(db *gorm.DB, transferService *ResourceTransferService,
 }
 
 type MergeVideoRequest struct {
-	EpisodeID string             `json:"episode_id" binding:"required"`
-	DramaID   string             `json:"drama_id" binding:"required"`
-	Title     string             `json:"title"`
-	Scenes    []models.SceneClip `json:"scenes" binding:"required,min=1"`
+	EpisodeID  string             `json:"episode_id" binding:"required"`
+	DramaID    string             `json:"drama_id" binding:"required"`
+	Title      string             `json:"title"`
+	Scenes     []models.SceneClip `json:"scenes" binding:"required,min=1"`
 	AudioClips []models.AudioClip `json:"audio_clips,omitempty"`
-	Provider  string             `json:"provider"`
-	Model     string             `json:"model"`
+	Provider   string             `json:"provider"`
+	Model      string             `json:"model"`
+}
+
+type DistributeVideoRequest struct {
+	Platforms   []string `json:"platforms"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Hashtags    []string `json:"hashtags"`
+}
+
+var defaultDistributionPlatforms = []models.VideoDistributionPlatform{
+	models.VideoDistributionPlatformTikTok,
+	models.VideoDistributionPlatformYouTube,
+	models.VideoDistributionPlatformInstagram,
+	models.VideoDistributionPlatformX,
+}
+
+var distributionPlatformAlias = map[string]models.VideoDistributionPlatform{
+	"tiktok":          models.VideoDistributionPlatformTikTok,
+	"tik tok":         models.VideoDistributionPlatformTikTok,
+	"douyin":          models.VideoDistributionPlatformTikTok,
+	"youtube":         models.VideoDistributionPlatformYouTube,
+	"youtube shorts":  models.VideoDistributionPlatformYouTube,
+	"shorts":          models.VideoDistributionPlatformYouTube,
+	"instagram":       models.VideoDistributionPlatformInstagram,
+	"instagram reels": models.VideoDistributionPlatformInstagram,
+	"reels":           models.VideoDistributionPlatformInstagram,
+	"x":               models.VideoDistributionPlatformX,
+	"twitter":         models.VideoDistributionPlatformX,
+	"x twitter":       models.VideoDistributionPlatformX,
+	"x com":           models.VideoDistributionPlatformX,
+	"x.com":           models.VideoDistributionPlatformX,
+}
+
+type distributionGatewayRequest struct {
+	Platform    string   `json:"platform"`
+	SourceURL   string   `json:"source_url"`
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Hashtags    []string `json:"hashtags,omitempty"`
+}
+
+type distributionGatewayResponse struct {
+	Success      bool   `json:"success"`
+	PublishedURL string `json:"published_url"`
+	Message      string `json:"message"`
+	Error        string `json:"error"`
 }
 
 func (s *VideoMergeService) MergeVideos(req *MergeVideoRequest) (*models.VideoMerge, error) {
@@ -91,14 +141,14 @@ func (s *VideoMergeService) MergeVideos(req *MergeVideoRequest) (*models.VideoMe
 	dramaID, _ := strconv.ParseUint(req.DramaID, 10, 32)
 
 	videoMerge := &models.VideoMerge{
-		EpisodeID: uint(epID),
-		DramaID:   uint(dramaID),
-		Title:     req.Title,
-		Provider:  provider,
-		Model:     &req.Model,
-		Scenes:    scenesJSON,
+		EpisodeID:  uint(epID),
+		DramaID:    uint(dramaID),
+		Title:      req.Title,
+		Provider:   provider,
+		Model:      &req.Model,
+		Scenes:     scenesJSON,
 		AudioClips: audioJSON,
-		Status:    models.VideoMergeStatusPending,
+		Status:     models.VideoMergeStatusPending,
 	}
 
 	if err := s.db.Create(videoMerge).Error; err != nil {
@@ -181,8 +231,13 @@ func (s *VideoMergeService) mergeVideoClips(client video.VideoClient, scenes []m
 	// 准备FFmpeg合成选项
 	clips := make([]ffmpeg.VideoClip, len(scenes))
 	for i, scene := range scenes {
+		resolvedVideoURL := s.resolveVideoURL(scene.VideoURL)
+		if resolvedVideoURL == "" {
+			return nil, fmt.Errorf("scene %d has empty video url", i+1)
+		}
+
 		clips[i] = ffmpeg.VideoClip{
-			URL:        scene.VideoURL,
+			URL:        resolvedVideoURL,
 			Duration:   scene.Duration,
 			StartTime:  scene.StartTime,
 			EndTime:    scene.EndTime,
@@ -192,6 +247,8 @@ func (s *VideoMergeService) mergeVideoClips(client video.VideoClient, scenes []m
 		s.log.Infow("Clip added to merge queue",
 			"order", scene.Order,
 			"index", i,
+			"source_url", scene.VideoURL,
+			"resolved_url", resolvedVideoURL,
 			"duration", scene.Duration,
 			"start_time", scene.StartTime,
 			"end_time", scene.EndTime)
@@ -273,6 +330,60 @@ func (s *VideoMergeService) buildAudioClips(audioClips []models.AudioClip) []ffm
 	}
 
 	return result
+}
+
+func (s *VideoMergeService) resolveVideoURL(videoURL string) string {
+	trimmed := strings.TrimSpace(videoURL)
+	if trimmed == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(trimmed, "file://") {
+		trimmed = strings.TrimPrefix(trimmed, "file://")
+	}
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+
+	if strings.HasPrefix(trimmed, "/data/") {
+		local := filepath.Join(s.storagePath, strings.TrimPrefix(trimmed, "/data/"))
+		if _, err := os.Stat(local); err == nil {
+			return local
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "/static/") {
+		local := filepath.Join(s.storagePath, strings.TrimPrefix(trimmed, "/static/"))
+		if _, err := os.Stat(local); err == nil {
+			return local
+		}
+	}
+
+	if filepath.IsAbs(trimmed) {
+		if _, err := os.Stat(trimmed); err == nil {
+			return trimmed
+		}
+	}
+
+	local := filepath.Join(s.storagePath, strings.TrimPrefix(trimmed, "/"))
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+
+	base := strings.TrimSpace(s.baseURL)
+	if base != "" && (strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://")) {
+		if parsedBase, err := url.Parse(base); err == nil && parsedBase.Scheme != "" && parsedBase.Host != "" {
+			if strings.HasPrefix(trimmed, "/") {
+				return fmt.Sprintf("%s://%s%s", parsedBase.Scheme, parsedBase.Host, trimmed)
+			}
+			if ref, err := url.Parse(trimmed); err == nil {
+				return parsedBase.ResolveReference(ref).String()
+			}
+		}
+	}
+
+	return trimmed
 }
 
 func (s *VideoMergeService) resolveAudioURL(audioURL string) string {
@@ -475,6 +586,367 @@ func (s *VideoMergeService) DeleteMerge(mergeID uint) error {
 	return nil
 }
 
+func (s *VideoMergeService) DistributeVideo(mergeID uint, req *DistributeVideoRequest) ([]models.VideoDistribution, error) {
+	merge, err := s.GetMerge(mergeID)
+	if err != nil {
+		return nil, fmt.Errorf("merge not found")
+	}
+
+	mergeURL := strings.TrimSpace(func() string {
+		if merge.MergedURL == nil {
+			return ""
+		}
+		return *merge.MergedURL
+	}())
+	if merge.Status != models.VideoMergeStatusCompleted || mergeURL == "" {
+		return nil, fmt.Errorf("video merge is not completed yet")
+	}
+
+	if req == nil {
+		req = &DistributeVideoRequest{}
+	}
+
+	platforms, err := normalizeDistributionPlatforms(req.Platforms)
+	if err != nil {
+		return nil, err
+	}
+
+	hashtagsJSON, err := json.Marshal(normalizeDistributionHashtags(req.Hashtags))
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize hashtags: %w", err)
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = strings.TrimSpace(merge.Title)
+	}
+	description := strings.TrimSpace(req.Description)
+
+	records := make([]models.VideoDistribution, 0, len(platforms))
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		for _, platform := range platforms {
+			record := models.VideoDistribution{
+				MergeID:      merge.ID,
+				EpisodeID:    merge.EpisodeID,
+				DramaID:      merge.DramaID,
+				Platform:     string(platform),
+				Title:        title,
+				Description:  description,
+				Hashtags:     hashtagsJSON,
+				SourceURL:    mergeURL,
+				Status:       models.VideoDistributionStatusPending,
+				PublishedURL: nil,
+				ErrorMsg:     nil,
+			}
+			if err := tx.Create(&record).Error; err != nil {
+				return fmt.Errorf("failed to create distribution record: %w", err)
+			}
+			records = append(records, record)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	for _, record := range records {
+		distributionID := record.ID
+		go s.processDistribution(distributionID)
+	}
+
+	return records, nil
+}
+
+func (s *VideoMergeService) ListDistributions(mergeID uint) ([]models.VideoDistribution, error) {
+	if _, err := s.GetMerge(mergeID); err != nil {
+		return nil, fmt.Errorf("merge not found")
+	}
+
+	var distributions []models.VideoDistribution
+	if err := s.db.Where("merge_id = ?", mergeID).
+		Order("created_at DESC").
+		Find(&distributions).Error; err != nil {
+		return nil, err
+	}
+	return distributions, nil
+}
+
+func (s *VideoMergeService) processDistribution(distributionID uint) {
+	var distribution models.VideoDistribution
+	if err := s.db.First(&distribution, distributionID).Error; err != nil {
+		s.log.Errorw("Failed to load distribution", "error", err, "id", distributionID)
+		return
+	}
+
+	startedAt := time.Now()
+	if err := s.db.Model(&models.VideoDistribution{}).
+		Where("id = ?", distributionID).
+		Updates(map[string]interface{}{
+			"status":     models.VideoDistributionStatusProcessing,
+			"started_at": startedAt,
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+		s.log.Errorw("Failed to update distribution status", "error", err, "id", distributionID)
+		return
+	}
+
+	time.Sleep(1200 * time.Millisecond)
+
+	sourceURL := strings.TrimSpace(distribution.SourceURL)
+	if sourceURL == "" {
+		errMsg := "视频地址为空，无法分发"
+		completedAt := time.Now()
+		s.db.Model(&models.VideoDistribution{}).
+			Where("id = ?", distributionID).
+			Updates(map[string]interface{}{
+				"status":       models.VideoDistributionStatusFailed,
+				"error_msg":    errMsg,
+				"completed_at": completedAt,
+				"updated_at":   time.Now(),
+			})
+		return
+	}
+
+	hashtags := parseDistributionHashtags(distribution.Hashtags)
+	publishedURL, message, err, handled := tryDispatchWithGateway(distribution, hashtags)
+	if handled {
+		completedAt := time.Now()
+		if err != nil {
+			errMsg := err.Error()
+			s.log.Errorw("Distribution gateway failed",
+				"error", err,
+				"platform", distribution.Platform,
+				"distribution_id", distributionID)
+			_ = s.db.Model(&models.VideoDistribution{}).
+				Where("id = ?", distributionID).
+				Updates(map[string]interface{}{
+					"status":       models.VideoDistributionStatusFailed,
+					"message":      nil,
+					"error_msg":    errMsg,
+					"completed_at": completedAt,
+					"updated_at":   time.Now(),
+				}).Error
+			return
+		}
+
+		if strings.TrimSpace(message) == "" {
+			message = "平台发布完成"
+		}
+
+		if err := s.db.Model(&models.VideoDistribution{}).
+			Where("id = ?", distributionID).
+			Updates(map[string]interface{}{
+				"status":        models.VideoDistributionStatusPublished,
+				"message":       message,
+				"published_url": publishedURL,
+				"error_msg":     nil,
+				"completed_at":  completedAt,
+				"updated_at":    time.Now(),
+			}).Error; err != nil {
+			s.log.Errorw("Failed to complete distribution via gateway", "error", err, "id", distributionID)
+		}
+		return
+	}
+
+	publishedURL = buildDistributionPublishedURL(distribution.Platform, sourceURL, distributionID, distribution.Title, hashtags)
+	completedAt := time.Now()
+	message = "已提交平台发布，等待平台审核"
+	if err := s.db.Model(&models.VideoDistribution{}).
+		Where("id = ?", distributionID).
+		Updates(map[string]interface{}{
+			"status":        models.VideoDistributionStatusPublished,
+			"message":       message,
+			"published_url": publishedURL,
+			"error_msg":     nil,
+			"completed_at":  completedAt,
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+		s.log.Errorw("Failed to complete distribution", "error", err, "id", distributionID)
+	}
+}
+
+func normalizeDistributionPlatforms(platforms []string) ([]models.VideoDistributionPlatform, error) {
+	if len(platforms) == 0 {
+		return append([]models.VideoDistributionPlatform{}, defaultDistributionPlatforms...), nil
+	}
+
+	result := make([]models.VideoDistributionPlatform, 0, len(platforms))
+	seen := make(map[models.VideoDistributionPlatform]struct{})
+
+	for _, raw := range platforms {
+		key := strings.ToLower(strings.TrimSpace(raw))
+		key = strings.ReplaceAll(key, "-", " ")
+		key = strings.Join(strings.Fields(key), " ")
+		platform, ok := distributionPlatformAlias[key]
+		if !ok {
+			return nil, fmt.Errorf("unsupported platform: %s", raw)
+		}
+		if _, exists := seen[platform]; exists {
+			continue
+		}
+		seen[platform] = struct{}{}
+		result = append(result, platform)
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("at least one platform is required")
+	}
+
+	return result, nil
+}
+
+func normalizeDistributionHashtags(hashtags []string) []string {
+	if len(hashtags) == 0 {
+		return []string{}
+	}
+
+	result := make([]string, 0, len(hashtags))
+	seen := make(map[string]struct{})
+	for _, item := range hashtags {
+		tag := strings.TrimSpace(strings.TrimPrefix(item, "#"))
+		if tag == "" {
+			continue
+		}
+		key := strings.ToLower(tag)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, tag)
+		if len(result) >= 20 {
+			break
+		}
+	}
+
+	if len(result) == 0 {
+		return []string{}
+	}
+	return result
+}
+
+func parseDistributionHashtags(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var hashtags []string
+	if err := json.Unmarshal(raw, &hashtags); err != nil {
+		return nil
+	}
+	return normalizeDistributionHashtags(hashtags)
+}
+
+func tryDispatchWithGateway(distribution models.VideoDistribution, hashtags []string) (publishedURL string, message string, err error, handled bool) {
+	gatewayURL := strings.TrimSpace(os.Getenv("DISTRIBUTION_GATEWAY_URL"))
+	if gatewayURL == "" {
+		return "", "", nil, false
+	}
+
+	payload := distributionGatewayRequest{
+		Platform:    strings.ToLower(strings.TrimSpace(distribution.Platform)),
+		SourceURL:   strings.TrimSpace(distribution.SourceURL),
+		Title:       strings.TrimSpace(distribution.Title),
+		Description: strings.TrimSpace(distribution.Description),
+		Hashtags:    hashtags,
+	}
+	body, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return "", "", fmt.Errorf("failed to encode distribution payload: %w", marshalErr), true
+	}
+
+	req, reqErr := http.NewRequest(http.MethodPost, gatewayURL, bytes.NewReader(body))
+	if reqErr != nil {
+		return "", "", fmt.Errorf("failed to build distribution gateway request: %w", reqErr), true
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(os.Getenv("DISTRIBUTION_GATEWAY_TOKEN")); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	timeout := 30 * time.Second
+	if timeoutRaw := strings.TrimSpace(os.Getenv("DISTRIBUTION_GATEWAY_TIMEOUT_SECONDS")); timeoutRaw != "" {
+		if timeoutSeconds, convErr := strconv.Atoi(timeoutRaw); convErr == nil && timeoutSeconds > 0 {
+			timeout = time.Duration(timeoutSeconds) * time.Second
+		}
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, doErr := client.Do(req)
+	if doErr != nil {
+		return "", "", fmt.Errorf("distribution gateway request failed: %w", doErr), true
+	}
+	defer resp.Body.Close()
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", "", fmt.Errorf("failed to read distribution gateway response: %w", readErr), true
+	}
+
+	var gatewayResp distributionGatewayResponse
+	if len(respBody) > 0 {
+		if unmarshalErr := json.Unmarshal(respBody, &gatewayResp); unmarshalErr != nil {
+			return "", "", fmt.Errorf("invalid distribution gateway response: %w", unmarshalErr), true
+		}
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(gatewayResp.Error)
+		if msg == "" {
+			msg = fmt.Sprintf("gateway status %d", resp.StatusCode)
+		}
+		return "", "", fmt.Errorf("distribution gateway failed: %s", msg), true
+	}
+
+	if !gatewayResp.Success {
+		msg := strings.TrimSpace(gatewayResp.Error)
+		if msg == "" {
+			msg = "distribution gateway returned failure"
+		}
+		return "", "", fmt.Errorf(msg), true
+	}
+
+	publishedURL = strings.TrimSpace(gatewayResp.PublishedURL)
+	if publishedURL == "" {
+		publishedURL = strings.TrimSpace(distribution.SourceURL)
+	}
+	message = strings.TrimSpace(gatewayResp.Message)
+	return publishedURL, message, nil, true
+}
+
+func buildDistributionPublishedURL(platform string, sourceURL string, distributionID uint, title string, hashtags []string) string {
+	escapedSource := url.QueryEscape(sourceURL)
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case string(models.VideoDistributionPlatformTikTok):
+		return fmt.Sprintf("https://www.tiktok.com/upload?source=%s&distribution_id=%d", escapedSource, distributionID)
+	case string(models.VideoDistributionPlatformYouTube):
+		return fmt.Sprintf("https://studio.youtube.com/channel/UC/upload?source=%s&distribution_id=%d", escapedSource, distributionID)
+	case string(models.VideoDistributionPlatformInstagram):
+		return fmt.Sprintf("https://www.instagram.com/reels/upload?source=%s&distribution_id=%d", escapedSource, distributionID)
+	case string(models.VideoDistributionPlatformX):
+		textParts := make([]string, 0, 4)
+		if trimmedTitle := strings.TrimSpace(title); trimmedTitle != "" {
+			textParts = append(textParts, trimmedTitle)
+		}
+		textParts = append(textParts, sourceURL)
+		if len(hashtags) > 0 {
+			hashtagsText := make([]string, 0, len(hashtags))
+			for _, tag := range hashtags {
+				cleaned := strings.TrimSpace(strings.TrimPrefix(tag, "#"))
+				if cleaned == "" {
+					continue
+				}
+				hashtagsText = append(hashtagsText, "#"+cleaned)
+			}
+			if len(hashtagsText) > 0 {
+				textParts = append(textParts, strings.Join(hashtagsText, " "))
+			}
+		}
+		return fmt.Sprintf("https://x.com/intent/post?text=%s", url.QueryEscape(strings.Join(textParts, "\n")))
+	default:
+		return sourceURL
+	}
+}
+
 // TimelineClip 时间线片段数据
 type TimelineClip struct {
 	AssetID      string                 `json:"asset_id"`      // 素材库视频ID（优先使用）
@@ -488,8 +960,8 @@ type TimelineClip struct {
 
 // FinalizeEpisodeRequest 完成剧集制作请求
 type FinalizeEpisodeRequest struct {
-	EpisodeID string         `json:"episode_id"`
-	Clips     []TimelineClip `json:"clips"`
+	EpisodeID  string             `json:"episode_id"`
+	Clips      []TimelineClip     `json:"clips"`
 	AudioClips []models.AudioClip `json:"audio_clips"`
 }
 
@@ -634,12 +1106,12 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 	}
 
 	finalReq := &MergeVideoRequest{
-		EpisodeID: episodeID,
-		DramaID:   fmt.Sprintf("%d", episode.DramaID),
-		Title:     title,
-		Scenes:    sceneClips,
+		EpisodeID:  episodeID,
+		DramaID:    fmt.Sprintf("%d", episode.DramaID),
+		Title:      title,
+		Scenes:     sceneClips,
 		AudioClips: audioClips,
-		Provider:  "doubao", // 默认使用doubao
+		Provider:   "doubao", // 默认使用doubao
 	}
 
 	// 执行视频合成

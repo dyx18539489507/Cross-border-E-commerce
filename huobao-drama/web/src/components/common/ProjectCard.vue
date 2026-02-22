@@ -77,7 +77,8 @@ const formattedDate = computed(() => {
   overflow: hidden;
   cursor: pointer;
   transition: all var(--transition-normal);
-  width: 200px;
+  width: 100%;
+  min-width: 0;
 }
 
 .project-card:hover {
@@ -174,5 +175,24 @@ const formattedDate = computed(() => {
   padding: 0 !important;
   background: var(--bg-secondary) !important;
   border: none !important;
+}
+
+@media (max-width: 768px) {
+  .card-header {
+    height: 100px;
+  }
+
+  .card-body {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .card-title {
+    font-size: 1rem;
+  }
+
+  .hover-actions {
+    opacity: 1;
+  }
 }
 </style>

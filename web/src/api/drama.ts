@@ -1,5 +1,6 @@
 import type {
     CreateDramaRequest,
+    CreateDramaResponse,
     Drama,
     DramaListQuery,
     DramaStats,
@@ -21,7 +22,7 @@ export const dramaAPI = {
   },
 
   create(data: CreateDramaRequest) {
-    return request.post<Drama>('/dramas', data)
+    return request.post<CreateDramaResponse>('/dramas', data)
   },
 
   get(id: string) {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	services2 "github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -85,6 +86,7 @@ func (h *UploadHandler) UploadImage(c *gin.Context) {
 
 // UploadCharacterImage 上传角色图片（带角色ID）
 func (h *UploadHandler) UploadCharacterImage(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	characterID := c.Param("id")
 
 	// 获取上传的文件
@@ -135,7 +137,7 @@ func (h *UploadHandler) UploadCharacterImage(c *gin.Context) {
 	}
 
 	// 更新角色的image_url字段到数据库
-	err = h.characterLibraryService.UploadCharacterImage(characterID, normalizedURL)
+	err = h.characterLibraryService.UploadCharacterImage(characterID, normalizedURL, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to update character image_url", "error", err, "character_id", characterID)
 		response.InternalError(c, "更新角色图片失败")

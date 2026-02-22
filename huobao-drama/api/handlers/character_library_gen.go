@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 )
 
 // GenerateCharacterImage AI生成角色形象
 func (h *CharacterLibraryHandler) GenerateCharacterImage(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	characterID := c.Param("id")
 
@@ -16,7 +18,7 @@ func (h *CharacterLibraryHandler) GenerateCharacterImage(c *gin.Context) {
 	}
 	c.ShouldBindJSON(&req)
 
-	imageGen, err := h.libraryService.GenerateCharacterImage(characterID, h.imageService, req.Model)
+	imageGen, err := h.libraryService.GenerateCharacterImage(characterID, h.imageService, req.Model, deviceID)
 	if err != nil {
 		if err.Error() == "character not found" {
 			response.NotFound(c, "角色不存在")

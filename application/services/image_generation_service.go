@@ -69,7 +69,7 @@ type GenerateImageRequest struct {
 	CharacterID     *uint    `json:"character_id"`
 	ImageType       string   `json:"image_type"` // character, scene, storyboard
 	FrameType       *string  `json:"frame_type"` // first, key, last, panel, action
-	Prompt          string   `json:"prompt" binding:"required,min=5,max=2000"`
+	Prompt          string   `json:"prompt" binding:"required,max=2000"`
 	NegativePrompt  *string  `json:"negative_prompt"`
 	Provider        string   `json:"provider"`
 	Model           string   `json:"model"`
@@ -146,6 +146,11 @@ func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordReq
 }
 
 func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest) (*models.ImageGeneration, error) {
+	request.Prompt = strings.TrimSpace(request.Prompt)
+	if request.Prompt == "" {
+		return nil, fmt.Errorf("prompt cannot be empty")
+	}
+
 	var drama models.Drama
 	if err := s.db.Where("id = ? ", request.DramaID).First(&drama).Error; err != nil {
 		return nil, fmt.Errorf("drama not found")

@@ -24,8 +24,7 @@
       <!-- Project Grid / 项目网格 -->
       <div v-loading="loading" class="projects-grid" :class="{ 'is-empty': !loading && dramas.length === 0 }">
         <!-- Empty state / 空状态 -->
-        <EmptyState v-if="!loading && dramas.length === 0" :title="$t('drama.empty')"
-          :description="$t('drama.emptyHint')" :icon="Film">
+        <EmptyState v-if="!loading && dramas.length === 0" :title="$t('drama.empty')" :icon="Film">
           <el-button type="primary" @click="handleCreate">
             <el-icon>
               <Plus />
@@ -51,8 +50,14 @@
 
       <!-- Edit Dialog / 编辑对话框 -->
       <el-dialog v-model="editDialogVisible" :title="$t('drama.editProject')" width="520px"
-        :close-on-click-modal="false" class="edit-dialog">
-        <el-form :model="editForm" label-position="top" v-loading="editLoading" class="edit-form">
+        :close-on-click-modal="false" class="edit-dialog dialog-form-safe">
+        <el-form
+          :model="editForm"
+          label-position="top"
+          v-loading="editLoading"
+          class="edit-form long-form form-enter-flow"
+          @keydown.enter="handleFormEnterNavigation"
+        >
           <el-form-item :label="$t('drama.projectName')" required>
             <el-input v-model="editForm.title" :placeholder="$t('drama.projectNamePlaceholder')" size="large" />
           </el-form-item>
@@ -117,6 +122,7 @@ import {
 import { dramaAPI } from '@/api/drama'
 import type { Drama, DramaListQuery } from '@/types/drama'
 import { AppHeader, ProjectCard, ActionButton, CreateDramaDialog, EmptyState } from '@/components/common'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 const router = useRouter()
 const loading = ref(false)

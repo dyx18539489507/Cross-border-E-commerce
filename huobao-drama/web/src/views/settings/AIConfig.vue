@@ -56,17 +56,20 @@
       </div>
 
       <!-- Edit/Create Dialog / 编辑创建弹窗 -->
-      <el-dialog
+    <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? $t('aiConfig.editConfig') : $t('aiConfig.addConfig')"
       width="600px"
       :close-on-click-modal="false"
+      class="dialog-form-safe"
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
         label-width="100px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
       >
         <el-form-item :label="$t('aiConfig.form.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('aiConfig.form.namePlaceholder')" />
@@ -168,6 +171,7 @@ import { aiAPI } from '@/api/ai'
 import { PageHeader } from '@/components/common'
 import type { AIServiceConfig, AIServiceType, CreateAIConfigRequest, UpdateAIConfigRequest } from '@/types/ai'
 import ConfigList from './components/ConfigList.vue'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 const router = useRouter()
 
@@ -755,5 +759,55 @@ onMounted(() => {
 .dark :deep(.el-button--default:hover) {
   background: var(--bg-card-hover);
   border-color: var(--border-secondary);
+}
+
+@media (max-width: 768px) {
+  .page-container {
+    padding: var(--space-2);
+  }
+
+  .tabs-wrapper {
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+  }
+
+  :deep(.header-actions) {
+    width: 100%;
+  }
+
+  :deep(.header-actions .el-button) {
+    width: 100%;
+  }
+
+  :deep(.el-dialog__header) {
+    padding: 1rem;
+  }
+
+  :deep(.el-dialog__body) {
+    padding: 1rem;
+  }
+
+  :deep(.el-dialog__footer) {
+    padding: 0.75rem 1rem;
+  }
+
+  :deep(.el-dialog__footer .el-button) {
+    width: 100%;
+    margin: 0 0 0.5rem 0;
+  }
+
+  :deep(.el-dialog__footer .el-button:last-child) {
+    margin-bottom: 0;
+  }
+
+  :deep(.el-dialog .el-form-item__label) {
+    width: 100% !important;
+    text-align: left !important;
+    margin-bottom: 6px;
+  }
+
+  :deep(.el-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+  }
 }
 </style>

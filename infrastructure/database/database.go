@@ -82,6 +82,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.ImageGeneration{},
 		&models.VideoGeneration{},
 		&models.VideoMerge{},
+		&models.VideoDistribution{},
 
 		// AI配置
 		&models.AIServiceConfig{},

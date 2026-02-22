@@ -62,6 +62,21 @@ func (s *ImageGenerationService) GetDB() *gorm.DB {
 	return s.db
 }
 
+func firstDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
+func (s *ImageGenerationService) applyDeviceScope(query *gorm.DB, deviceID string) *gorm.DB {
+	if deviceID == "" {
+		return query
+	}
+	dramaSubQuery := s.db.Model(&models.Drama{}).Select("id").Where("device_id = ?", deviceID)
+	return query.Where("drama_id IN (?)", dramaSubQuery)
+}
+
 type GenerateImageRequest struct {
 	StoryboardID    *uint    `json:"storyboard_id"`
 	DramaID         string   `json:"drama_id" binding:"required"`
@@ -69,7 +84,7 @@ type GenerateImageRequest struct {
 	CharacterID     *uint    `json:"character_id"`
 	ImageType       string   `json:"image_type"` // character, scene, storyboard
 	FrameType       *string  `json:"frame_type"` // first, key, last, panel, action
-	Prompt          string   `json:"prompt" binding:"required,min=5,max=2000"`
+	Prompt          string   `json:"prompt" binding:"required,max=2000"`
 	NegativePrompt  *string  `json:"negative_prompt"`
 	Provider        string   `json:"provider"`
 	Model           string   `json:"model"`
@@ -94,10 +109,20 @@ type CreateImageRecordRequest struct {
 	Prompt       *string `json:"prompt"`
 }
 
-func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordRequest) (*models.ImageGeneration, error) {
+func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordRequest, deviceIDs ...string) (*models.ImageGeneration, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	dramaIDParsed, err := strconv.ParseUint(request.DramaID, 10, 32)
 	if err != nil {
 		return nil, fmt.Errorf("invalid drama id")
+	}
+
+	dramaQuery := s.db.Where("id = ?", uint(dramaIDParsed))
+	if deviceID != "" {
+		dramaQuery = dramaQuery.Where("device_id = ?", deviceID)
+	}
+	var drama models.Drama
+	if err := dramaQuery.First(&drama).Error; err != nil {
+		return nil, fmt.Errorf("drama not found")
 	}
 
 	if request.StoryboardID != nil {
@@ -149,9 +174,19 @@ func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordReq
 	return imageGen, nil
 }
 
-func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest) (*models.ImageGeneration, error) {
+func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest, deviceIDs ...string) (*models.ImageGeneration, error) {
+	request.Prompt = strings.TrimSpace(request.Prompt)
+	if request.Prompt == "" {
+		return nil, fmt.Errorf("prompt cannot be empty")
+	}
+
+	deviceID := firstDeviceID(deviceIDs)
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", request.DramaID).First(&drama).Error; err != nil {
+	dramaQuery := s.db.Where("id = ?", request.DramaID)
+	if deviceID != "" {
+		dramaQuery = dramaQuery.Where("device_id = ?", deviceID)
+	}
+	if err := dramaQuery.First(&drama).Error; err != nil {
 		return nil, fmt.Errorf("drama not found")
 	}
 
@@ -230,7 +265,7 @@ func (s *ImageGenerationService) ProcessImageGeneration(imageGenID uint) {
 		}
 	}
 
-	client, err := s.getImageClientWithModel(imageGen.Provider, imageGen.Model)
+	client, err := s.getImageClientWithModel(imageGen.Provider, imageGen.Model, imageGen.DramaID)
 	if err != nil {
 		s.log.Errorw("Failed to get image client", "error", err, "provider", imageGen.Provider, "model", imageGen.Model)
 		s.updateImageGenError(imageGenID, err.Error())
@@ -495,22 +530,29 @@ func (s *ImageGenerationService) getImageClient(provider string) (image.ImageCli
 }
 
 // getImageClientWithModel 根据模型名称获取图片客户端
-func (s *ImageGenerationService) getImageClientWithModel(provider string, modelName string) (image.ImageClient, error) {
+func (s *ImageGenerationService) getImageClientWithModel(provider string, modelName string, dramaID uint) (image.ImageClient, error) {
 	var config *models.AIServiceConfig
 	var err error
+	deviceID := ""
+	if dramaID != 0 {
+		var drama models.Drama
+		if e := s.db.Select("device_id").Where("id = ?", dramaID).First(&drama).Error; e == nil {
+			deviceID = drama.DeviceID
+		}
+	}
 
 	// 如果指定了模型，尝试获取对应的配置
 	if modelName != "" {
-		config, err = s.aiService.GetConfigForModel("image", modelName)
+		config, err = s.aiService.GetConfigForModel("image", modelName, deviceID)
 		if err != nil {
 			s.log.Warnw("Failed to get config for model, using default", "model", modelName, "error", err)
-			config, err = s.aiService.GetDefaultConfig("image")
+			config, err = s.aiService.GetDefaultConfig("image", deviceID)
 			if err != nil {
 				return nil, fmt.Errorf("no image AI config found: %w", err)
 			}
 		}
 	} else {
-		config, err = s.aiService.GetDefaultConfig("image")
+		config, err = s.aiService.GetDefaultConfig("image", deviceID)
 		if err != nil {
 			return nil, fmt.Errorf("no image AI config found: %w", err)
 		}
@@ -552,17 +594,22 @@ func (s *ImageGenerationService) getImageClientWithModel(provider string, modelN
 	}
 }
 
-func (s *ImageGenerationService) GetImageGeneration(imageGenID uint) (*models.ImageGeneration, error) {
+func (s *ImageGenerationService) GetImageGeneration(imageGenID uint, deviceIDs ...string) (*models.ImageGeneration, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	var imageGen models.ImageGeneration
-	if err := s.db.Where("id = ? ", imageGenID).First(&imageGen).Error; err != nil {
+	query := s.db.Model(&models.ImageGeneration{}).Where("id = ?", imageGenID)
+	query = s.applyDeviceScope(query, deviceID)
+	if err := query.First(&imageGen).Error; err != nil {
 		return nil, err
 	}
 	NormalizeImageURLPtr(imageGen.ImageURL)
 	return &imageGen, nil
 }
 
-func (s *ImageGenerationService) ListImageGenerations(dramaID *uint, sceneID *uint, storyboardID *uint, frameType string, status string, page, pageSize int) ([]models.ImageGeneration, int64, error) {
+func (s *ImageGenerationService) ListImageGenerations(dramaID *uint, sceneID *uint, storyboardID *uint, frameType string, status string, page, pageSize int, deviceIDs ...string) ([]models.ImageGeneration, int64, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	query := s.db.Model(&models.ImageGeneration{})
+	query = s.applyDeviceScope(query, deviceID)
 
 	if dramaID != nil {
 		query = query.Where("drama_id = ?", *dramaID)
@@ -601,8 +648,11 @@ func (s *ImageGenerationService) ListImageGenerations(dramaID *uint, sceneID *ui
 	return images, total, nil
 }
 
-func (s *ImageGenerationService) DeleteImageGeneration(imageGenID uint) error {
-	result := s.db.Where("id = ? ", imageGenID).Delete(&models.ImageGeneration{})
+func (s *ImageGenerationService) DeleteImageGeneration(imageGenID uint, deviceIDs ...string) error {
+	deviceID := firstDeviceID(deviceIDs)
+	query := s.db.Model(&models.ImageGeneration{}).Where("id = ?", imageGenID)
+	query = s.applyDeviceScope(query, deviceID)
+	result := query.Delete(&models.ImageGeneration{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -612,7 +662,8 @@ func (s *ImageGenerationService) DeleteImageGeneration(imageGenID uint) error {
 	return nil
 }
 
-func (s *ImageGenerationService) GenerateImagesForScene(sceneID string) ([]*models.ImageGeneration, error) {
+func (s *ImageGenerationService) GenerateImagesForScene(sceneID string, deviceIDs ...string) ([]*models.ImageGeneration, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	// 转换sceneID
 	sid, err := strconv.ParseUint(sceneID, 10, 32)
 	if err != nil {
@@ -621,7 +672,12 @@ func (s *ImageGenerationService) GenerateImagesForScene(sceneID string) ([]*mode
 	sceneIDUint := uint(sid)
 
 	var scene models.Scene
-	if err := s.db.Where("id = ?", sceneIDUint).First(&scene).Error; err != nil {
+	sceneQuery := s.db.Model(&models.Scene{}).Where("scenes.id = ?", sceneIDUint)
+	if deviceID != "" {
+		sceneQuery = sceneQuery.Joins("JOIN dramas ON dramas.id = scenes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := sceneQuery.First(&scene).Error; err != nil {
 		return nil, fmt.Errorf("scene not found")
 	}
 
@@ -639,7 +695,7 @@ func (s *ImageGenerationService) GenerateImagesForScene(sceneID string) ([]*mode
 		Prompt:    prompt,
 	}
 
-	imageGen, err := s.GenerateImage(req)
+	imageGen, err := s.GenerateImage(req, deviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -658,9 +714,15 @@ type BackgroundInfo struct {
 	StoryboardCount   int    `json:"scene_count"`
 }
 
-func (s *ImageGenerationService) BatchGenerateImagesForEpisode(episodeID string) ([]*models.ImageGeneration, error) {
+func (s *ImageGenerationService) BatchGenerateImagesForEpisode(episodeID string, deviceIDs ...string) ([]*models.ImageGeneration, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	var ep models.Episode
-	if err := s.db.Preload("Drama").Where("id = ?", episodeID).First(&ep).Error; err != nil {
+	episodeQuery := s.db.Preload("Drama").Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		episodeQuery = episodeQuery.Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := episodeQuery.First(&ep).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
 	}
 	// 从数据库读取已保存的场景
@@ -691,7 +753,7 @@ func (s *ImageGenerationService) BatchGenerateImagesForEpisode(episodeID string)
 			Prompt:       *bg.ImagePrompt,
 		}
 
-		imageGen, err := s.GenerateImage(req)
+		imageGen, err := s.GenerateImage(req, deviceID)
 		if err != nil {
 			s.log.Errorw("Failed to generate image for background",
 				"scene_id", bg.ID,
@@ -714,9 +776,15 @@ func (s *ImageGenerationService) BatchGenerateImagesForEpisode(episodeID string)
 }
 
 // GetScencesForEpisode 获取项目的场景列表（项目级）
-func (s *ImageGenerationService) GetScencesForEpisode(episodeID string) ([]*models.Scene, error) {
+func (s *ImageGenerationService) GetScencesForEpisode(episodeID string, deviceIDs ...string) ([]*models.Scene, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	var episode models.Episode
-	if err := s.db.Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	episodeQuery := s.db.Preload("Drama").Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		episodeQuery = episodeQuery.Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := episodeQuery.First(&episode).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
 	}
 
@@ -733,9 +801,15 @@ func (s *ImageGenerationService) GetScencesForEpisode(episodeID string) ([]*mode
 }
 
 // ExtractBackgroundsForEpisode 从剧本内容中提取场景并保存到项目级别数据库
-func (s *ImageGenerationService) ExtractBackgroundsForEpisode(episodeID string, model string) ([]*models.Scene, error) {
+func (s *ImageGenerationService) ExtractBackgroundsForEpisode(episodeID string, model string, deviceIDs ...string) ([]*models.Scene, error) {
+	deviceID := firstDeviceID(deviceIDs)
 	var episode models.Episode
-	if err := s.db.Preload("Storyboards").First(&episode, episodeID).Error; err != nil {
+	episodeQuery := s.db.Preload("Storyboards").Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		episodeQuery = episodeQuery.Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := episodeQuery.First(&episode).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
 	}
 
@@ -808,19 +882,26 @@ func (s *ImageGenerationService) extractBackgroundsFromScript(scriptContent stri
 	if scriptContent == "" {
 		return []BackgroundInfo{}, nil
 	}
+	deviceID := ""
+	if dramaID != 0 {
+		var drama models.Drama
+		if err := s.db.Select("device_id").Where("id = ?", dramaID).First(&drama).Error; err == nil {
+			deviceID = drama.DeviceID
+		}
+	}
 
 	// 获取AI客户端（如果指定了模型则使用指定的模型）
 	var client ai.AIClient
 	var err error
 	if model != "" {
 		s.log.Infow("Using specified model for background extraction", "model", model)
-		client, err = s.aiService.GetAIClientForModel("text", model)
+		client, err = s.aiService.GetAIClientForModel("text", model, deviceID)
 		if err != nil {
 			s.log.Warnw("Failed to get client for specified model, using default", "model", model, "error", err)
-			client, err = s.aiService.GetAIClient("text")
+			client, err = s.aiService.GetAIClient("text", deviceID)
 		}
 	} else {
-		client, err = s.aiService.GetAIClient("text")
+		client, err = s.aiService.GetAIClient("text", deviceID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AI client: %w", err)

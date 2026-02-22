@@ -383,7 +383,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   VideoPlay, VideoPause, Plus, FolderAdd, ArrowLeft, ArrowRight,
@@ -477,6 +477,7 @@ const availableStoryboards = computed(() => {
 })
 const timelineClips = ref<TimelineClip[]>([])
 const audioClips = ref<AudioClip[]>([])
+const manualPreviewUrl = ref('')
 const selectedClipId = ref<string | null>(null)
 const selectedAudioClipId = ref<string | null>(null)
 const previewPlayer = ref<HTMLVideoElement | null>(null)
@@ -542,6 +543,7 @@ const getSceneDesc = (scene: Scene) => {
 
 // 预览相关
 const currentPreviewUrl = computed(() => {
+  if (manualPreviewUrl.value) return manualPreviewUrl.value
   if (timelineClips.value.length === 0) return ''
   // 根据当前时间找到应该播放的片段
   const clip = timelineClips.value.find(c => 
@@ -561,10 +563,18 @@ const currentAudioUrl = computed(() => {
 })
 
 const previewScene = (scene: Scene) => {
-  if (previewPlayer.value) {
-    previewPlayer.value.src = scene.video_url
-    previewPlayer.value.play()
-  }
+  if (!scene.video_url) return
+
+  pauseTimeline()
+  manualPreviewUrl.value = scene.video_url
+
+  nextTick(() => {
+    if (previewPlayer.value) {
+      previewPlayer.value.currentTime = 0
+      previewPlayer.value.play().catch(() => {})
+      isPlaying.value = true
+    }
+  })
 }
 
 const handlePreviewLoaded = () => {
@@ -612,6 +622,7 @@ const handleAudioEnded = () => {
 
 const handlePreviewTimeUpdate = () => {
   if (!isPlaying.value || !previewPlayer.value) return
+  if (manualPreviewUrl.value) return
   
   // 找到当前播放的片段
   const currentClip = timelineClips.value.find(c => 
@@ -744,6 +755,11 @@ const switchToClip = async (clip: TimelineClip) => {
 }
 
 const handlePreviewEnded = () => {
+  if (manualPreviewUrl.value) {
+    pauseTimeline()
+    return
+  }
+
   // 视频自然结束，尝试播放下一个片段
   const currentClip = timelineClips.value.find(c => 
     currentTime.value >= c.position && currentTime.value < c.position + c.duration
@@ -854,7 +870,7 @@ const getAudioDuration = (audioUrl: string): Promise<number> => {
   })
 }
 
-const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
+const addClipToTimeline = async (scene: Scene, insertAtPosition?: number, options?: { silent?: boolean }) => {
   // 获取视频真实时长
   let videoDuration = scene.duration || 5
   if (scene.video_url) {
@@ -929,8 +945,10 @@ const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
   // 选中新添加的片段
   selectedClipId.value = newClip.id
   
-  const insertInfo = insertAfterIndex !== null ? '（已插入到选中片段后）' : ''
-  ElMessage.success(`已添加到时间线${insertInfo}`)
+  if (!options?.silent) {
+    const insertInfo = insertAfterIndex !== null ? '（已插入到选中片段后）' : ''
+    ElMessage.success(`已添加到时间线${insertInfo}`)
+  }
 }
 
 const addAudioClipFromAsset = async (asset: { id?: number | string; url: string; duration?: number; name?: string }, insertAtPosition?: number) => {
@@ -989,7 +1007,7 @@ const addAllScenesInOrder = async () => {
 
   // 批量添加（顺序添加以确保正确的时长）
   for (const scene of sortedScenes) {
-    await addClipToTimeline(scene)
+    await addClipToTimeline(scene, undefined, { silent: true })
   }
 
   ElMessage.success(`已批量添加 ${sortedScenes.length} 个场景到时间线`)
@@ -1091,6 +1109,7 @@ const applyTransition = () => {
 
 // 选择和删除片段
 const selectClip = (clip: TimelineClip) => {
+  manualPreviewUrl.value = ''
   selectedClipId.value = clip.id
 }
 
@@ -1527,6 +1546,7 @@ const zoomReset = () => {
 // 时间线点击跳转
 const clickTimeline = (event: MouseEvent) => {
   if (dragState.value.isDragging || dragState.value.isResizing) return
+  manualPreviewUrl.value = ''
   
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const clickX = event.clientX - rect.left - 100
@@ -1535,6 +1555,7 @@ const clickTimeline = (event: MouseEvent) => {
 }
 
 const seekToTime = (time: number) => {
+  manualPreviewUrl.value = ''
   currentTime.value = time
   
   // 找到对应时间的视频片段并播放
@@ -1592,6 +1613,7 @@ const playTimeline = () => {
     return
   }
   
+  manualPreviewUrl.value = ''
   isPlaying.value = true
   
   // 找到当前时间对应的视频片段
@@ -1646,6 +1668,11 @@ const pauseTimeline = () => {
 const togglePlay = () => {
   if (isPlaying.value) {
     pauseTimeline()
+  } else if (manualPreviewUrl.value && previewPlayer.value) {
+    isPlaying.value = true
+    previewPlayer.value.play().catch(() => {
+      isPlaying.value = false
+    })
   } else {
     playTimeline()
   }
@@ -1975,7 +2002,6 @@ const updateClipsByStoryboardId = (storyboardId: string | number, newVideoUrl: s
   
   if (updated) {
     console.log('✅ 时间线视频已更新')
-    ElMessage.success('时间线中的视频已自动更新')
   } else {
     console.log('⚠️ 没有找到匹配的时间线片段')
   }

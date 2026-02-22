@@ -215,4 +215,43 @@ const formatDate = (dateString: string) => {
 .dark .config-card :deep(.el-card__body) {
   background: transparent;
 }
+
+@media (max-width: 768px) {
+  .config-card :deep(.el-card__body) {
+    padding: 1rem;
+  }
+
+  .config-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .config-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .config-actions .el-button {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 120px;
+    justify-content: flex-start;
+  }
+
+  .info-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .info-item label {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .config-actions .el-button {
+    flex: 1 1 100%;
+  }
+}
 </style>

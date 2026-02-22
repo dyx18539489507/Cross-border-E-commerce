@@ -125,10 +125,29 @@ func (f *FFmpeg) MergeVideos(opts *MergeOptions) (string, error) {
 	return opts.OutputPath, nil
 }
 
-func (f *FFmpeg) downloadVideo(url, destPath string) (string, error) {
-	f.log.Infow("Downloading video", "url", url, "dest", destPath)
+func (f *FFmpeg) downloadVideo(source, destPath string) (string, error) {
+	trimmed := strings.TrimSpace(source)
+	f.log.Infow("Downloading video", "url", trimmed, "dest", destPath)
 
-	resp, err := http.Get(url)
+	if trimmed == "" {
+		return "", fmt.Errorf("video source is empty")
+	}
+
+	if strings.HasPrefix(trimmed, "file://") {
+		trimmed = strings.TrimPrefix(trimmed, "file://")
+	}
+
+	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+		if _, err := os.Stat(trimmed); err == nil {
+			if err := f.copyFile(trimmed, destPath); err != nil {
+				return "", fmt.Errorf("failed to copy local video: %w", err)
+			}
+			return destPath, nil
+		}
+		return "", fmt.Errorf("failed to download: invalid source %q", source)
+	}
+
+	resp, err := http.Get(trimmed)
 	if err != nil {
 		return "", fmt.Errorf("failed to download: %w", err)
 	}

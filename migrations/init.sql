@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS dramas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT,
+    target_country TEXT NOT NULL DEFAULT '',
+    material_composition TEXT,
+    marketing_selling_points TEXT,
+    compliance_score INTEGER NOT NULL DEFAULT 0,
+    compliance_level TEXT NOT NULL DEFAULT 'green',
+    compliance_report TEXT, -- JSON存储
     genre TEXT,
     style TEXT NOT NULL DEFAULT 'realistic',
     total_episodes INTEGER NOT NULL DEFAULT 1,
@@ -224,6 +230,35 @@ CREATE INDEX IF NOT EXISTS idx_video_merges_episode_id ON video_merges(episode_i
 CREATE INDEX IF NOT EXISTS idx_video_merges_drama_id ON video_merges(drama_id);
 CREATE INDEX IF NOT EXISTS idx_video_merges_status ON video_merges(status);
 CREATE INDEX IF NOT EXISTS idx_video_merges_deleted_at ON video_merges(deleted_at);
+
+-- 视频分发记录表
+CREATE TABLE IF NOT EXISTS video_distributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    merge_id INTEGER NOT NULL,
+    episode_id INTEGER NOT NULL,
+    drama_id INTEGER NOT NULL,
+    platform TEXT NOT NULL, -- tiktok, youtube, instagram, x
+    title TEXT,
+    description TEXT,
+    hashtags TEXT, -- JSON存储
+    source_url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, processing, published, failed
+    message TEXT,
+    published_url TEXT,
+    error_msg TEXT,
+    started_at DATETIME,
+    completed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_distributions_merge_id ON video_distributions(merge_id);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_episode_id ON video_distributions(episode_id);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_drama_id ON video_distributions(drama_id);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_platform ON video_distributions(platform);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_status ON video_distributions(status);
+CREATE INDEX IF NOT EXISTS idx_video_distributions_deleted_at ON video_distributions(deleted_at);
 
 -- ======================================
 -- 3. 角色库表

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,6 +24,21 @@ func NewAssetService(db *gorm.DB, log *logger.Logger) *AssetService {
 		log:    log,
 		ffmpeg: ffmpeg.NewFFmpeg(log),
 	}
+}
+
+func firstAssetDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
+func (s *AssetService) applyAssetDeviceScope(query *gorm.DB, deviceID string) *gorm.DB {
+	if deviceID == "" {
+		return query
+	}
+	dramaSubQuery := s.db.Model(&models.Drama{}).Select("id").Where("device_id = ?", deviceID)
+	return query.Where("drama_id IN (?)", dramaSubQuery)
 }
 
 type CreateAssetRequest struct {
@@ -67,7 +83,8 @@ type ListAssetsRequest struct {
 	PageSize     int               `json:"page_size"`
 }
 
-func (s *AssetService) CreateAsset(req *CreateAssetRequest) (*models.Asset, error) {
+func (s *AssetService) CreateAsset(req *CreateAssetRequest, deviceIDs ...string) (*models.Asset, error) {
+	deviceID := firstAssetDeviceID(deviceIDs)
 	var dramaID *uint
 	if req.DramaID != nil && *req.DramaID != "" {
 		id, err := strconv.ParseUint(*req.DramaID, 10, 32)
@@ -78,10 +95,16 @@ func (s *AssetService) CreateAsset(req *CreateAssetRequest) (*models.Asset, erro
 	}
 
 	if dramaID != nil {
+		dramaQuery := s.db.Where("id = ?", *dramaID)
+		if deviceID != "" {
+			dramaQuery = dramaQuery.Where("device_id = ?", deviceID)
+		}
 		var drama models.Drama
-		if err := s.db.Where("id = ?", *dramaID).First(&drama).Error; err != nil {
+		if err := dramaQuery.First(&drama).Error; err != nil {
 			return nil, fmt.Errorf("drama not found")
 		}
+	} else if deviceID != "" {
+		return nil, fmt.Errorf("drama_id is required")
 	}
 
 	asset := &models.Asset{
@@ -110,9 +133,12 @@ func (s *AssetService) CreateAsset(req *CreateAssetRequest) (*models.Asset, erro
 	return asset, nil
 }
 
-func (s *AssetService) UpdateAsset(assetID uint, req *UpdateAssetRequest) (*models.Asset, error) {
+func (s *AssetService) UpdateAsset(assetID uint, req *UpdateAssetRequest, deviceIDs ...string) (*models.Asset, error) {
+	deviceID := firstAssetDeviceID(deviceIDs)
 	var asset models.Asset
-	if err := s.db.Where("id = ?", assetID).First(&asset).Error; err != nil {
+	query := s.db.Model(&models.Asset{}).Where("id = ?", assetID)
+	query = s.applyAssetDeviceScope(query, deviceID)
+	if err := query.First(&asset).Error; err != nil {
 		return nil, fmt.Errorf("asset not found")
 	}
 
@@ -146,9 +172,12 @@ func (s *AssetService) UpdateAsset(assetID uint, req *UpdateAssetRequest) (*mode
 	return &asset, nil
 }
 
-func (s *AssetService) GetAsset(assetID uint) (*models.Asset, error) {
+func (s *AssetService) GetAsset(assetID uint, deviceIDs ...string) (*models.Asset, error) {
+	deviceID := firstAssetDeviceID(deviceIDs)
 	var asset models.Asset
-	if err := s.db.Where("id = ? ", assetID).First(&asset).Error; err != nil {
+	query := s.db.Model(&models.Asset{}).Where("id = ?", assetID)
+	query = s.applyAssetDeviceScope(query, deviceID)
+	if err := query.First(&asset).Error; err != nil {
 		return nil, err
 	}
 
@@ -157,8 +186,10 @@ func (s *AssetService) GetAsset(assetID uint) (*models.Asset, error) {
 	return &asset, nil
 }
 
-func (s *AssetService) ListAssets(req *ListAssetsRequest) ([]models.Asset, int64, error) {
+func (s *AssetService) ListAssets(req *ListAssetsRequest, deviceIDs ...string) ([]models.Asset, int64, error) {
+	deviceID := firstAssetDeviceID(deviceIDs)
 	query := s.db.Model(&models.Asset{})
+	query = s.applyAssetDeviceScope(query, deviceID)
 
 	if req.DramaID != nil {
 		var dramaID uint64
@@ -206,8 +237,11 @@ func (s *AssetService) ListAssets(req *ListAssetsRequest) ([]models.Asset, int64
 	return assets, total, nil
 }
 
-func (s *AssetService) DeleteAsset(assetID uint) error {
-	result := s.db.Where("id = ?", assetID).Delete(&models.Asset{})
+func (s *AssetService) DeleteAsset(assetID uint, deviceIDs ...string) error {
+	deviceID := firstAssetDeviceID(deviceIDs)
+	query := s.db.Model(&models.Asset{}).Where("id = ?", assetID)
+	query = s.applyAssetDeviceScope(query, deviceID)
+	result := query.Delete(&models.Asset{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -217,9 +251,15 @@ func (s *AssetService) DeleteAsset(assetID uint) error {
 	return nil
 }
 
-func (s *AssetService) ImportFromImageGen(imageGenID uint) (*models.Asset, error) {
+func (s *AssetService) ImportFromImageGen(imageGenID uint, deviceIDs ...string) (*models.Asset, error) {
+	deviceID := firstAssetDeviceID(deviceIDs)
 	var imageGen models.ImageGeneration
-	if err := s.db.Where("id = ? ", imageGenID).First(&imageGen).Error; err != nil {
+	imageQuery := s.db.Model(&models.ImageGeneration{}).Where("id = ?", imageGenID)
+	if deviceID != "" {
+		dramaSubQuery := s.db.Model(&models.Drama{}).Select("id").Where("device_id = ?", deviceID)
+		imageQuery = imageQuery.Where("drama_id IN (?)", dramaSubQuery)
+	}
+	if err := imageQuery.First(&imageGen).Error; err != nil {
 		return nil, fmt.Errorf("image generation not found")
 	}
 
@@ -245,9 +285,24 @@ func (s *AssetService) ImportFromImageGen(imageGenID uint) (*models.Asset, error
 	return asset, nil
 }
 
-func (s *AssetService) ImportFromVideoGen(videoGenID uint) (*models.Asset, error) {
+func (s *AssetService) ImportFromVideoGen(videoGenID uint, deviceIDs ...string) (*models.Asset, error) {
+	deviceID := firstAssetDeviceID(deviceIDs)
+	var existing models.Asset
+	existingQuery := s.db.Model(&models.Asset{}).Where("type = ? AND video_gen_id = ?", models.AssetTypeVideo, videoGenID)
+	existingQuery = s.applyAssetDeviceScope(existingQuery, deviceID)
+	if err := existingQuery.First(&existing).Error; err == nil {
+		return nil, fmt.Errorf("该视频已在素材库中")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing video asset: %w", err)
+	}
+
 	var videoGen models.VideoGeneration
-	if err := s.db.Preload("Storyboard.Episode").Where("id = ? ", videoGenID).First(&videoGen).Error; err != nil {
+	videoQuery := s.db.Preload("Storyboard.Episode").Model(&models.VideoGeneration{}).Where("id = ?", videoGenID)
+	if deviceID != "" {
+		dramaSubQuery := s.db.Model(&models.Drama{}).Select("id").Where("device_id = ?", deviceID)
+		videoQuery = videoQuery.Where("drama_id IN (?)", dramaSubQuery)
+	}
+	if err := videoQuery.First(&videoGen).Error; err != nil {
 		return nil, fmt.Errorf("video generation not found")
 	}
 

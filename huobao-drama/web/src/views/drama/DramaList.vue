@@ -24,8 +24,7 @@
       <!-- Project Grid / 项目网格 -->
       <div v-loading="loading" class="projects-grid" :class="{ 'is-empty': !loading && dramas.length === 0 }">
         <!-- Empty state / 空状态 -->
-        <EmptyState v-if="!loading && dramas.length === 0" :title="$t('drama.empty')"
-          :description="$t('drama.emptyHint')" :icon="Film">
+        <EmptyState v-if="!loading && dramas.length === 0" :title="$t('drama.empty')" :icon="Film">
           <el-button type="primary" @click="handleCreate">
             <el-icon>
               <Plus />
@@ -51,8 +50,14 @@
 
       <!-- Edit Dialog / 编辑对话框 -->
       <el-dialog v-model="editDialogVisible" :title="$t('drama.editProject')" width="520px"
-        :close-on-click-modal="false" class="edit-dialog">
-        <el-form :model="editForm" label-position="top" v-loading="editLoading" class="edit-form">
+        :close-on-click-modal="false" class="edit-dialog dialog-form-safe">
+        <el-form
+          :model="editForm"
+          label-position="top"
+          v-loading="editLoading"
+          class="edit-form long-form form-enter-flow"
+          @keydown.enter="handleFormEnterNavigation"
+        >
           <el-form-item :label="$t('drama.projectName')" required>
             <el-input v-model="editForm.title" :placeholder="$t('drama.projectNamePlaceholder')" size="large" />
           </el-form-item>
@@ -117,6 +122,7 @@ import {
 import { dramaAPI } from '@/api/drama'
 import type { Drama, DramaListQuery } from '@/types/drama'
 import { AppHeader, ProjectCard, ActionButton, CreateDramaDialog, EmptyState } from '@/components/common'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 const router = useRouter()
 const loading = ref(false)
@@ -300,38 +306,43 @@ onMounted(() => {
    ======================================== */
 .projects-grid {
   padding: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  /* grid-template-columns: repeat(2, 1fr); */
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: var(--space-2);
   margin-bottom: var(--space-4);
   min-height: 300px;
   padding-bottom: 4rem;
 }
 
+@media (min-width: 480px) {
+  .projects-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (min-width: 640px) {
   .projects-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-2);
   }
 }
 
 @media (min-width: 900px) {
   .projects-grid {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--space-3);
   }
 }
 
 @media (min-width: 1200px) {
   .projects-grid {
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1500px) {
   .projects-grid {
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
@@ -355,6 +366,8 @@ onMounted(() => {
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--border-primary);
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
 }
 
 .dark .pagination-sticky {
@@ -459,6 +472,52 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .projects-grid {
+    padding-bottom: 5rem;
+  }
+
+  .pagination-inner {
+    justify-content: center;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .pagination-controls {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .pagination-size {
+    display: none;
+  }
+
+  .dialog-footer {
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+
+  .dialog-footer .el-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .projects-grid {
+    padding: 8px;
+    padding-bottom: 5.25rem;
+  }
+
+  .pagination-inner {
+    padding: 8px;
+  }
+
+  .pagination-controls :deep(.el-pagination) {
+    justify-content: center;
+  }
 }
 
 /* Delete button style */

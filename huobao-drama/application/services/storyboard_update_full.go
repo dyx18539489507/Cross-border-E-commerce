@@ -7,10 +7,17 @@ import (
 )
 
 // UpdateStoryboard 更新分镜的所有字段，并重新生成提示词
-func (s *StoryboardService) UpdateStoryboard(storyboardID string, updates map[string]interface{}) error {
+func (s *StoryboardService) UpdateStoryboard(storyboardID string, updates map[string]interface{}, deviceIDs ...string) error {
+	deviceID := firstStoryboardDeviceID(deviceIDs)
 	// 查找分镜
 	var storyboard models.Storyboard
-	if err := s.db.First(&storyboard, storyboardID).Error; err != nil {
+	storyboardQuery := s.db.Model(&models.Storyboard{}).Where("storyboards.id = ?", storyboardID)
+	if deviceID != "" {
+		storyboardQuery = storyboardQuery.Joins("JOIN episodes ON episodes.id = storyboards.episode_id").
+			Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := storyboardQuery.First(&storyboard).Error; err != nil {
 		return fmt.Errorf("storyboard not found: %w", err)
 	}
 

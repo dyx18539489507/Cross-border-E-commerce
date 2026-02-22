@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -23,9 +26,10 @@ import (
 // 旧版本地静态音效（configs/sfx_gaudio.json）逻辑已停用。
 // 当前实现改为聚合 Freesound + Pixabay 两个外部音效源。
 type SfxHandler struct {
-	cfg        *config.Config
-	log        *logger.Logger
-	httpClient *http.Client
+	cfg                *config.Config
+	log                *logger.Logger
+	httpClient         *http.Client
+	sfxNameTranslation sync.Map
 }
 
 type SFXItem struct {
@@ -68,16 +72,13 @@ func (h *SfxHandler) List(c *gin.Context) {
 	keywords := strings.TrimSpace(c.Query("keywords"))
 	category := strings.TrimSpace(c.DefaultQuery("category", "热门"))
 	if keywords == "" {
-		switch strings.ToLower(category) {
-		case "", "all", "热门":
-		default:
-			keywords = category
-		}
+		keywords = mapSfxCategoryToQuery(category)
 	}
 
 	limit := parsePositiveInt(c.DefaultQuery("limit", ""), h.defaultLimit(), 60)
+	page := parsePositiveInt(c.DefaultQuery("page", ""), 1, 200)
 
-	items, warnings, err := h.searchSFX(c.Request.Context(), keywords, limit)
+	items, warnings, err := h.searchSFX(c.Request.Context(), keywords, limit, page)
 	if err != nil && len(items) == 0 {
 		resp := gin.H{"error": "failed to load sfx"}
 		if len(warnings) > 0 {
@@ -88,13 +89,38 @@ func (h *SfxHandler) List(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"items": items,
-		"total": len(items),
+		"items":    items,
+		"total":    len(items),
+		"page":     page,
+		"limit":    limit,
+		"has_more": len(items) >= limit,
 	}
 	if len(warnings) > 0 {
 		resp["warnings"] = warnings
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func mapSfxCategoryToQuery(category string) string {
+	trimmed := strings.TrimSpace(category)
+	normalized := strings.ToLower(trimmed)
+	switch normalized {
+	case "", "all", "热门", "hot":
+		return "sound effect"
+	case "转场", "transition":
+		return "transition whoosh sweep swipe"
+	case "笑声", "laugh", "laughter":
+		return "laugh laughter crowd laugh"
+	case "尴尬", "awkward":
+		return "awkward record scratch fail buzzer"
+	case "震惊", "shock", "surprise":
+		return "dramatic hit shock stinger surprise"
+	default:
+		if trimmed == "" {
+			return "sound effect"
+		}
+		return fmt.Sprintf("%s sound effect", trimmed)
+	}
 }
 
 func (h *SfxHandler) defaultLimit() int {
@@ -104,12 +130,15 @@ func (h *SfxHandler) defaultLimit() int {
 	return 20
 }
 
-func (h *SfxHandler) searchSFX(ctx context.Context, query string, limit int) ([]SFXItem, []string, error) {
+func (h *SfxHandler) searchSFX(ctx context.Context, query string, limit int, page int) ([]SFXItem, []string, error) {
 	if limit <= 0 {
 		limit = h.defaultLimit()
 	}
 	if limit > 60 {
 		limit = 60
+	}
+	if page <= 0 {
+		page = 1
 	}
 
 	perSource := limit
@@ -126,14 +155,14 @@ func (h *SfxHandler) searchSFX(ctx context.Context, query string, limit int) ([]
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		items, err := h.fetchFreesound(ctx, query, perSource)
+		items, err := h.fetchFreesound(ctx, query, perSource, page)
 		results <- sfxSearchResult{source: "freesound", items: items, err: err}
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		items, err := h.fetchPixabay(ctx, query, perSource)
+		items, err := h.fetchPixabay(ctx, query, perSource, page)
 		results <- sfxSearchResult{source: "pixabay", items: items, err: err}
 	}()
 
@@ -176,6 +205,12 @@ func (h *SfxHandler) searchSFX(ctx context.Context, query string, limit int) ([]
 	for i := range unique {
 		unique[i].Rank = i + 1
 	}
+	if err := h.translateSFXNames(ctx, unique); err != nil {
+		warnings = append(warnings, fmt.Sprintf("translation: %v", err))
+		if h.log != nil {
+			h.log.Warnw("SFX name translation failed", "error", err)
+		}
+	}
 
 	return unique, warnings, nil
 }
@@ -197,7 +232,7 @@ func dedupeSFX(items []SFXItem) []SFXItem {
 	return out
 }
 
-func (h *SfxHandler) fetchFreesound(ctx context.Context, query string, limit int) ([]SFXItem, error) {
+func (h *SfxHandler) fetchFreesound(ctx context.Context, query string, limit int, page int) ([]SFXItem, error) {
 	apiKey := ""
 	baseURL := "https://freesound.org/apiv2"
 	if h.cfg != nil {
@@ -216,6 +251,7 @@ func (h *SfxHandler) fetchFreesound(ctx context.Context, query string, limit int
 	values.Set("token", apiKey)
 	values.Set("sort", "downloads_desc")
 	values.Set("page_size", strconv.Itoa(limit))
+	values.Set("page", strconv.Itoa(page))
 	values.Set("fields", "id,name,description,tags,previews,images,duration,username,num_downloads,avg_rating,num_ratings")
 
 	requestURL := endpoint + "?" + values.Encode()
@@ -315,7 +351,7 @@ func (h *SfxHandler) fetchFreesound(ctx context.Context, query string, limit int
 	return items, nil
 }
 
-func (h *SfxHandler) fetchPixabay(ctx context.Context, query string, limit int) ([]SFXItem, error) {
+func (h *SfxHandler) fetchPixabay(ctx context.Context, query string, limit int, page int) ([]SFXItem, error) {
 	apiKey := ""
 	baseURL := "https://pixabay.com"
 	if h.cfg != nil {
@@ -336,7 +372,7 @@ func (h *SfxHandler) fetchPixabay(ctx context.Context, query string, limit int) 
 
 	var errs []string
 	for _, endpoint := range candidates {
-		items, err := h.fetchPixabayByEndpoint(ctx, endpoint, apiKey, query, limit)
+		items, err := h.fetchPixabayByEndpoint(ctx, endpoint, apiKey, query, limit, page)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s -> %v", endpoint, err))
 			continue
@@ -350,10 +386,11 @@ func (h *SfxHandler) fetchPixabay(ctx context.Context, query string, limit int) 
 	return nil, errors.New(strings.Join(errs, " | "))
 }
 
-func (h *SfxHandler) fetchPixabayByEndpoint(ctx context.Context, endpoint, apiKey, query string, limit int) ([]SFXItem, error) {
+func (h *SfxHandler) fetchPixabayByEndpoint(ctx context.Context, endpoint, apiKey, query string, limit int, page int) ([]SFXItem, error) {
 	values := url.Values{}
 	values.Set("key", apiKey)
 	values.Set("per_page", strconv.Itoa(limit))
+	values.Set("page", strconv.Itoa(page))
 	values.Set("order", "popular")
 	values.Set("safesearch", "true")
 	if strings.TrimSpace(query) != "" {
@@ -564,4 +601,210 @@ func firstTagOrFallback(tags string, fallback string) string {
 		return trimmed
 	}
 	return candidate
+}
+
+func (h *SfxHandler) translateSFXNames(ctx context.Context, items []SFXItem) error {
+	cfg := h.getTranslationConfig()
+	if !cfg.enabled || cfg.appID == "" || cfg.apiKey == "" {
+		return nil
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	queryToIndexes := make(map[string][]int)
+	queryOrder := make([]string, 0, len(items))
+	for i := range items {
+		if strings.TrimSpace(items[i].Name) == "" {
+			continue
+		}
+		if containsChineseText(items[i].Name) {
+			continue
+		}
+		query := buildSFXTranslationQuery(items[i].Name)
+		if query == "" {
+			continue
+		}
+		if cached, ok := h.sfxNameTranslation.Load(query); ok {
+			if translated, ok := cached.(string); ok && strings.TrimSpace(translated) != "" {
+				items[i].Name = translated
+			}
+			continue
+		}
+		if _, exists := queryToIndexes[query]; !exists {
+			queryOrder = append(queryOrder, query)
+		}
+		queryToIndexes[query] = append(queryToIndexes[query], i)
+	}
+
+	if len(queryOrder) == 0 {
+		return nil
+	}
+
+	const batchSize = 25
+	for start := 0; start < len(queryOrder); start += batchSize {
+		end := start + batchSize
+		if end > len(queryOrder) {
+			end = len(queryOrder)
+		}
+		batchQueries := queryOrder[start:end]
+		translations, err := h.translateBatchWithYoudao(ctx, cfg, batchQueries)
+		if err != nil {
+			return err
+		}
+		for i, source := range batchQueries {
+			translated := ""
+			if i < len(translations) {
+				translated = strings.TrimSpace(translations[i])
+			}
+			if translated == "" {
+				continue
+			}
+			h.sfxNameTranslation.Store(source, translated)
+			for _, idx := range queryToIndexes[source] {
+				items[idx].Name = translated
+			}
+		}
+	}
+
+	return nil
+}
+
+type sfxTranslationRuntimeConfig struct {
+	enabled  bool
+	appID    string
+	apiKey   string
+	endpoint string
+	from     string
+	to       string
+}
+
+func (h *SfxHandler) getTranslationConfig() sfxTranslationRuntimeConfig {
+	cfg := sfxTranslationRuntimeConfig{
+		endpoint: "https://openapi.youdao.com/api",
+		from:     "auto",
+		to:       "zh-CHS",
+	}
+	if h.cfg == nil {
+		return cfg
+	}
+	source := h.cfg.SFX.Translation
+	cfg.enabled = source.Enabled
+	cfg.appID = strings.TrimSpace(source.AppID)
+	cfg.apiKey = strings.TrimSpace(source.APIKey)
+	if endpoint := strings.TrimSpace(source.Endpoint); endpoint != "" {
+		cfg.endpoint = endpoint
+	}
+	if from := strings.TrimSpace(source.From); from != "" {
+		cfg.from = from
+	}
+	if to := strings.TrimSpace(source.To); to != "" {
+		cfg.to = to
+	}
+	return cfg
+}
+
+type youdaoTranslateResponse struct {
+	ErrorCode   string   `json:"errorCode"`
+	Translation []string `json:"translation"`
+}
+
+func (h *SfxHandler) translateBatchWithYoudao(ctx context.Context, cfg sfxTranslationRuntimeConfig, queries []string) ([]string, error) {
+	if len(queries) == 0 {
+		return nil, nil
+	}
+
+	rawQuery := strings.Join(queries, "\n")
+	salt := strconv.FormatInt(time.Now().UnixNano(), 10)
+	curtime := strconv.FormatInt(time.Now().Unix(), 10)
+	signSource := cfg.appID + truncateForYoudaoSign(rawQuery) + salt + curtime + cfg.apiKey
+	signBytes := sha256.Sum256([]byte(signSource))
+	sign := hex.EncodeToString(signBytes[:])
+
+	form := url.Values{}
+	form.Set("q", rawQuery)
+	form.Set("from", cfg.from)
+	form.Set("to", cfg.to)
+	form.Set("appKey", cfg.appID)
+	form.Set("salt", salt)
+	form.Set("sign", sign)
+	form.Set("signType", "v3")
+	form.Set("curtime", curtime)
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", "DramaGenerator/1.0")
+
+	response, err := h.httpClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("youdao status %d: %s", response.StatusCode, truncateString(string(body), 160))
+	}
+
+	var parsed youdaoTranslateResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	if parsed.ErrorCode != "" && parsed.ErrorCode != "0" {
+		return nil, fmt.Errorf("youdao errorCode=%s", parsed.ErrorCode)
+	}
+
+	results := parsed.Translation
+	if len(queries) > 1 && len(results) == 1 && strings.Contains(results[0], "\n") {
+		results = strings.Split(results[0], "\n")
+	}
+	if len(results) < len(queries) {
+		padded := make([]string, len(queries))
+		copy(padded, results)
+		results = padded
+	}
+	if len(results) > len(queries) {
+		results = results[:len(queries)]
+	}
+	return results, nil
+}
+
+func truncateForYoudaoSign(text string) string {
+	runes := []rune(text)
+	length := len(runes)
+	if length <= 20 {
+		return text
+	}
+	return string(runes[:10]) + strconv.Itoa(length) + string(runes[length-10:])
+}
+
+func buildSFXTranslationQuery(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	for _, ext := range []string{".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac"} {
+		if strings.HasSuffix(strings.ToLower(trimmed), ext) {
+			trimmed = strings.TrimSpace(trimmed[:len(trimmed)-len(ext)])
+			break
+		}
+	}
+	replaced := strings.NewReplacer("_", " ", "-", " ").Replace(trimmed)
+	return strings.Join(strings.Fields(replaced), " ")
+}
+
+func containsChineseText(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
 }

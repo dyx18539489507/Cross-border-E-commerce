@@ -92,13 +92,27 @@
           </el-descriptions>
         </el-card>
 
-        <el-dialog v-model="editDescriptionDialogVisible" title="修改项目描述" width="720px" class="edit-desc-dialog">
-          <el-input
-            v-model="editDescriptionValue"
-            type="textarea"
-            :autosize="{ minRows: 8, maxRows: 16 }"
-            :placeholder="$t('drama.management.projectDesc')"
-          />
+        <el-dialog
+          v-model="editDescriptionDialogVisible"
+          title="修改项目描述"
+          width="720px"
+          class="edit-desc-dialog dialog-form-safe"
+        >
+          <el-form
+            ref="editDescriptionFormRef"
+            label-width="0"
+            class="long-form form-enter-flow"
+            @keydown.enter="handleFormEnterNavigation"
+          >
+            <el-form-item>
+              <el-input
+                v-model="editDescriptionValue"
+                type="textarea"
+                :autosize="{ minRows: 8, maxRows: 16 }"
+                :placeholder="$t('drama.management.projectDesc')"
+              />
+            </el-form-item>
+          </el-form>
           <template #footer>
             <el-button @click="editDescriptionDialogVisible = false">{{ $t('common.cancel') }}</el-button>
             <el-button type="primary" :loading="savingDescription" @click="saveDescription">
@@ -205,15 +219,15 @@
           <el-col :span="6" v-for="scene in scenes" :key="scene.id">
             <el-card shadow="hover" class="scene-card">
               <div class="scene-preview">
-                <img v-if="scene.image_url" :src="fixImageUrl(scene.image_url)" :alt="scene.name" />
+                <img v-if="scene.image_url" :src="fixImageUrl(scene.image_url)" :alt="getSceneTitle(scene)" />
                 <div v-else class="scene-placeholder">
                   <el-icon :size="48"><Picture /></el-icon>
                 </div>
               </div>
 
               <div class="scene-info">
-                <h4>{{ scene.name }}</h4>
-                <p class="desc">{{ scene.description }}</p>
+                <h4>{{ getSceneTitle(scene) }}</h4>
+                <p class="desc">{{ getSceneDescription(scene) }}</p>
               </div>
 
               <div class="scene-actions">
@@ -230,8 +244,14 @@
       </div>
 
       <!-- 添加角色对话框 -->
-    <el-dialog v-model="addCharacterDialogVisible" :title="$t('character.add')" width="600px">
-      <el-form :model="newCharacter" label-width="100px">
+    <el-dialog v-model="addCharacterDialogVisible" :title="$t('character.add')" width="600px" class="dialog-form-safe">
+      <el-form
+        ref="characterFormRef"
+        :model="newCharacter"
+        label-width="100px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('character.name')">
           <el-input v-model="newCharacter.name" :placeholder="$t('character.name')" />
         </el-form-item>
@@ -259,8 +279,14 @@
     </el-dialog>
 
     <!-- 添加场景对话框 -->
-    <el-dialog v-model="addSceneDialogVisible" :title="$t('common.add')" width="600px">
-      <el-form :model="newScene" label-width="100px">
+    <el-dialog v-model="addSceneDialogVisible" :title="$t('common.add')" width="600px" class="dialog-form-safe">
+      <el-form
+        ref="sceneFormRef"
+        :model="newScene"
+        label-width="100px"
+        class="long-form form-enter-flow"
+        @keydown.enter="handleFormEnterNavigation"
+      >
         <el-form-item :label="$t('common.name')">
           <el-input v-model="newScene.location" :placeholder="$t('common.name')" />
         </el-form-item>
@@ -278,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Document, User, Picture, Plus } from '@element-plus/icons-vue'
@@ -286,6 +312,7 @@ import { dramaAPI } from '@/api/drama'
 import { characterLibraryAPI } from '@/api/character-library'
 import type { Drama } from '@/types/drama'
 import { AppHeader, StatCard, EmptyState } from '@/components/common'
+import { handleFormEnterNavigation } from '@/utils/formFocus'
 
 const router = useRouter()
 const route = useRoute()
@@ -297,9 +324,12 @@ const scenes = ref<any[]>([])
 const editDescriptionDialogVisible = ref(false)
 const editDescriptionValue = ref('')
 const savingDescription = ref(false)
+const editDescriptionFormRef = ref<{ $el?: HTMLElement } | null>(null)
 
 const addCharacterDialogVisible = ref(false)
 const addSceneDialogVisible = ref(false)
+const characterFormRef = ref<{ $el?: HTMLElement } | null>(null)
+const sceneFormRef = ref<{ $el?: HTMLElement } | null>(null)
 
 const newCharacter = ref({
   name: '',
@@ -409,10 +439,55 @@ const formatDate = (date?: string) => {
   return new Date(date).toLocaleString('zh-CN')
 }
 
-const fixImageUrl = (url: string) => {
-  if (!url) return ''
-  if (url.startsWith('http')) return url
-  return `${import.meta.env.VITE_API_BASE_URL}${url}`
+const fixImageUrl = (url?: string | null): string => {
+  const value = (url || '').trim()
+  if (!value) return ''
+  if (value.startsWith('blob:') || value.startsWith('data:')) return value
+  if (value.startsWith('/api/v1/media/proxy')) {
+    try {
+      const parsed = new URL(value, window.location.origin)
+      const raw = parsed.searchParams.get('url')
+      if (raw) return fixImageUrl(decodeURIComponent(raw))
+    } catch {
+      // keep original value
+    }
+    return value
+  }
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    try {
+      const parsed = new URL(value)
+      const isTunnelHost =
+        parsed.hostname.endsWith('.loca.lt') ||
+        parsed.hostname.includes('ngrok') ||
+        parsed.hostname.endsWith('.trycloudflare.com')
+      if (isTunnelHost && parsed.pathname.startsWith('/static/')) {
+        return `${parsed.pathname}${parsed.search}`
+      }
+    } catch {
+      // keep original value
+    }
+    return value
+  }
+  if (value.startsWith('/static/')) return value
+  if (value.startsWith('/data/')) return `/static${value}`
+  if (value.startsWith('data/')) return `/static/${value}`
+  if (value.startsWith('/')) return value
+  return `/static/${value}`
+}
+
+const getSceneTitle = (scene: any) => {
+  const location = (scene?.location || scene?.name || '').trim()
+  const sceneTime = (scene?.time || '').trim()
+
+  if (location && sceneTime) return `${location} · ${sceneTime}`
+  if (location) return location
+  if (sceneTime) return sceneTime
+  return '未命名场景'
+}
+
+const getSceneDescription = (scene: any) => {
+  const description = (scene?.prompt || scene?.description || '').trim()
+  return description || '暂无场景描述'
 }
 
 const createNewEpisode = () => {
@@ -589,7 +664,7 @@ const deleteScene = async (scene: any) => {
 
   try {
     await ElMessageBox.confirm(
-      `确定要删除场景"${scene.name || scene.location}"吗？此操作不可恢复。`,
+      `确定要删除场景"${getSceneTitle(scene)}"吗？此操作不可恢复。`,
       '删除确认',
       {
         confirmButtonText: '确定',
@@ -598,9 +673,18 @@ const deleteScene = async (scene: any) => {
       }
     )
 
-    await dramaAPI.deleteScene(scene.id.toString())
+    const sceneId = String(scene.id)
+    await dramaAPI.deleteScene(sceneId)
+
+    // 先更新本地状态，保证删除后无需手动刷新
+    scenes.value = scenes.value.filter(item => String(item.id) !== sceneId)
+    if (drama.value?.scenes) {
+      drama.value.scenes = drama.value.scenes.filter(item => String(item.id) !== sceneId)
+    }
+
     ElMessage.success('场景已删除')
-    await loadScenes()
+    // 再拉取一次服务端最新数据，避免本地状态和后端不一致
+    await loadDramaData()
   } catch (error: any) {
     if (error !== 'cancel') {
       console.error('删除场景失败:', error)
@@ -625,7 +709,7 @@ onMounted(() => {
    Page Layout / 页面布局 - 紧凑边距
    ======================================== */
 .page-container {
-  min-height: 100vh;
+  min-height: var(--app-vh, 100vh);
   background: var(--bg-primary);
   /* padding: var(--space-2) var(--space-3); */
   transition: background var(--transition-normal);

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/config"
@@ -26,6 +27,7 @@ func NewAssetHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger) *Asset
 }
 
 func (h *AssetHandler) CreateAsset(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var req services.CreateAssetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -33,7 +35,7 @@ func (h *AssetHandler) CreateAsset(c *gin.Context) {
 		return
 	}
 
-	asset, err := h.assetService.CreateAsset(&req)
+	asset, err := h.assetService.CreateAsset(&req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create asset", "error", err)
 		response.InternalError(c, err.Error())
@@ -44,6 +46,7 @@ func (h *AssetHandler) CreateAsset(c *gin.Context) {
 }
 
 func (h *AssetHandler) UpdateAsset(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	assetID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -57,7 +60,7 @@ func (h *AssetHandler) UpdateAsset(c *gin.Context) {
 		return
 	}
 
-	asset, err := h.assetService.UpdateAsset(uint(assetID), &req)
+	asset, err := h.assetService.UpdateAsset(uint(assetID), &req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to update asset", "error", err)
 		response.InternalError(c, err.Error())
@@ -68,6 +71,7 @@ func (h *AssetHandler) UpdateAsset(c *gin.Context) {
 }
 
 func (h *AssetHandler) GetAsset(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	assetID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -75,7 +79,7 @@ func (h *AssetHandler) GetAsset(c *gin.Context) {
 		return
 	}
 
-	asset, err := h.assetService.GetAsset(uint(assetID))
+	asset, err := h.assetService.GetAsset(uint(assetID), deviceID)
 	if err != nil {
 		response.NotFound(c, "素材不存在")
 		return
@@ -85,6 +89,7 @@ func (h *AssetHandler) GetAsset(c *gin.Context) {
 }
 
 func (h *AssetHandler) ListAssets(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	var dramaID *string
 	if dramaIDStr := c.Query("drama_id"); dramaIDStr != "" {
@@ -156,7 +161,7 @@ func (h *AssetHandler) ListAssets(c *gin.Context) {
 		PageSize:     pageSize,
 	}
 
-	assets, total, err := h.assetService.ListAssets(req)
+	assets, total, err := h.assetService.ListAssets(req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to list assets", "error", err)
 		response.InternalError(c, err.Error())
@@ -167,6 +172,7 @@ func (h *AssetHandler) ListAssets(c *gin.Context) {
 }
 
 func (h *AssetHandler) DeleteAsset(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	assetID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -174,7 +180,7 @@ func (h *AssetHandler) DeleteAsset(c *gin.Context) {
 		return
 	}
 
-	if err := h.assetService.DeleteAsset(uint(assetID)); err != nil {
+	if err := h.assetService.DeleteAsset(uint(assetID), deviceID); err != nil {
 		h.log.Errorw("Failed to delete asset", "error", err)
 		response.InternalError(c, err.Error())
 		return
@@ -184,6 +190,7 @@ func (h *AssetHandler) DeleteAsset(c *gin.Context) {
 }
 
 func (h *AssetHandler) ImportFromImageGen(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	imageGenID, err := strconv.ParseUint(c.Param("image_gen_id"), 10, 32)
 	if err != nil {
@@ -191,7 +198,7 @@ func (h *AssetHandler) ImportFromImageGen(c *gin.Context) {
 		return
 	}
 
-	asset, err := h.assetService.ImportFromImageGen(uint(imageGenID))
+	asset, err := h.assetService.ImportFromImageGen(uint(imageGenID), deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to import from image gen", "error", err)
 		response.InternalError(c, err.Error())
@@ -202,6 +209,7 @@ func (h *AssetHandler) ImportFromImageGen(c *gin.Context) {
 }
 
 func (h *AssetHandler) ImportFromVideoGen(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 
 	videoGenID, err := strconv.ParseUint(c.Param("video_gen_id"), 10, 32)
 	if err != nil {
@@ -209,7 +217,7 @@ func (h *AssetHandler) ImportFromVideoGen(c *gin.Context) {
 		return
 	}
 
-	asset, err := h.assetService.ImportFromVideoGen(uint(videoGenID))
+	asset, err := h.assetService.ImportFromVideoGen(uint(videoGenID), deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to import from video gen", "error", err)
 		response.InternalError(c, err.Error())
