@@ -49,21 +49,83 @@
       </div>
 
       <!-- Edit Dialog / 编辑对话框 -->
-      <el-dialog v-model="editDialogVisible" :title="$t('drama.editProject')" width="520px"
+      <el-dialog v-model="editDialogVisible" :title="$t('drama.editProject')" width="640px"
         :close-on-click-modal="false" class="edit-dialog dialog-form-safe">
         <el-form
+          ref="editFormRef"
           :model="editForm"
+          :rules="editRules"
           label-position="top"
           v-loading="editLoading"
           class="edit-form long-form form-enter-flow"
+          @submit.prevent="saveEdit"
           @keydown.enter="handleFormEnterNavigation"
         >
-          <el-form-item :label="$t('drama.projectName')" required>
-            <el-input v-model="editForm.title" :placeholder="$t('drama.projectNamePlaceholder')" size="large" />
+          <el-form-item :label="$t('drama.projectName')" prop="title" required>
+            <el-input
+              v-model="editForm.title"
+              :placeholder="$t('drama.projectNamePlaceholder')"
+              size="large"
+              maxlength="50"
+              show-word-limit
+            />
           </el-form-item>
-          <el-form-item :label="$t('drama.projectDesc')">
-            <el-input v-model="editForm.description" type="textarea" :rows="6"
-              :placeholder="$t('drama.projectDescPlaceholder')" resize="none" />
+          <el-form-item :label="$t('drama.projectDesc')" prop="description" required>
+            <el-input
+              v-model="editForm.description"
+              type="textarea"
+              :rows="4"
+              :placeholder="$t('drama.projectDescPlaceholder')"
+              maxlength="500"
+              show-word-limit
+              resize="none"
+            />
+          </el-form-item>
+
+          <el-form-item :label="$t('drama.targetCountry')" prop="target_country" required>
+            <el-select
+              v-model="editForm.target_country"
+              size="large"
+              multiple
+              filterable
+              :reserve-keyword="false"
+              :filter-method="handleEditCountryFilter"
+              @change="handleEditCountryChange"
+              @visible-change="handleEditCountryVisibleChange"
+              :placeholder="$t('drama.targetCountryPlaceholder')"
+              :class="['country-select', { 'has-value': (editForm.target_country?.length || 0) > 0 }]"
+            >
+              <el-option
+                v-for="country in filteredEditCountries"
+                :key="country.code"
+                :label="country.label"
+                :value="country.value"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item :label="$t('drama.materialComposition')" prop="material_composition">
+            <el-input
+              v-model="editForm.material_composition"
+              type="textarea"
+              :rows="3"
+              :placeholder="$t('drama.materialCompositionPlaceholder')"
+              maxlength="200"
+              show-word-limit
+              resize="none"
+            />
+          </el-form-item>
+
+          <el-form-item :label="$t('drama.marketingSellingPoints')" prop="marketing_selling_points">
+            <el-input
+              v-model="editForm.marketing_selling_points"
+              type="textarea"
+              :rows="3"
+              :placeholder="$t('drama.marketingSellingPointsPlaceholder')"
+              maxlength="200"
+              show-word-limit
+              resize="none"
+            />
           </el-form-item>
         </el-form>
         <template #footer>
@@ -81,25 +143,32 @@
 
     </div>
 
+    <div v-if="total === 0" class="page-beian">
+      <BeianFooter />
+    </div>
+
     <!-- Sticky Pagination / 吸底分页器 -->
     <div v-if="total > 0" class="pagination-sticky">
       <div class="pagination-inner">
         <div class="pagination-info">
           <span class="pagination-total">{{ $t('drama.totalProjects', { count: total }) }}</span>
         </div>
-        <div class="pagination-controls">
-          <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size"
-            :total="total" :page-sizes="[12, 24, 36, 48]" :pager-count="5" layout="prev, pager, next"
-            @size-change="loadDramas" @current-change="loadDramas" />
-        </div>
-        <div class="pagination-size">
-          <span class="size-label">{{ $t('common.perPage') }}</span>
-          <el-select v-model="queryParams.page_size" size="small" class="size-select" @change="loadDramas">
-            <el-option :value="12" label="12" />
-            <el-option :value="24" label="24" />
-            <el-option :value="36" label="36" />
-            <el-option :value="48" label="48" />
-          </el-select>
+        <BeianFooter class="pagination-beian" />
+        <div v-if="total > 0" class="pagination-actions">
+          <div class="pagination-controls">
+            <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size"
+              :total="total" :page-sizes="[12, 24, 36, 48]" :pager-count="5" layout="prev, pager, next"
+              @size-change="loadDramas" @current-change="loadDramas" />
+          </div>
+          <div class="pagination-size">
+            <span class="size-label">{{ $t('common.perPage') }}</span>
+            <el-select v-model="queryParams.page_size" size="small" class="size-select" @change="loadDramas">
+              <el-option :value="12" label="12" />
+              <el-option :value="24" label="24" />
+              <el-option :value="36" label="36" />
+              <el-option :value="48" label="48" />
+            </el-select>
+          </div>
         </div>
       </div>
     </div>
@@ -107,9 +176,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import {
   Plus,
   Film,
@@ -121,8 +190,9 @@ import {
 } from '@element-plus/icons-vue'
 import { dramaAPI } from '@/api/drama'
 import type { Drama, DramaListQuery } from '@/types/drama'
-import { AppHeader, ProjectCard, ActionButton, CreateDramaDialog, EmptyState } from '@/components/common'
+import { AppHeader, ProjectCard, ActionButton, CreateDramaDialog, EmptyState, BeianFooter } from '@/components/common'
 import { handleFormEnterNavigation } from '@/utils/formFocus'
+import { ALL_COUNTRIES } from '@/constants/countries'
 
 const router = useRouter()
 const loading = ref(false)
@@ -158,11 +228,87 @@ const viewDrama = (id: string) => router.push(`/dramas/${id}`)
 // Edit dialog state / 编辑对话框状态
 const editDialogVisible = ref(false)
 const editLoading = ref(false)
+const editFormRef = ref<FormInstance>()
+const editCountryKeyword = ref('')
 const editForm = ref({
   id: '',
   title: '',
-  description: ''
+  description: '',
+  target_country: [] as string[],
+  material_composition: '',
+  marketing_selling_points: ''
 })
+
+const filteredEditCountries = computed(() => {
+  const keyword = editCountryKeyword.value.trim().toLowerCase()
+  if (!keyword) {
+    return ALL_COUNTRIES
+  }
+  return ALL_COUNTRIES.filter((country) => country.searchText.includes(keyword))
+})
+
+const countryCodeSet = new Set(ALL_COUNTRIES.map((item) => item.value))
+
+const normalizeTargetCountries = (value: string | string[] | undefined): string[] => {
+  const rawList = Array.isArray(value)
+    ? value
+    : String(value || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+
+  const normalized: string[] = []
+  for (const item of rawList) {
+    const trimmed = item.trim()
+    if (!trimmed) continue
+
+    let code = trimmed.toUpperCase()
+    if (!countryCodeSet.has(code)) {
+      const bracketMatch = trimmed.match(/\(([A-Za-z]{2})\)/)
+      const tailCodeMatch = trimmed.match(/\b([A-Za-z]{2})\b$/)
+      code = (bracketMatch?.[1] || tailCodeMatch?.[1] || '').toUpperCase()
+    }
+
+    if (countryCodeSet.has(code) && !normalized.includes(code)) {
+      normalized.push(code)
+    }
+  }
+  return normalized
+}
+
+const handleEditCountryFilter = (keyword: string) => {
+  editCountryKeyword.value = keyword
+}
+
+const handleEditCountryVisibleChange = (visible: boolean) => {
+  if (!visible) {
+    editCountryKeyword.value = ''
+  }
+}
+
+const handleEditCountryChange = () => {
+  editCountryKeyword.value = ''
+}
+
+const editRules: FormRules = {
+  title: [
+    { required: true, message: '请输入项目标题', trigger: 'blur' },
+    { min: 1, max: 50, message: '标题长度在 1 到 50 个字符', trigger: 'blur' }
+  ],
+  description: [
+    { required: true, message: '请输入项目描述', trigger: 'blur' },
+    { min: 1, max: 500, message: '描述长度在 1 到 500 个字符', trigger: 'blur' }
+  ],
+  target_country: [
+    { type: 'array', required: true, min: 1, message: '请选择目标国家', trigger: 'change' }
+  ],
+  material_composition: [
+    { max: 200, message: '材质/成分长度不能超过 200 个字符', trigger: 'blur' }
+  ],
+  marketing_selling_points: [
+    { max: 200, message: '宣传卖点长度不能超过 200 个字符', trigger: 'blur' }
+  ]
+}
 
 // Open edit dialog / 打开编辑对话框
 const editDrama = async (id: string) => {
@@ -173,7 +319,10 @@ const editDrama = async (id: string) => {
     editForm.value = {
       id: drama.id,
       title: drama.title,
-      description: drama.description || ''
+      description: drama.description || '',
+      target_country: normalizeTargetCountries(drama.target_country as string | string[] | undefined),
+      material_composition: drama.material_composition || '',
+      marketing_selling_points: drama.marketing_selling_points || ''
     }
   } catch (error: any) {
     ElMessage.error(error.message || '加载失败')
@@ -185,16 +334,19 @@ const editDrama = async (id: string) => {
 
 // Save edit changes / 保存编辑更改
 const saveEdit = async () => {
-  if (!editForm.value.title) {
-    ElMessage.warning('请输入项目名称')
-    return
-  }
+  if (!editFormRef.value) return
+
+  const valid = await editFormRef.value.validate().then(() => true).catch(() => false)
+  if (!valid) return
 
   editLoading.value = true
   try {
     await dramaAPI.update(editForm.value.id, {
-      title: editForm.value.title,
-      description: editForm.value.description
+      title: editForm.value.title.trim(),
+      description: editForm.value.description.trim(),
+      target_country: editForm.value.target_country.map((item) => item.trim()).filter((item) => item.length > 0),
+      material_composition: editForm.value.material_composition.trim(),
+      marketing_selling_points: editForm.value.marketing_selling_points.trim()
     })
     ElMessage.success('保存成功')
     editDialogVisible.value = false
@@ -227,7 +379,9 @@ onMounted(() => {
    Page Layout / 页面布局 - 紧凑边距
    ======================================== */
 .page-container {
-  min-height: 100vh;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-primary);
   /* padding: var(--space-2) var(--space-3); */
   transition: background var(--transition-normal);
@@ -246,6 +400,7 @@ onMounted(() => {
 }
 
 .content-wrapper {
+  flex: 1 0 auto;
   margin: 0 auto;
   width: 100%;
 }
@@ -312,7 +467,7 @@ onMounted(() => {
   gap: var(--space-2);
   margin-bottom: var(--space-4);
   min-height: 300px;
-  padding-bottom: 4rem;
+  padding-bottom: var(--space-4);
 }
 
 @media (min-width: 640px) {
@@ -351,12 +506,12 @@ onMounted(() => {
    Sticky Pagination / 吸底分页器
    ======================================== */
 .pagination-sticky {
-  /* padding: 12px; */
-  position: fixed;
+  position: sticky;
   bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+  z-index: 40;
+  margin-top: auto;
+  width: 100%;
+  flex-shrink: 0;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--border-primary);
@@ -370,12 +525,19 @@ onMounted(() => {
 }
 
 .pagination-inner {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: flex-end;
   margin: 0 auto;
   padding: var(--space-3) var(--space-4);
   gap: var(--space-4);
+}
+
+.page-beian {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px calc(10px + env(safe-area-inset-bottom));
 }
 
 @media (min-width: 768px) {
@@ -398,6 +560,18 @@ onMounted(() => {
   font-size: 0.8125rem;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+.pagination-beian {
+  justify-self: center;
+  white-space: nowrap;
+}
+
+.pagination-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .pagination-controls {
@@ -453,12 +627,133 @@ onMounted(() => {
 
 .edit-dialog :deep(.el-dialog__body) {
   padding: 1.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 .edit-form :deep(.el-form-item__label) {
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 0.5rem;
+}
+
+.edit-form :deep(.el-input__wrapper),
+.edit-form :deep(.el-textarea__inner),
+.edit-form :deep(.el-select__wrapper) {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--border-primary) inset;
+  transition: all var(--transition-fast);
+}
+
+.edit-form :deep(.el-input__wrapper:hover),
+.edit-form :deep(.el-textarea__inner:hover),
+.edit-form :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--border-secondary) inset;
+}
+
+.edit-form :deep(.el-input__wrapper.is-focus),
+.edit-form :deep(.el-textarea__inner:focus),
+.edit-form :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.edit-form :deep(.el-input__inner),
+.edit-form :deep(.el-textarea__inner),
+.edit-form :deep(.el-select__selected-item) {
+  color: var(--text-primary);
+}
+
+.edit-form :deep(.el-input__inner::placeholder),
+.edit-form :deep(.el-textarea__inner::placeholder) {
+  color: var(--text-muted);
+}
+
+.edit-form :deep(.el-input__count) {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.edit-form :deep(.el-form-item.is-error .el-input__wrapper),
+.edit-form :deep(.el-form-item.is-error .el-textarea__inner),
+.edit-form :deep(.el-form-item.is-error .el-select__wrapper) {
+  box-shadow: 0 0 0 1px var(--el-color-danger) inset !important;
+}
+
+.edit-form :deep(.el-form-item.is-error .el-input__wrapper.is-focus),
+.edit-form :deep(.el-form-item.is-error .el-select__wrapper.is-focused),
+.edit-form :deep(.el-form-item.is-error .el-textarea__inner:focus) {
+  box-shadow: 0 0 0 2px var(--el-color-danger) inset !important;
+}
+
+.country-select {
+  width: 100%;
+}
+
+.country-select :deep(.el-select__placeholder) {
+  color: #a8b5c6;
+}
+
+.country-select.has-value :deep(.el-select__placeholder) {
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .projects-grid {
+    padding-bottom: var(--space-4);
+  }
+
+  .pagination-inner {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .pagination-beian {
+    width: 100%;
+    order: 2;
+  }
+
+  .pagination-actions {
+    width: 100%;
+    justify-content: center;
+    gap: var(--space-2);
+  }
+
+  .pagination-controls {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .pagination-size {
+    display: none;
+  }
+
+  .dialog-footer {
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+
+  .dialog-footer .el-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .projects-grid {
+    padding: 8px;
+    padding-bottom: var(--space-3);
+  }
+
+  .pagination-inner {
+    padding: 8px;
+  }
+
+  .pagination-controls :deep(.el-pagination) {
+    justify-content: center;
+  }
 }
 
 .dialog-footer {

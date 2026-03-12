@@ -23,7 +23,7 @@ type ScriptGenerationService struct {
 func NewScriptGenerationService(db *gorm.DB, cfg *config.Config, log *logger.Logger) *ScriptGenerationService {
 	return &ScriptGenerationService{
 		db:         db,
-		aiService:  NewAIService(db, log),
+		aiService:  NewAIService(db, log, cfg),
 		log:        log,
 		config:     cfg,
 		promptI18n: NewPromptI18n(cfg),

@@ -84,7 +84,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Document, Picture, VideoPlay, Clock, Plus, FolderOpened, Setting } from '@element-plus/icons-vue'
+import { Document, Picture, VideoPlay, Clock, Plus, FolderOpened } from '@element-plus/icons-vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const router = useRouter()
@@ -92,21 +92,19 @@ const router = useRouter()
 const goToDramas = () => {
   router.push('/dramas')
 }
-
-const goToSettings = () => {
-  router.push('/settings/ai-config')
-}
 </script>
 
 <style scoped>
 .dashboard-container {
   min-height: 100vh;
-  background: #f5f7fa;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {
-  background: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .header-content {
@@ -135,12 +133,12 @@ const goToSettings = () => {
 .welcome-section h1 {
   font-size: 36px;
   margin-bottom: 10px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .welcome-section p {
   font-size: 18px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .stats-row {
@@ -155,17 +153,17 @@ const goToSettings = () => {
 .stat-item h3 {
   font-size: 32px;
   margin: 10px 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .stat-item p {
-  color: #666;
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .quick-actions h2 {
   margin-bottom: 20px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .action-card {
@@ -181,11 +179,11 @@ const goToSettings = () => {
 
 .action-card h3 {
   margin: 15px 0 10px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .action-card p {
-  color: #666;
+  color: var(--text-secondary);
   margin: 0;
 }
 </style>

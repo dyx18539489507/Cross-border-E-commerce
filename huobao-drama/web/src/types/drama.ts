@@ -143,6 +143,10 @@ export interface CreateDramaResponse {
   compliance: ComplianceResult
 }
 
+export interface CheckDramaComplianceResponse {
+  compliance: ComplianceResult
+}
+
 export interface UpdateDramaRequest {
   title?: string
   description?: string

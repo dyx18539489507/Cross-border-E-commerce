@@ -7,6 +7,7 @@ import (
 
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/ai"
+	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
 	"gorm.io/gorm"
 )
@@ -14,12 +15,19 @@ import (
 type AIService struct {
 	db  *gorm.DB
 	log *logger.Logger
+	cfg *config.Config
 }
 
-func NewAIService(db *gorm.DB, log *logger.Logger) *AIService {
+func NewAIService(db *gorm.DB, log *logger.Logger, cfgs ...*config.Config) *AIService {
+	var cfg *config.Config
+	if len(cfgs) > 0 {
+		cfg = cfgs[0]
+	}
+
 	return &AIService{
 		db:  db,
 		log: log,
+		cfg: cfg,
 	}
 }
 
@@ -145,7 +153,9 @@ func (s *AIService) CreateConfig(req *CreateAIConfigRequest, deviceID string) (*
 
 func (s *AIService) GetConfig(configID uint, deviceID string) (*models.AIServiceConfig, error) {
 	var config models.AIServiceConfig
-	err := s.db.Where("id = ? AND device_id = ?", configID, deviceID).First(&config).Error
+	err := s.scopedConfigQuery().Where("id = ?", configID).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		First(&config).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("config not found")
@@ -157,13 +167,14 @@ func (s *AIService) GetConfig(configID uint, deviceID string) (*models.AIService
 
 func (s *AIService) ListConfigs(serviceType string, deviceID string) ([]models.AIServiceConfig, error) {
 	var configs []models.AIServiceConfig
-	query := s.db.Where("device_id = ?", deviceID)
+	query := s.scopedConfigQuery().
+		Scopes(withScopedDeviceFallback(deviceID))
 
 	if serviceType != "" {
 		query = query.Where("service_type = ?", serviceType)
 	}
 
-	err := query.Order("priority DESC, created_at DESC").Find(&configs).Error
+	err := query.Find(&configs).Error
 	if err != nil {
 		s.log.Errorw("Failed to list AI configs", "error", err)
 		return nil, err
@@ -174,7 +185,9 @@ func (s *AIService) ListConfigs(serviceType string, deviceID string) ([]models.A
 
 func (s *AIService) UpdateConfig(configID uint, req *UpdateAIConfigRequest, deviceID string) (*models.AIServiceConfig, error) {
 	var config models.AIServiceConfig
-	if err := s.db.Where("id = ? AND device_id = ?", configID, deviceID).First(&config).Error; err != nil {
+	if err := s.scopedConfigQuery().Where("id = ?", configID).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		First(&config).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("config not found")
 		}
@@ -261,7 +274,9 @@ func (s *AIService) UpdateConfig(configID uint, req *UpdateAIConfigRequest, devi
 }
 
 func (s *AIService) DeleteConfig(configID uint, deviceID string) error {
-	result := s.db.Where("id = ? AND device_id = ?", configID, deviceID).Delete(&models.AIServiceConfig{})
+	result := s.scopedConfigQuery().Where("id = ?", configID).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		Delete(&models.AIServiceConfig{})
 
 	if result.Error != nil {
 		s.log.Errorw("Failed to delete AI config", "error", result.Error)
@@ -327,12 +342,10 @@ func (s *AIService) TestConnection(req *TestConnectionRequest) error {
 func (s *AIService) GetDefaultConfig(serviceType string, deviceIDs ...string) (*models.AIServiceConfig, error) {
 	deviceID := firstAIDeviceID(deviceIDs)
 	var config models.AIServiceConfig
-	// 按优先级降序获取第一个激活的配置
-	query := s.db.Where("service_type = ? AND is_active = ?", serviceType, true)
-	if deviceID != "" {
-		query = query.Where("device_id = ?", deviceID)
-	}
-	err := query.Order("priority DESC, created_at DESC").First(&config).Error
+	err := s.scopedConfigQuery().
+		Where("service_type = ? AND is_active = ?", serviceType, true).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		First(&config).Error
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -348,11 +361,10 @@ func (s *AIService) GetDefaultConfig(serviceType string, deviceIDs ...string) (*
 func (s *AIService) GetConfigForModel(serviceType string, modelName string, deviceIDs ...string) (*models.AIServiceConfig, error) {
 	deviceID := firstAIDeviceID(deviceIDs)
 	var configs []models.AIServiceConfig
-	query := s.db.Where("service_type = ? AND is_active = ?", serviceType, true)
-	if deviceID != "" {
-		query = query.Where("device_id = ?", deviceID)
-	}
-	err := query.Order("priority DESC, created_at DESC").Find(&configs).Error
+	err := s.scopedConfigQuery().
+		Where("service_type = ? AND is_active = ?", serviceType, true).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		Find(&configs).Error
 
 	if err != nil {
 		return nil, err
@@ -370,9 +382,35 @@ func (s *AIService) GetConfigForModel(serviceType string, modelName string, devi
 	return nil, errors.New("no active config found for model: " + modelName)
 }
 
+func (s *AIService) scopedConfigQuery() *gorm.DB {
+	return s.db.Model(&models.AIServiceConfig{}).
+		Order("CASE WHEN device_id = '' THEN 1 ELSE 0 END ASC").
+		Order("priority DESC").
+		Order("created_at DESC")
+}
+
+func withScopedDeviceFallback(deviceID string) func(*gorm.DB) *gorm.DB {
+	deviceID = strings.TrimSpace(deviceID)
+	return func(db *gorm.DB) *gorm.DB {
+		if deviceID == "" {
+			return db
+		}
+		return db.Where("(device_id = ? OR device_id = '')", deviceID)
+	}
+}
+
 func (s *AIService) GetAIClient(serviceType string, deviceIDs ...string) (ai.AIClient, error) {
 	config, err := s.GetDefaultConfig(serviceType, deviceIDs...)
 	if err != nil {
+		if serviceType == "text" && isNoActiveConfigError(err) {
+			client, fallbackErr := s.newComplianceTextClient("")
+			if fallbackErr == nil {
+				return client, nil
+			}
+			if s.log != nil {
+				s.log.Warnw("Failed to use compliance text fallback", "error", fallbackErr)
+			}
+		}
 		return nil, err
 	}
 
@@ -407,6 +445,15 @@ func (s *AIService) GetAIClient(serviceType string, deviceIDs ...string) (ai.AIC
 func (s *AIService) GetAIClientForModel(serviceType string, modelName string, deviceIDs ...string) (ai.AIClient, error) {
 	config, err := s.GetConfigForModel(serviceType, modelName, deviceIDs...)
 	if err != nil {
+		if serviceType == "text" && isNoActiveConfigError(err) {
+			client, fallbackErr := s.newComplianceTextClient(modelName)
+			if fallbackErr == nil {
+				return client, nil
+			}
+			if s.log != nil {
+				s.log.Warnw("Failed to use compliance text fallback for model", "model", modelName, "error", fallbackErr)
+			}
+		}
 		return nil, err
 	}
 
@@ -438,4 +485,40 @@ func (s *AIService) GenerateText(prompt string, systemPrompt string, options ...
 	}
 
 	return client.GenerateText(prompt, systemPrompt, options...)
+}
+
+func (s *AIService) newComplianceTextClient(modelName string) (ai.AIClient, error) {
+	if s.cfg == nil || !s.cfg.Compliance.Enabled {
+		return nil, errors.New("compliance text fallback is disabled")
+	}
+
+	baseURL := strings.TrimSpace(s.cfg.Compliance.BaseURL)
+	apiKey := strings.TrimSpace(s.cfg.Compliance.APIKey)
+	endpoint := strings.TrimSpace(s.cfg.Compliance.Endpoint)
+	model := strings.TrimSpace(modelName)
+	if model == "" {
+		model = strings.TrimSpace(s.cfg.Compliance.Model)
+	}
+	if endpoint == "" {
+		endpoint = "/chat/completions"
+	}
+
+	if baseURL == "" || apiKey == "" || model == "" {
+		return nil, errors.New("compliance text fallback is not configured")
+	}
+
+	if s.log != nil {
+		s.log.Infow("Using compliance text fallback", "model", model, "base_url", baseURL)
+	}
+
+	return ai.NewOpenAIClient(baseURL, apiKey, model, endpoint), nil
+}
+
+func isNoActiveConfigError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no active config found")
 }

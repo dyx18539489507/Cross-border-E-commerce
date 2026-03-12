@@ -28,6 +28,23 @@ ai:
   default_image_provider: "openai"
   default_video_provider: "doubao"
 
+volcengine:
+  access_key_id: ""
+  secret_access_key: ""
+  region: "cn-north-1"
+  service: "cv"
+  visual_host: "visual.volcengineapi.com"
+  speech:
+    app_id: ""
+    token: ""
+    cluster: "volcano_tts"
+    endpoint: "https://openspeech.bytedance.com/api/v1/tts"
+    submit_endpoint: "https://openspeech.bytedance.com/api/v3/tts/submit"
+    query_endpoint: "https://openspeech.bytedance.com/api/v3/tts/query"
+    resource_id: "volc.service_type.10029"
+    namespace: "BidirectionalTTS"
+    voice_type: ""
+
 compliance:
   enabled: true
   base_url: "https://ark.cn-beijing.volces.com/api/v3"

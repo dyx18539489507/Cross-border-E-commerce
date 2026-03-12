@@ -34,11 +34,13 @@ func NewSFXHandler(cfg *config.Config, log *logger.Logger) *SFXHandler {
 }
 
 type SFXItem struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Category string `json:"category"`
-	Duration int    `json:"duration,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Category  string `json:"category"`
+	Duration  int    `json:"duration,omitempty"`
+	Rank      int    `json:"rank,omitempty"`
+	ViewCount int    `json:"view_count,omitempty"`
 }
 
 type GenerateSFXRequest struct {
@@ -47,11 +49,19 @@ type GenerateSFXRequest struct {
 }
 
 func (h *SFXHandler) ListSFX(c *gin.Context) {
+	keywords := strings.TrimSpace(c.Query("keywords"))
 	category := strings.TrimSpace(c.DefaultQuery("category", "热门"))
-	prompt := mapSFXCategoryToEcommercePrompt(category)
+	prompt := keywords
+	if prompt == "" {
+		prompt = mapSFXCategoryToEcommercePrompt(category)
+	}
 	displayCategory := category
 	if displayCategory == "" || strings.EqualFold(displayCategory, "all") {
-		displayCategory = "热门"
+		if keywords != "" {
+			displayCategory = "搜索结果"
+		} else {
+			displayCategory = "热门"
+		}
 	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if limit <= 0 {
@@ -60,11 +70,39 @@ func (h *SFXHandler) ListSFX(c *gin.Context) {
 	if limit > 50 {
 		limit = 50
 	}
-	items := h.generateSFXItems(prompt, limit, false)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page <= 0 {
+		page = 1
+	}
+
+	total := h.listSFXCatalogSize(prompt)
+	offset := (page - 1) * limit
+	if offset >= total {
+		c.JSON(http.StatusOK, gin.H{
+			"items":    []SFXItem{},
+			"page":     page,
+			"limit":    limit,
+			"total":    total,
+			"has_more": false,
+		})
+		return
+	}
+
+	count := limit
+	if remaining := total - offset; remaining < count {
+		count = remaining
+	}
+	items := h.generateSFXItems(prompt, offset, count, false)
 	for i := range items {
 		items[i].Category = displayCategory
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	c.JSON(http.StatusOK, gin.H{
+		"items":    items,
+		"page":     page,
+		"limit":    limit,
+		"total":    total,
+		"has_more": offset+count < total,
+	})
 }
 
 func (h *SFXHandler) GenerateSFX(c *gin.Context) {
@@ -85,15 +123,27 @@ func (h *SFXHandler) GenerateSFX(c *gin.Context) {
 	if count > 5 {
 		count = 5
 	}
-	items := h.generateSFXItems(prompt, count, true)
+	items := h.generateSFXItems(prompt, 0, count, true)
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-func (h *SFXHandler) generateSFXItems(prompt string, count int, aiMode bool) []SFXItem {
+func (h *SFXHandler) listSFXCatalogSize(prompt string) int {
+	trimmed := strings.TrimSpace(prompt)
+	if trimmed == "" {
+		return 120
+	}
+	if unicodeCount := len([]rune(trimmed)); unicodeCount > 20 {
+		return 80
+	}
+	return 120
+}
+
+func (h *SFXHandler) generateSFXItems(prompt string, start int, count int, aiMode bool) []SFXItem {
 	items := make([]SFXItem, 0, count)
 	category := prompt
 	for i := 0; i < count; i++ {
-		suffix := fmt.Sprintf("%02d", i+1)
+		itemIndex := start + i
+		suffix := fmt.Sprintf("%02d", itemIndex+1)
 		if aiMode {
 			switch i {
 			case 0:
@@ -110,13 +160,15 @@ func (h *SFXHandler) generateSFXItems(prompt string, count int, aiMode bool) []S
 		} else {
 			name = fmt.Sprintf("%s-%s", prompt, suffix)
 		}
-		fileURL, duration := h.ensureSFXFile(prompt, i, aiMode)
+		fileURL, duration := h.ensureSFXFile(prompt, itemIndex, aiMode)
 		items = append(items, SFXItem{
-			ID:       h.buildSFXID(prompt, i, aiMode),
-			Name:     name,
-			URL:      fileURL,
-			Category: category,
-			Duration: duration,
+			ID:        h.buildSFXID(prompt, itemIndex, aiMode),
+			Name:      name,
+			URL:       fileURL,
+			Category:  category,
+			Duration:  duration,
+			Rank:      itemIndex + 1,
+			ViewCount: maxInt(0, 100000-itemIndex*317),
 		})
 	}
 	return items
@@ -148,6 +200,13 @@ func (h *SFXHandler) ensureSFXFile(prompt string, index int, aiMode bool) (strin
 func (h *SFXHandler) estimateDuration(index int) int {
 	base := 1200 + index*250
 	return int(math.Round(float64(base) / 1000))
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (h *SFXHandler) buildSFXID(prompt string, index int, aiMode bool) string {

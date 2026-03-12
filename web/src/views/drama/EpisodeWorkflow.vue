@@ -33,25 +33,49 @@
     <!-- 阶段 0: 章节内容 + 提取角色场景 -->
     <el-card v-show="currentStep === 0" shadow="never" class="stage-card stage-card-fullscreen" v-loading="loadingDramaData">
       <div class="stage-body stage-body-fullscreen">
-        <!-- 未保存时显示输入框 -->
-        <div v-if="!hasScript" class="generation-form">
-          <el-input
-            v-model="scriptContent"
-            type="textarea"
-:placeholder="$t('workflow.scriptPlaceholder')"
-            class="script-textarea script-textarea-fullscreen"
-          />
+        <div class="overview-section">
+          <div class="episode-info chapter-editor-header">
+            <h3>{{ $t('workflow.chapterContent', { number: episodeNumber }) }}</h3>
+            <el-tag v-if="hasScript" type="success" size="large">{{ $t('workflow.saved') }}</el-tag>
+          </div>
 
-          <div class="action-buttons-inline">
-            <el-button 
-              type="primary" 
-              size="default" 
-              @click="saveChapterScript"
-              :disabled="!scriptContent.trim() || generatingScript"
-            >
-              <el-icon><Check /></el-icon>
-              <span>{{ $t('workflow.saveChapter') }}</span>
-            </el-button>
+          <div class="chapter-editor-shell">
+            <div class="ai-assist-toolbar">
+              <div class="ai-assist-title">
+                <el-icon><MagicStick /></el-icon>
+                <span>{{ $t('workflow.aiAssistTitle') }}</span>
+              </div>
+              <el-input
+                v-model="aiAssistPrompt"
+                class="ai-assist-input"
+                :placeholder="$t('workflow.aiAssistPlaceholder')"
+                :disabled="aiGeneratingScript"
+                clearable
+                @keyup.enter="generateScriptByAI"
+              />
+              <el-button
+                type="primary"
+                class="ai-assist-generate-btn"
+                :icon="Lightning"
+                :loading="aiGeneratingScript"
+                :disabled="!aiAssistPrompt.trim()"
+                @click="generateScriptByAI"
+              >
+                {{ aiGeneratingScript ? $t('workflow.generatingScript') : $t('workflow.generateScript') }}
+              </el-button>
+            </div>
+
+            <el-input
+              v-model="scriptContent"
+              type="textarea"
+              :autosize="{ minRows: 10, maxRows: 14 }"
+              :placeholder="$t('workflow.scriptPlaceholder')"
+              class="script-textarea script-textarea-fullscreen chapter-script-textarea"
+              :disabled="aiGeneratingScript"
+            />
+          </div>
+
+          <div class="action-buttons-inline chapter-editor-actions">
             <el-button
               type="success"
               plain
@@ -62,50 +86,13 @@
               <span>试试数字人？</span>
             </el-button>
           </div>
-        </div>
-
-        <!-- 已保存时显示内容 -->
-        <div v-if="hasScript" class="overview-section">
-          <div class="episode-info">
-            <h3>{{ $t('workflow.chapterContent', { number: episodeNumber }) }}</h3>
-            <el-tag type="success" size="large">{{ $t('workflow.saved') }}</el-tag>
-          </div>
-          <div class="overview-content">
-            <el-input 
-              v-model="scriptContent"
-              type="textarea"
-              :rows="15"
-              class="script-display"
-            />
-            <div class="action-buttons-inline" style="margin-top: 12px;">
-              <el-button
-                type="primary"
-                size="default"
-                @click="saveChapterScript"
-                :loading="generatingScript"
-                :disabled="!scriptContent.trim() || !scriptDirty"
-              >
-                <el-icon><Check /></el-icon>
-                <span>{{ $t('workflow.saveChapter') }}</span>
-              </el-button>
-              <el-button
-                type="success"
-                plain
-                size="default"
-                @click="openDigitalHumanDialog"
-              >
-                <el-icon><VideoCamera /></el-icon>
-                <span>试试数字人？</span>
-              </el-button>
-            </div>
-          </div>
 
           <el-divider />
 
           <!-- 显示已提取的角色和场景 -->
           <div v-if="hasExtractedData" class="extracted-info">
-            <el-alert 
-              type="success" 
+            <el-alert
+              type="success"
               :closable="false"
               style="margin-bottom: 16px;"
             >
@@ -117,27 +104,27 @@
                 </div>
               </template>
             </el-alert>
-            
+
             <!-- 角色列表 -->
             <div v-if="hasCharacters" style="margin-bottom: 16px;">
               <h4 class="extracted-title">{{ $t('workflow.extractedCharacters') }}：</h4>
               <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                <el-tag 
-                  v-for="char in currentEpisode?.characters" 
+                <el-tag
+                  v-for="char in currentEpisode?.characters"
                   :key="char.id"
                   type="info"
                 >
-                  {{ char.name }} <span v-if="char.role" class="secondary-text">({{ char.role }})</span>
+                  {{ char.name }}
                 </el-tag>
               </div>
             </div>
-            
+
             <!-- 场景列表 -->
             <div v-if="currentEpisode?.scenes && currentEpisode.scenes.length > 0">
               <h4 class="extracted-title">{{ $t('workflow.extractedScenes') }}：</h4>
               <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                <el-tag 
-                  v-for="scene in currentEpisode.scenes" 
+                <el-tag
+                  v-for="scene in currentEpisode.scenes"
                   :key="scene.id"
                   type="warning"
                 >
@@ -150,17 +137,17 @@
           <el-divider />
 
           <div class="action-buttons">
-            <el-button 
+            <el-button
               type="primary"
               size="large"
               @click="handleExtractCharactersAndBackgrounds"
               :loading="extractingCharactersAndBackgrounds"
-              :disabled="!hasScript"
+              :disabled="!scriptContent.trim() || aiGeneratingScript"
             >
               <el-icon><MagicStick /></el-icon>
               {{ hasExtractedData ? $t('workflow.reExtract') : $t('workflow.extractCharactersAndScenes') }}
             </el-button>
-            <el-button 
+            <el-button
               type="success"
               size="large"
               @click="nextStep"
@@ -245,9 +232,14 @@
                   />
                 </div>
                 
-                <div class="card-image-container">
+                <div class="card-image-container" :class="getImageDisplayClass(char.image_url, 'character')">
                   <div v-if="char.image_url" class="char-image">
-                    <el-image :src="fixImageUrl(char.image_url)" fit="contain" />
+                    <el-image
+                      :src="fixImageUrl(char.image_url)"
+                      :preview-src-list="[fixImageUrl(char.image_url)]"
+                      fit="contain"
+                      @load="handleImageLoad(char.image_url)"
+                    />
                   </div>
                   <div v-else-if="char.image_generation_status === 'pending' || char.image_generation_status === 'processing' || generatingCharacterImages[char.id]" class="char-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -368,9 +360,14 @@
                   </div>
                 </div>
 
-                <div class="card-image-container">
+                <div class="card-image-container" :class="getImageDisplayClass(scene.image_url, 'scene')">
                   <div v-if="scene.image_url" class="scene-image">
-                    <el-image :src="fixImageUrl(scene.image_url)" fit="contain" />
+                    <el-image
+                      :src="fixImageUrl(scene.image_url)"
+                      :preview-src-list="[fixImageUrl(scene.image_url)]"
+                      fit="contain"
+                      @load="handleImageLoad(scene.image_url)"
+                    />
                   </div>
                   <div v-else-if="scene.image_generation_status === 'pending' || scene.image_generation_status === 'processing' || generatingSceneImages[scene.id]" class="scene-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -463,7 +460,11 @@
             <div class="shots-loading-card">
               <el-icon class="shots-loading-icon"><Loading /></el-icon>
               <div class="shots-loading-title">{{ $t('workflow.aiSplitting') }}</div>
-              <el-progress :percentage="taskProgress" :status="taskProgress === 100 ? 'success' : undefined">
+              <el-progress
+                class="task-progress-bar"
+                :percentage="taskProgress"
+                :status="taskProgress === 100 ? 'success' : undefined"
+              >
                 <template #default="{ percentage }">
                   <span style="font-size: 12px;">{{ percentage }}%</span>
                 </template>
@@ -590,8 +591,12 @@
             </el-button>
             
             <!-- 任务进度显示 -->
-            <div v-if="generatingShots" style="margin-top: 24px; max-width: 400px; margin-left: auto; margin-right: auto;">
-              <el-progress :percentage="taskProgress" :status="taskProgress === 100 ? 'success' : undefined">
+            <div v-if="generatingShots" class="task-progress-panel">
+              <el-progress
+                class="task-progress-bar"
+                :percentage="taskProgress"
+                :status="taskProgress === 100 ? 'success' : undefined"
+              >
                 <template #default="{ percentage }">
                   <span style="font-size: 12px;">{{ percentage }}%</span>
                 </template>
@@ -812,10 +817,12 @@
       title="数字人制作"
       width="560px"
       class="digital-human-dialog dialog-form-safe"
+      top="4vh"
       :lock-scroll="true"
       :append-to-body="true"
       @close="resetDigitalHumanForm"
     >
+      <div class="digital-human-dialog-body">
         <el-form
           ref="digitalHumanDialogFormRef"
           label-position="top"
@@ -1066,7 +1073,10 @@
       <div v-if="digitalHumanResultUrl" class="digital-human-result">
         <div class="digital-human-result-title">生成结果</div>
         <video :src="digitalHumanPlayableResultUrl" controls preload="metadata" />
-        <el-button type="primary" plain size="small" @click="downloadDigitalHumanVideo">下载视频</el-button>
+        <el-button class="digital-human-download-btn" :icon="Download" @click="downloadDigitalHumanVideo">
+          下载视频
+        </el-button>
+      </div>
       </div>
 
       <template #footer>
@@ -1088,6 +1098,9 @@
       @close="digitalHumanImagePreviewVisible = false"
     />
     </div>
+    <div class="episode-page-beian">
+      <BeianFooter />
+    </div>
   </div>
 </template>
 
@@ -1097,7 +1110,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadProps, UploadUserFile } from 'element-plus'
-import { 
+import {
   User, 
   Location, 
   Picture,
@@ -1117,11 +1130,12 @@ import {
   FolderAdd,
   Loading,
   WarningFilled,
-  VideoCamera
+  VideoCamera,
+  Lightning,
+  Download
 } from '@element-plus/icons-vue'
 import { dramaAPI } from '@/api/drama'
 import { generationAPI } from '@/api/generation'
-import { aiAPI } from '@/api/ai'
 import { characterLibraryAPI } from '@/api/character-library'
 import { imageAPI } from '@/api/image'
 import { voiceLibraryAPI } from '@/api/voice-library'
@@ -1129,14 +1143,14 @@ import type { VoiceLibraryItem } from '@/api/voice-library'
 import { digitalHumanAPI } from '@/api/digital-human'
 import { handleFormEnterNavigation } from '@/utils/formFocus'
 import type { Drama } from '@/types/drama'
-import type { AIServiceConfig } from '@/types/ai'
-import { AppHeader } from '@/components/common'
+import { AppHeader, BeianFooter } from '@/components/common'
 
 const route = useRoute()
 const router = useRouter()
 const { t: $t } = useI18n()
 const dramaId = route.params.id as string
 const episodeNumber = parseInt(route.params.episodeNumber as string)
+const preferredTextModel = 'deepseek-v3-2-251201'
 
 const drama = ref<Drama>()
 
@@ -1147,8 +1161,10 @@ const getStepStorageKey = () => `episode_workflow_step_${dramaId}_${episodeNumbe
 const savedStep = localStorage.getItem(getStepStorageKey())
 const currentStep = ref(savedStep ? parseInt(savedStep) : 0)
 const scriptContent = ref('')
+const aiAssistPrompt = ref('')
 const scriptInitialized = ref(false)
 const generatingScript = ref(false)
+const aiGeneratingScript = ref(false)
 const generatingShots = ref(false)
 const loadingDramaData = ref(false)
 const extractingCharactersAndBackgrounds = ref(false)
@@ -1252,6 +1268,47 @@ const fixImageUrl = (url?: string | null): string => {
   return `/static/${value}`
 }
 
+type ImageDisplayKind = 'character' | 'scene'
+type ImageDisplayMode = 'portrait' | 'landscape' | 'square'
+
+const imageDisplayModes = ref<Record<string, ImageDisplayMode>>({})
+
+const classifyImageDisplayMode = (width: number, height: number): ImageDisplayMode => {
+  if (!width || !height) return 'landscape'
+  const ratio = Math.max(width, height) / Math.min(width, height)
+  if (ratio < 1.15) return 'square'
+  return width >= height ? 'landscape' : 'portrait'
+}
+
+const loadImageDisplayMode = (url?: string | null) => {
+  if (typeof window === 'undefined') return
+  const imageUrl = fixImageUrl(url)
+  if (!imageUrl || imageDisplayModes.value[imageUrl]) return
+
+  const img = new window.Image()
+  img.onload = () => {
+    imageDisplayModes.value[imageUrl] = classifyImageDisplayMode(img.naturalWidth || 0, img.naturalHeight || 0)
+  }
+  img.onerror = () => {
+    // Keep the fallback layout if metadata cannot be loaded.
+  }
+  img.src = imageUrl
+}
+
+const handleImageLoad = (url?: string | null) => {
+  loadImageDisplayMode(url)
+}
+
+const getImageDisplayClass = (url?: string | null, kind: ImageDisplayKind = 'scene') => {
+  const imageUrl = fixImageUrl(url)
+  const fallbackMode: ImageDisplayMode = kind === 'character' ? 'portrait' : 'landscape'
+  const mode = imageUrl && imageDisplayModes.value[imageUrl]
+    ? imageDisplayModes.value[imageUrl]
+    : fallbackMode
+
+  return `is-${kind}-${mode}`
+}
+
 const digitalHumanPlayableResultUrl = computed(() => {
   return toPlayableMediaUrl(digitalHumanResultUrl.value)
 })
@@ -1296,9 +1353,15 @@ watch(voiceLibraryVisible, (visible) => {
 })
 
 onBeforeUnmount(() => {
-  if (typeof document === 'undefined') return
-  document.body.classList.remove('digital-human-dialog-open')
-  document.documentElement.classList.remove('digital-human-dialog-open')
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('digital-human-dialog-open')
+    document.documentElement.classList.remove('digital-human-dialog-open')
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  stopSmoothProgress()
 })
 
 const hasScript = computed(() => {
@@ -1420,87 +1483,21 @@ const allImagesGenerated = computed(() => {
   return allCharsHaveImages && allScenesHaveImages
 })
 
-const isMissingTextAIConfigError = (message: string) => {
-  const raw = (message || '').toLowerCase()
-  return (
-    raw.includes('no active config found') ||
-    raw.includes('no config found') ||
-    raw.includes('failed to get ai client')
-  )
-}
+watch(
+  () => (currentEpisode.value?.characters ?? []).map(char => char.image_url || ''),
+  (urls) => {
+    urls.forEach(loadImageDisplayMode)
+  },
+  { immediate: true }
+)
 
-const pickTextConfigToActivate = (configs: AIServiceConfig[]) => {
-  const getTimeScore = (config: AIServiceConfig) => {
-    const ts = Date.parse(config.updated_at || config.created_at || '')
-    return Number.isNaN(ts) ? 0 : ts
-  }
-
-  return [...configs].sort((a, b) => {
-    const priorityDiff = (b.priority || 0) - (a.priority || 0)
-    if (priorityDiff !== 0) return priorityDiff
-
-    const timeDiff = getTimeScore(b) - getTimeScore(a)
-    if (timeDiff !== 0) return timeDiff
-
-    return b.id - a.id
-  })[0]
-}
-
-const promptOpenTextAIConfig = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '提取角色和场景需要至少一个已启用的文本AI配置，是否前往“设置 > AI服务配置”？',
-      '未配置文本AI服务',
-      {
-        confirmButtonText: '去配置',
-        cancelButtonText: '取消',
-        type: 'warning',
-        distinguishCancelAndClose: true
-      }
-    )
-    router.push('/settings/ai-config')
-  } catch {
-    // user cancelled
-  }
-}
-
-const ensureTextAIConfigReady = async (): Promise<boolean> => {
-  let textConfigs: AIServiceConfig[] = []
-
-  try {
-    textConfigs = await aiAPI.list('text')
-  } catch (error: any) {
-    console.error('检查文本AI配置失败:', error)
-    ElMessage.error(error.message || '无法检查文本AI配置，请稍后重试')
-    return false
-  }
-
-  if (!textConfigs || textConfigs.length === 0) {
-    await promptOpenTextAIConfig()
-    return false
-  }
-
-  if (textConfigs.some(config => config.is_active)) {
-    return true
-  }
-
-  const candidate = pickTextConfigToActivate(textConfigs)
-  if (!candidate) {
-    await promptOpenTextAIConfig()
-    return false
-  }
-
-  try {
-    await aiAPI.update(candidate.id, { is_active: true })
-    ElMessage.success(`已自动启用文本AI配置：${candidate.name}`)
-    return true
-  } catch (error: any) {
-    console.error('自动启用文本AI配置失败:', error)
-    ElMessage.error(error.message || '自动启用文本AI配置失败，请手动检查配置')
-    await promptOpenTextAIConfig()
-    return false
-  }
-}
+watch(
+  () => (currentEpisode.value?.scenes ?? []).map(scene => scene.image_url || ''),
+  (urls) => {
+    urls.forEach(loadImageDisplayMode)
+  },
+  { immediate: true }
+)
 
 const goBack = () => {
   // 使用 replace 避免在历史记录中留下当前页面
@@ -1616,6 +1613,57 @@ const checkAndStartPolling = async () => {
   }
 }
 
+const generateScriptByAI = async () => {
+  if (aiGeneratingScript.value || generatingScript.value) return
+
+  const prompt = aiAssistPrompt.value.trim()
+  if (!prompt) {
+    ElMessage.warning($t('workflow.aiAssistPromptRequired'))
+    return
+  }
+
+  if (scriptContent.value.trim()) {
+    try {
+      await ElMessageBox.confirm(
+        $t('workflow.overwriteScriptConfirmMessage'),
+        $t('workflow.overwriteScriptConfirmTitle'),
+        {
+          confirmButtonText: $t('common.confirm'),
+          cancelButtonText: $t('common.cancel'),
+          type: 'warning'
+        }
+      )
+    } catch {
+      return
+    }
+  }
+
+  aiGeneratingScript.value = true
+  scriptContent.value = ''
+
+  try {
+    const result = await generationAPI.generateAssistScript({
+      drama_id: dramaId,
+      episode_number: episodeNumber,
+      prompt,
+      model: 'deepseek-v3-2-251201'
+    })
+
+    const generated = String(result?.content || '').trim()
+    if (!generated) {
+      throw new Error($t('workflow.aiScriptEmpty'))
+    }
+
+    scriptContent.value = generated
+    ElMessage.success($t('workflow.aiScriptReadyToSave'))
+  } catch (error: any) {
+    ElMessage.error(String(error?.message || '') || $t('common.generateFailed'))
+    scriptContent.value = ''
+  } finally {
+    aiGeneratingScript.value = false
+  }
+}
+
 const saveChapterScript = async () => {
   if (generatingScript.value) return
   generatingScript.value = true
@@ -1665,6 +1713,12 @@ const loadVoiceLibrary = async () => {
   try {
     const data = await voiceLibraryAPI.list()
     voiceLibraryList.value = data || []
+    if (selectedVoice.value && !voiceLibraryList.value.some((item) => item.id === selectedVoice.value?.id)) {
+      selectedVoice.value = null
+    }
+    if (!voiceLibraryList.value.length) {
+      voiceLibraryError.value = '当前账号没有可用的文本音色，请上传音频后生成'
+    }
   } catch (error: any) {
     voiceLibraryError.value = error?.message || '获取音色库失败'
     ElMessage.error(voiceLibraryError.value)
@@ -2025,17 +2079,44 @@ const submitDigitalHuman = async () => {
     return
   }
 
-  const formatDigitalHumanError = (raw: string) => {
+  const formatDigitalHumanError = (error: any) => {
+    const raw = String(error?.message || '')
+    const errorCode = String(error?.code || '')
+    const errorStatus = Number(error?.status || 0)
     if (!raw) return '生成失败'
-    if (raw.includes('DIGITAL_HUMAN_TTS_NOT_ENABLED') || raw.includes('未开通文本配音能力')) {
+    if (
+      errorCode === 'DIGITAL_HUMAN_TTS_NOT_ENABLED' ||
+      raw.includes('DIGITAL_HUMAN_TTS_NOT_ENABLED') ||
+      raw.includes('未开通文本配音能力') ||
+      raw.includes('未配置文本转语音能力')
+    ) {
       return '当前账号未开通文本配音能力：请上传音色音频后生成，或联系管理员开通文本驱动配音'
     }
+    if (raw.includes('requested resource not granted')) {
+      return '当前账号未开通所选平台音色的文本合成能力，请上传音频后生成'
+    }
+    if (raw.includes('当前音色不支持文本合成') || raw.includes('resource ID is mismatched with speaker related resource')) {
+      return '当前音色不支持文本合成，请更换其他音色后重试'
+    }
+    if (raw.includes('音频地址不可访问') || raw.includes('Pre Download Audio') || raw.includes('download audio failed')) {
+      return '音频地址不可访问，请改用文本+音色生成，或检查当前静态资源访问域名后重试'
+    }
     if (raw.includes('内容安全审核未通过')) return raw
-    if (raw.includes('"code":50218') || raw.includes('Resource exists risk')) {
+    if (raw.includes('"code":50218') || raw.includes('code=50218') || raw.includes('Resource exists risk')) {
       return '内容安全审核未通过，请更换角色图片/文案/音色后重试'
     }
-    if (raw.includes('"code":50430') || raw.includes('API Concurrent Limit')) {
+    if (raw.includes('"code":50430') || raw.includes('code=50430') || raw.includes('API Concurrent Limit') || errorStatus === 429) {
       return '请求过于频繁，请稍后重试'
+    }
+    if (
+      raw.includes('DIGITAL_HUMAN_GENERATION_FAILED') ||
+      raw.includes('task status failed') ||
+      raw.includes('task status error') ||
+      raw.includes('video url is empty') ||
+      raw.includes('Request failed with status code 500') ||
+      errorStatus >= 500
+    ) {
+      return '数字人生成失败，可能是上游服务限流或任务执行失败。请稍后重试；若仍失败，建议改用上传音频，或更换角色图/文案后再试'
     }
     return raw
   }
@@ -2056,6 +2137,9 @@ const submitDigitalHuman = async () => {
       if (selectedVoice.value.voice_type) {
         formData.append('voice_type', selectedVoice.value.voice_type)
       }
+      if (selectedVoice.value.resource_id) {
+        formData.append('resource_id', selectedVoice.value.resource_id)
+      }
     }
 
     const result = await digitalHumanAPI.generate(formData)
@@ -2065,7 +2149,7 @@ const submitDigitalHuman = async () => {
     digitalHumanResultUrl.value = result.video_url
     ElMessage.success('数字人视频生成完成')
   } catch (error: any) {
-    ElMessage.error(formatDigitalHumanError(String(error?.message || '')))
+    ElMessage.error(formatDigitalHumanError(error))
   } finally {
     digitalHumanLoading.value = false
   }
@@ -2103,11 +2187,6 @@ const handleExtractCharactersAndBackgrounds = async () => {
     ElMessage.info($t('workflow.startReExtracting'))
   }
 
-  const textConfigReady = await ensureTextAIConfigReady()
-  if (!textConfigReady) {
-    return
-  }
-  
   await extractCharactersAndBackgrounds()
 }
 
@@ -2177,9 +2256,10 @@ const extractCharactersAndBackgrounds = async () => {
         drama_id: dramaId.toString(),
         episode_id: Number(episodeId),
         outline: currentEpisode.value.script_content || '',
-        count: 0
+        count: 0,
+        model: preferredTextModel
       }),
-      dramaAPI.extractBackgrounds(episodeId.toString())
+      dramaAPI.extractBackgrounds(episodeId.toString(), preferredTextModel)
     ])
     
     ElMessage.success('任务已创建，正在后台处理...')
@@ -2197,12 +2277,7 @@ const extractCharactersAndBackgrounds = async () => {
     
     const errorData = error.response?.data?.error
     const errorMsg = errorData?.message || error.message || '提取失败'
-    
-    if (isMissingTextAIConfigError(errorMsg)) {
-      await promptOpenTextAIConfig()
-    } else {
-      ElMessage.error(errorMsg)
-    }
+    ElMessage.error(errorMsg)
   } finally {
     extractingCharactersAndBackgrounds.value = false
   }
@@ -2434,6 +2509,42 @@ let smoothProgressTimer: number | null = null
 const smoothProgressCap = 99
 const smoothProgressStepMs = 3000
 
+const formatStoryboardTaskError = (raw?: string | null) => {
+  const message = String(raw || '').trim()
+  if (!message) return '分镜拆分失败'
+
+  if (
+    message.includes('reached the set inference limit') ||
+    message.includes('model service has been paused') ||
+    message.includes('Safe Experience Mode')
+  ) {
+    return '当前默认文本模型额度已耗尽或服务已暂停，系统已尝试切换兜底模型。请在“设置 > AI服务配置”启用可用文本模型，或在供应商控制台关闭 Safe Experience Mode 后重试'
+  }
+
+  if (
+    message.includes('no active config found') ||
+    message.includes('failed to get AI client') ||
+    message.includes('ModelNotOpen') ||
+    message.includes('InvalidEndpointOrModel')
+  ) {
+    return '当前没有可用的文本模型，请在“设置 > AI服务配置”中启用一个可用的文本模型后重试'
+  }
+
+  if (message.includes('rate limit') || message.includes('Too Many Requests')) {
+    return '文本模型请求过于频繁，请稍后重试'
+  }
+
+  return message
+}
+
+const clearTaskPolling = () => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  stopSmoothProgress()
+}
+
 const startSmoothProgress = () => {
   if (smoothProgressTimer) return
   smoothProgressTimer = window.setInterval(() => {
@@ -2476,7 +2587,7 @@ const generateShots = async () => {
     console.log('所有剧集列表:', drama.value?.episodes?.map(ep => ({ id: ep.id, episode_number: ep.episode_number, title: ep.title })))
     
     // 创建异步任务
-    const response = await generationAPI.generateStoryboard(episodeId)
+    const response = await generationAPI.generateStoryboard(episodeId, preferredTextModel)
     
     taskMessage.value = '生成分镜中'
     
@@ -2484,9 +2595,9 @@ const generateShots = async () => {
     await pollTaskStatus(response.task_id)
     
   } catch (error: any) {
-    ElMessage.error(error.message || '拆分失败')
+    ElMessage.error(formatStoryboardTaskError(error.message))
     generatingShots.value = false
-    stopSmoothProgress()
+    clearTaskPolling()
   }
 }
 
@@ -2506,34 +2617,22 @@ const pollTaskStatus = async (taskId: string) => {
       
       if (task.status === 'completed') {
         // 任务完成
-        if (pollTimer) {
-          clearInterval(pollTimer)
-          pollTimer = null
-        }
-        stopSmoothProgress()
+        clearTaskPolling()
         generatingShots.value = false
         
         ElMessage.success($t('workflow.splitSuccess'))
         await loadDramaData()
       } else if (task.status === 'failed') {
         // 任务失败
-        if (pollTimer) {
-          clearInterval(pollTimer)
-          pollTimer = null
-        }
-        stopSmoothProgress()
+        clearTaskPolling()
         generatingShots.value = false
-        ElMessage.error(task.error || '分镜拆分失败')
+        ElMessage.error(formatStoryboardTaskError(task.error))
       }
       // 否则继续轮询
     } catch (error: any) {
-      if (pollTimer) {
-        clearInterval(pollTimer)
-        pollTimer = null
-      }
-      stopSmoothProgress()
+      clearTaskPolling()
       generatingShots.value = false
-      ElMessage.error('查询任务状态失败: ' + error.message)
+      ElMessage.error('查询任务状态失败: ' + formatStoryboardTaskError(error.message))
     }
   }
   
@@ -2819,8 +2918,10 @@ onMounted(() => {
    Page Layout / 页面布局 - 紧凑边距
    ======================================== */
 .page-container {
-  min-height: var(--app-vh, 100vh);
+  min-height: 100%;
   background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
   // padding: var(--space-2) var(--space-3);
   transition: background var(--transition-normal);
 }
@@ -2840,6 +2941,16 @@ onMounted(() => {
 .content-wrapper {
   margin: 0 auto;
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.episode-page-beian {
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px calc(10px + env(safe-area-inset-bottom));
 }
 
 .episode-info {
@@ -2990,11 +3101,24 @@ onMounted(() => {
 }
 
 .stage-card {
-  margin: 12px;
+  margin: 8px 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+
+  :deep(.el-card__body) {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   
   &.stage-card-fullscreen {
     .stage-body-fullscreen {
-      min-height: calc(100vh - 200px);
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
     }
   }
 }
@@ -3026,6 +3150,14 @@ onMounted(() => {
 
 .stage-body {
   background: var(--bg-card);
+  min-height: 0;
+}
+
+.overview-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .action-buttons {
@@ -3035,6 +3167,7 @@ onMounted(() => {
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .action-buttons-inline {
@@ -3042,42 +3175,221 @@ onMounted(() => {
   gap: 12px;
 }
 
+.chapter-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chapter-editor-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.ai-assist-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, var(--bg-surface-accent) 0%, var(--bg-secondary) 58%, var(--bg-soft) 100%);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.ai-assist-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  color: #1f9eff;
+  font-size: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+
+  .el-icon {
+    font-size: 18px;
+  }
+}
+
+.ai-assist-input {
+  flex: 1;
+  min-width: 260px;
+}
+
+.ai-assist-input :deep(.el-input__wrapper) {
+  min-height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  box-shadow: 0 0 0 1px #bfd4ee inset, 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.ai-assist-input :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #9ec1ea inset, 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.ai-assist-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px rgba(31, 158, 255, 0.18), 0 0 0 1px #1f9eff inset, 0 6px 16px rgba(31, 158, 255, 0.08) !important;
+}
+
+.ai-assist-input :deep(.el-input__inner) {
+  color: #1f2a37;
+}
+
+.ai-assist-input :deep(.el-input__inner::placeholder) {
+  color: #98a6ba;
+  opacity: 1;
+}
+
+.ai-assist-input :deep(.el-input__wrapper.is-disabled) {
+  background: linear-gradient(180deg, #f4f7fb 0%, #eef3f8 100%);
+  box-shadow: 0 0 0 1px #d6e2f0 inset;
+}
+
+.ai-assist-generate-btn {
+  flex-shrink: 0;
+}
+
+.chapter-script-textarea {
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: clamp(210px, 26vh, 320px);
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-script-textarea :deep(.el-textarea) {
+  flex: 1 1 auto;
+  min-height: 100%;
+  height: 100%;
+}
+
+.chapter-script-textarea :deep(.el-textarea__inner) {
+  min-height: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 24px 22px;
+  font-size: 16px;
+  line-height: 1.8;
+  resize: none;
+}
+
+.chapter-script-textarea :deep(.el-textarea__inner:focus) {
+  box-shadow: none;
+}
+
+.chapter-editor-actions {
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .ai-assist-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .ai-assist-title {
+    min-width: auto;
+    font-size: 18px;
+  }
+
+  .ai-assist-input {
+    order: 3;
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .chapter-editor-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ai-assist-toolbar {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .ai-assist-title {
+    font-size: 16px;
+  }
+
+  .ai-assist-generate-btn {
+    width: 100%;
+    order: 4;
+  }
+
+  .chapter-script-textarea :deep(.el-textarea__inner) {
+    min-height: 180px;
+    padding: 18px 16px;
+    font-size: 15px;
+  }
+
+  .action-buttons-inline.chapter-editor-actions {
+    flex-wrap: wrap;
+  }
+
+  .chapter-editor-actions .el-button {
+    width: 100%;
+  }
+}
+
+:global(body.digital-human-dialog-open),
+:global(html.digital-human-dialog-open) {
+  overflow: hidden !important;
+  padding-right: 0 !important;
+  height: 100% !important;
+  overscroll-behavior: none;
+}
+
+:global(body.digital-human-dialog-open #app) {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+:global(body.digital-human-dialog-open .el-overlay),
+:global(body.digital-human-dialog-open .el-overlay-dialog),
+:global(body.digital-human-dialog-open .el-dialog__wrapper) {
+  overflow: hidden !important;
+}
+
+:deep(.el-dialog.digital-human-dialog) {
+  width: min(560px, calc(100vw - 32px)) !important;
+  max-height: min(92vh, calc(100vh - 24px));
+  margin-top: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.el-dialog.digital-human-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+:deep(.el-dialog.digital-human-dialog .el-dialog__footer) {
+  flex-shrink: 0;
+}
+
 .digital-human-dialog {
-  :global(body.digital-human-dialog-open),
-  :global(html.digital-human-dialog-open) {
-    overflow: hidden !important;
-    padding-right: 0 !important;
-    height: 100% !important;
-    overscroll-behavior: none;
+  .digital-human-dialog-body {
+    max-height: min(72vh, calc(100vh - 220px));
+    overflow-y: auto;
+    padding-right: 6px;
   }
 
-  :global(body.digital-human-dialog-open #app) {
-    height: 100% !important;
-    overflow: hidden !important;
-  }
-
-    :global(body.digital-human-dialog-open .el-overlay),
-    :global(body.digital-human-dialog-open .el-overlay-dialog),
-    :global(body.digital-human-dialog-open .el-dialog__wrapper) {
-      overflow: hidden !important;
+  .digital-human-form {
+    :deep(.el-form-item__label) {
+      font-weight: 600;
     }
-
-    :deep(.el-dialog) {
-      max-height: 90vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    :deep(.el-dialog__body) {
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-    }
-
-    .digital-human-form {
-      :deep(.el-form-item__label) {
-        font-weight: 600;
-      }
   }
 
   .digital-human-upload {
@@ -3159,15 +3471,15 @@ onMounted(() => {
   .digital-human-file-name {
     margin-top: 8px;
     font-size: 8px;
-    color: #606266;
+    color: var(--text-secondary);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 0 6px;
     border-radius: 6px;
-    border: 1px solid #dcdfe6;
-    background: #f5f7fa;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-soft);
     transition: all 0.2s ease;
     max-width: 180px;
     white-space: nowrap;
@@ -3178,21 +3490,21 @@ onMounted(() => {
   .digital-human-clear-icon {
     margin-left: 6px;
     font-size: 12px;
-    color: #c0c4cc;
+    color: var(--text-muted);
   }
 
   .digital-human-file-name:hover {
-    color: #409eff;
-    border-color: #409eff;
-    background: #ecf5ff;
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--bg-surface-accent);
   }
 
   .digital-human-preview {
     margin-top: 10px;
     border-radius: 8px;
     overflow: hidden;
-    border: 1px solid #e4e7ed;
-    background: #f5f7fa;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-soft);
 
     :deep(.el-image) {
       width: 100%;
@@ -3213,19 +3525,19 @@ onMounted(() => {
   .digital-human-hint {
     margin-top: 6px;
     font-size: 12px;
-    color: #909399;
+    color: var(--text-muted);
   }
 
   .digital-human-hint-inline {
     font-size: 11px;
-    color: #909399;
+    color: var(--text-muted);
   }
 
   .digital-human-result {
     margin-top: 12px;
     padding: 12px;
     border-radius: 8px;
-    background: #f5f7fa;
+    background: var(--bg-soft);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -3234,7 +3546,7 @@ onMounted(() => {
   .digital-human-result-title {
     font-size: 13px;
     font-weight: 600;
-    color: #303133;
+    color: var(--text-primary);
   }
 
   .digital-human-result video {
@@ -3243,9 +3555,41 @@ onMounted(() => {
     background: #000;
   }
 
+  .digital-human-download-btn {
+    align-self: flex-end;
+    min-width: 118px;
+    height: 36px;
+    border-radius: 999px;
+    padding: 0 16px;
+    border: 1px solid rgba(31, 158, 255, 0.24);
+    background: #fff;
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: none;
+  }
+
+  .digital-human-download-btn:hover,
+  .digital-human-download-btn:focus-visible {
+    border-color: var(--accent);
+    background: var(--bg-surface-accent);
+    color: var(--accent);
+  }
+
   .digital-human-textarea :deep(textarea) {
     resize: none;
     overflow: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  :deep(.el-dialog.digital-human-dialog) {
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 16px);
+  }
+
+  .digital-human-dialog .digital-human-dialog-body {
+    max-height: calc(100vh - 190px);
+    padding-right: 2px;
   }
 }
 
@@ -3302,7 +3646,7 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
   padding: 12px 0;
 }
 
@@ -3324,33 +3668,33 @@ onMounted(() => {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid #e4e7ed;
-  background: #fafafa;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-muted);
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: left;
 }
 
 .voice-card.is-trial-playing {
-  border-color: #409eff;
-  background: #eaf4ff;
+  border-color: var(--accent);
+  background: var(--bg-surface-accent);
   box-shadow: 0 6px 14px rgba(64, 158, 255, 0.18);
 }
 
 .voice-card.is-selected {
-  border-color: rgba(64, 158, 255, 0.65);
-  background: #f1f8ff;
+  border-color: var(--accent);
+  background: var(--bg-surface-selected);
 }
 
 .voice-card.is-selected.is-trial-playing {
-  border-color: #409eff;
-  background: #eaf4ff;
+  border-color: var(--accent);
+  background: var(--bg-surface-accent);
   box-shadow: 0 6px 14px rgba(64, 158, 255, 0.18);
 }
 
 .voice-card:hover {
-  border-color: #c6e2ff;
-  background: #ecf5ff;
+  border-color: var(--accent);
+  background: var(--bg-surface-accent);
 }
 
 .voice-card-create {
@@ -3366,8 +3710,8 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #eef5ff;
-  color: #409eff;
+  background: var(--accent-light);
+  color: var(--accent);
   font-size: 14px;
   flex-shrink: 0;
 }
@@ -3387,7 +3731,7 @@ onMounted(() => {
 .voice-card-name {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3395,7 +3739,7 @@ onMounted(() => {
 
 .voice-card-meta {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-muted);
   display: flex;
   gap: 6px;
 }
@@ -3405,11 +3749,11 @@ onMounted(() => {
 }
 
 .script-textarea {
-  margin: 16px 0;
+  margin: 0;
   
-  &.script-textarea-fullscreen {
+  &.script-textarea-fullscreen:not(.chapter-script-textarea) {
     :deep(textarea) {
-      min-height: 500px;
+      min-height: clamp(200px, 36vh, 280px);
       font-size: 14px;
       line-height: 1.8;
     }
@@ -3467,6 +3811,11 @@ onMounted(() => {
   text-align: center;
 }
 
+.task-progress-panel {
+  width: min(560px, 90vw);
+  margin: 24px auto 0;
+}
+
 .shots-list {
   position: relative;
 }
@@ -3474,7 +3823,7 @@ onMounted(() => {
 .shots-loading-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--bg-overlay-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3482,11 +3831,12 @@ onMounted(() => {
 }
 
 .shots-loading-card {
-  width: min(420px, 90%);
+  width: min(560px, 90%);
   padding: 20px 24px;
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3501,6 +3851,10 @@ onMounted(() => {
 .shots-loading-title {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.task-progress-bar {
+  width: 100%;
 }
 
 .extracted-title {
@@ -3521,7 +3875,7 @@ onMounted(() => {
 }
 
 .fixed-card {
-  height: 100%;
+  height: auto;
   display: flex;
   flex-direction: column;
   border-radius: 8px;
@@ -3570,13 +3924,45 @@ onMounted(() => {
   }
 
   .card-image-container {
-    flex: 1;
+    flex: 0 0 auto;
     width: 100%;
     min-height: 200px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--bg-secondary);
+    padding: 14px;
+    overflow: hidden;
+
+    &.is-character-portrait {
+      aspect-ratio: 3 / 4;
+      min-height: 320px;
+    }
+
+    &.is-character-landscape {
+      aspect-ratio: 4 / 3;
+      min-height: 240px;
+    }
+
+    &.is-character-square {
+      aspect-ratio: 1 / 1;
+      min-height: 260px;
+    }
+
+    &.is-scene-landscape {
+      aspect-ratio: 16 / 9;
+      min-height: 220px;
+    }
+
+    &.is-scene-portrait {
+      aspect-ratio: 4 / 5;
+      min-height: 280px;
+    }
+
+    &.is-scene-square {
+      aspect-ratio: 1 / 1;
+      min-height: 240px;
+    }
 
     .char-image,
     .scene-image {
@@ -3584,11 +3970,29 @@ onMounted(() => {
       height: 100%;
       position: relative;
       z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
 
       .el-image {
         width: 100%;
         height: 100%;
         border-radius: 0;
+      }
+
+      :deep(.el-image__wrapper) {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+      }
+
+      :deep(img) {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        object-position: center;
+        image-orientation: from-image;
       }
     }
 
@@ -3649,10 +4053,11 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
   margin-top: 16px;
+  align-items: start;
 
   .character-item,
   .scene-item {
-    min-height: 360px;
+    min-height: 0;
   }
 }
 

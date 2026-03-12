@@ -206,7 +206,7 @@ const handleClose = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f7fa;
+  background: var(--bg-soft);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -221,7 +221,7 @@ const handleClose = () => {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: #909399;
+  color: var(--text-muted);
 }
 
 .image-status .el-icon {
@@ -244,11 +244,11 @@ const handleClose = () => {
 .error-message {
   margin-top: 8px;
   padding: 12px;
-  background: #fef0f0;
-  border: 1px solid #fde2e2;
+  background: var(--error-light);
+  border: 1px solid rgba(248, 113, 113, 0.24);
   border-radius: 4px;
   font-size: 14px;
-  color: #f56c6c;
+  color: var(--error);
   max-width: 300px;
   word-wrap: break-word;
 }
@@ -258,7 +258,7 @@ const handleClose = () => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: #909399;
+  color: var(--text-muted);
 }
 
 .image-error .el-icon {
@@ -278,16 +278,16 @@ const handleClose = () => {
   margin: 0 0 8px 0;
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .prompt-text {
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--bg-soft);
   border-radius: 4px;
   font-size: 14px;
   line-height: 1.6;
-  color: #666;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   word-wrap: break-word;
 }

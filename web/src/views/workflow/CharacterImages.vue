@@ -255,6 +255,7 @@ onBeforeUnmount(() => {
   padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
+  color: var(--text-primary);
 }
 
 .main-card {
@@ -276,7 +277,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   margin-bottom: 16px;
-  background: #f5f7fa;
+  background: var(--bg-soft);
   border-radius: 8px;
 }
 
@@ -291,13 +292,13 @@ onBeforeUnmount(() => {
 }
 
 .character-info .role {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 13px;
   margin: 4px 0;
 }
 
 .character-info .desc {
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 12px;
   margin: 8px 0;
   overflow: hidden;
@@ -313,12 +314,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--bg-soft);
   border-radius: 4px;
 }
 
 .selection-info {
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 

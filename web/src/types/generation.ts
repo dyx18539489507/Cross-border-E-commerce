@@ -4,6 +4,19 @@ export interface GenerateCharactersRequest {
   outline?: string
   count?: number
   temperature?: number
+  model?: string
+}
+
+export interface GenerateAssistScriptRequest {
+  drama_id: string
+  episode_number?: number
+  prompt: string
+  model?: string
+}
+
+export interface GenerateAssistScriptResponse {
+  content: string
+  model: string
 }
 
 export interface ParseScriptRequest {

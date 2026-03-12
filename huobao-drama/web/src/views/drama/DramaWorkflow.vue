@@ -747,7 +747,7 @@ const goToScriptGeneration = () => {
   router.push(`/dramas/${drama.value?.id}/script`)
 }
 
-// AI流式生成剧本
+// AI生成剧本
 const generateScriptByAI = async () => {
   if (!drama.value?.title) {
     ElMessage.warning('项目标题不存在')
@@ -758,35 +758,23 @@ const generateScriptByAI = async () => {
   scriptContent.value = ''
   
   try {
-    const response = await fetch('/api/v1/ai/generate-script-stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        drama_title: drama.value.title,
-        drama_id: drama.value.id
-      })
+    const fallbackPrompt = drama.value.description?.trim()
+      ? `请基于以下项目描述生成第${currentEpisodeNumber.value}章完整剧本，内容可直接用于后续分镜拆解：${drama.value.description.trim()}`
+      : `请围绕项目《${drama.value.title}》生成第${currentEpisodeNumber.value}章完整剧本，包含场景切换、动作和对白，可直接用于后续分镜拆解。`
+
+    const result = await generationAPI.generateAssistScript({
+      drama_id: drama.value.id,
+      episode_number: currentEpisodeNumber.value,
+      prompt: fallbackPrompt,
+      model: 'deepseek-v3-2-251201'
     })
 
-    if (!response.ok) {
-      throw new Error('生成失败')
+    const generated = String(result?.content || '').trim()
+    if (!generated) {
+      throw new Error('未生成有效剧本内容')
     }
 
-    const reader = response.body?.getReader()
-    const decoder = new TextDecoder()
-
-    if (!reader) {
-      throw new Error('无法读取响应流')
-    }
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      
-      const chunk = decoder.decode(value, { stream: true })
-      scriptContent.value += chunk
-    }
+    scriptContent.value = generated
 
     ElMessage.success('剧本生成完成')
   } catch (error: any) {

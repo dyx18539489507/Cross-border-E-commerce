@@ -1,4 +1,5 @@
 import type {
+    CheckDramaComplianceResponse,
     CreateDramaRequest,
     CreateDramaResponse,
     Drama,
@@ -23,6 +24,10 @@ export const dramaAPI = {
 
   create(data: CreateDramaRequest) {
     return request.post<CreateDramaResponse>('/dramas', data)
+  },
+
+  checkCompliance(data: CreateDramaRequest) {
+    return request.post<CheckDramaComplianceResponse>('/dramas/compliance-check', data)
   },
 
   get(id: string) {
@@ -64,16 +69,16 @@ export const dramaAPI = {
     return request.put(`/dramas/${id}/progress`, data)
   },
 
-  generateStoryboard(episodeId: string) {
-    return request.post(`/episodes/${episodeId}/storyboards`)
+  generateStoryboard(episodeId: string, model?: string) {
+    return request.post(`/episodes/${episodeId}/storyboards`, { model })
   },
 
   getBackgrounds(episodeId: string) {
     return request.get(`/images/episode/${episodeId}/backgrounds`)
   },
 
-  extractBackgrounds(episodeId: string) {
-    return request.post<{ task_id: string; status: string; message: string }>(`/images/episode/${episodeId}/backgrounds/extract`)
+  extractBackgrounds(episodeId: string, model?: string) {
+    return request.post<{ task_id: string; status: string; message: string }>(`/images/episode/${episodeId}/backgrounds/extract`, { model })
   },
 
   batchGenerateBackgrounds(episodeId: string) {

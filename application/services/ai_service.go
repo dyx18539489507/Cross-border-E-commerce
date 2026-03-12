@@ -3,9 +3,11 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/ai"
+	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
 	"gorm.io/gorm"
 )
@@ -13,12 +15,19 @@ import (
 type AIService struct {
 	db  *gorm.DB
 	log *logger.Logger
+	cfg *config.Config
 }
 
-func NewAIService(db *gorm.DB, log *logger.Logger) *AIService {
+func NewAIService(db *gorm.DB, log *logger.Logger, cfgs ...*config.Config) *AIService {
+	var cfg *config.Config
+	if len(cfgs) > 0 {
+		cfg = cfgs[0]
+	}
+
 	return &AIService{
 		db:  db,
 		log: log,
+		cfg: cfg,
 	}
 }
 
@@ -358,6 +367,15 @@ func (s *AIService) GetConfigForModel(serviceType string, modelName string) (*mo
 func (s *AIService) GetAIClient(serviceType string) (ai.AIClient, error) {
 	config, err := s.GetDefaultConfig(serviceType)
 	if err != nil {
+		if serviceType == "text" && isNoActiveConfigError(err) {
+			client, fallbackErr := s.newComplianceTextClient("")
+			if fallbackErr == nil {
+				return client, nil
+			}
+			if s.log != nil {
+				s.log.Warnw("Failed to use compliance text fallback", "error", fallbackErr)
+			}
+		}
 		return nil, err
 	}
 
@@ -392,6 +410,15 @@ func (s *AIService) GetAIClient(serviceType string) (ai.AIClient, error) {
 func (s *AIService) GetAIClientForModel(serviceType string, modelName string) (ai.AIClient, error) {
 	config, err := s.GetConfigForModel(serviceType, modelName)
 	if err != nil {
+		if serviceType == "text" && isNoActiveConfigError(err) {
+			client, fallbackErr := s.newComplianceTextClient(modelName)
+			if fallbackErr == nil {
+				return client, nil
+			}
+			if s.log != nil {
+				s.log.Warnw("Failed to use compliance text fallback for model", "model", modelName, "error", fallbackErr)
+			}
+		}
 		return nil, err
 	}
 
@@ -419,8 +446,158 @@ func (s *AIService) GetAIClientForModel(serviceType string, modelName string) (a
 func (s *AIService) GenerateText(prompt string, systemPrompt string, options ...func(*ai.ChatCompletionRequest)) (string, error) {
 	client, err := s.GetAIClient("text")
 	if err != nil {
-		return "", fmt.Errorf("failed to get AI client: %w", err)
+		return "", normalizeTextGenerationError(fmt.Errorf("failed to get AI client: %w", err))
 	}
 
-	return client.GenerateText(prompt, systemPrompt, options...)
+	text, genErr := client.GenerateText(prompt, systemPrompt, options...)
+	if genErr == nil {
+		return text, nil
+	}
+
+	if isTextServiceFallbackError(genErr) {
+		if s.log != nil {
+			s.log.Warnw("Default text model failed, trying compliance fallback", "error", genErr)
+		}
+		fallbackClient, fallbackErr := s.newComplianceTextClient("")
+		if fallbackErr == nil {
+			fallbackText, retryErr := fallbackClient.GenerateText(prompt, systemPrompt, options...)
+			if retryErr == nil && strings.TrimSpace(fallbackText) != "" {
+				return fallbackText, nil
+			}
+			if retryErr != nil {
+				genErr = retryErr
+			}
+		} else if s.log != nil {
+			s.log.Warnw("Compliance fallback unavailable for text generation", "error", fallbackErr)
+		}
+	}
+
+	return "", normalizeTextGenerationError(genErr)
+}
+
+func (s *AIService) GenerateTextForModel(modelName string, prompt string, systemPrompt string, options ...func(*ai.ChatCompletionRequest)) (string, error) {
+	requestedModel := strings.TrimSpace(modelName)
+	if requestedModel == "" {
+		return s.GenerateText(prompt, systemPrompt, options...)
+	}
+
+	var lastErr error
+
+	// 显式指定模型时优先尝试合规通道，避免默认文本配置被停用时仍然命中不可用模型。
+	if fallbackClient, err := s.newComplianceTextClient(requestedModel); err == nil {
+		text, genErr := fallbackClient.GenerateText(prompt, systemPrompt, options...)
+		if genErr == nil && strings.TrimSpace(text) != "" {
+			return text, nil
+		}
+		lastErr = genErr
+		if genErr != nil && !isTextServiceFallbackError(genErr) {
+			return "", normalizeTextGenerationError(genErr)
+		}
+	} else {
+		lastErr = err
+	}
+
+	client, err := s.GetAIClientForModel("text", requestedModel)
+	if err != nil {
+		if lastErr == nil {
+			lastErr = err
+		}
+		return "", normalizeTextGenerationError(fmt.Errorf("failed to get AI client: %w", lastErr))
+	}
+
+	text, genErr := client.GenerateText(prompt, systemPrompt, options...)
+	if genErr != nil {
+		if isTextServiceFallbackError(genErr) && lastErr != nil {
+			return "", normalizeTextGenerationError(lastErr)
+		}
+		return "", normalizeTextGenerationError(genErr)
+	}
+
+	return text, nil
+}
+
+func (s *AIService) newComplianceTextClient(modelName string) (ai.AIClient, error) {
+	if s.cfg == nil || !s.cfg.Compliance.Enabled {
+		return nil, errors.New("compliance text fallback is disabled")
+	}
+
+	baseURL := strings.TrimSpace(s.cfg.Compliance.BaseURL)
+	apiKey := strings.TrimSpace(s.cfg.Compliance.APIKey)
+	endpoint := strings.TrimSpace(s.cfg.Compliance.Endpoint)
+	model := strings.TrimSpace(modelName)
+	if model == "" {
+		model = strings.TrimSpace(s.cfg.Compliance.Model)
+	}
+	if endpoint == "" {
+		endpoint = "/chat/completions"
+	}
+
+	if baseURL == "" || apiKey == "" || model == "" {
+		return nil, errors.New("compliance text fallback is not configured")
+	}
+
+	if s.log != nil {
+		s.log.Infow("Using compliance text fallback", "model", model, "base_url", baseURL)
+	}
+
+	return ai.NewOpenAIClient(baseURL, apiKey, model, endpoint), nil
+}
+
+func isNoActiveConfigError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no active config found")
+}
+
+func isTextServiceFallbackError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "reached the set inference limit") ||
+		strings.Contains(msg, "model service has been paused") ||
+		strings.Contains(msg, "safe experience mode") ||
+		strings.Contains(msg, "modelnotopen") ||
+		strings.Contains(msg, "invalidendpointormodel") ||
+		strings.Contains(msg, "does not exist or you do not have access") ||
+		strings.Contains(msg, "no active config found") ||
+		strings.Contains(msg, "rate limit") ||
+		strings.Contains(msg, "too many requests") ||
+		strings.Contains(msg, "service unavailable") ||
+		strings.Contains(msg, "temporarily unavailable") ||
+		strings.Contains(msg, "overloaded") ||
+		strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "context deadline exceeded")
+}
+
+func normalizeTextGenerationError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+
+	switch {
+	case strings.Contains(lower, "reached the set inference limit"),
+		strings.Contains(lower, "model service has been paused"),
+		strings.Contains(lower, "safe experience mode"):
+		return fmt.Errorf("当前默认文本模型额度已耗尽或服务已暂停，请在“设置 > AI服务配置”切换到可用文本模型，或在供应商控制台关闭 Safe Experience Mode 后重试")
+	case strings.Contains(lower, "modelnotopen"),
+		strings.Contains(lower, "invalidendpointormodel"),
+		strings.Contains(lower, "does not exist or you do not have access"),
+		strings.Contains(lower, "no active config found"),
+		strings.Contains(lower, "failed to get ai client"):
+		return fmt.Errorf("当前没有可用的文本模型，请在“设置 > AI服务配置”中启用可用的文本模型后重试")
+	case strings.Contains(lower, "rate limit"),
+		strings.Contains(lower, "too many requests"):
+		return fmt.Errorf("文本模型请求过于频繁，请稍后重试")
+	}
+
+	return err
 }

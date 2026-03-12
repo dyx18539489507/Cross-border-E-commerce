@@ -51,12 +51,12 @@ func NewVisualClient(accessKeyID, secretAccessKey, region, service, host string)
 		host = DefaultVisualHost
 	}
 
-	// Avoid unexpected failures from local proxy env vars (HTTP_PROXY/HTTPS_PROXY).
-	// Volcengine endpoints are typically reachable directly; using a misconfigured proxy
-	// can cause 5xx errors like "504 Gateway Time-out".
-	transport, _ := http.DefaultTransport.(*http.Transport)
-	clonedTransport := transport.Clone()
-	clonedTransport.Proxy = nil
+	transport := http.DefaultTransport
+	if baseTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		// Respect HTTP(S)_PROXY by default. Some deployments require an egress
+		// proxy and direct connections to Volcengine will be reset.
+		transport = baseTransport.Clone()
+	}
 
 	return &VisualClient{
 		AccessKeyID:     accessKeyID,
@@ -66,7 +66,7 @@ func NewVisualClient(accessKeyID, secretAccessKey, region, service, host string)
 		Host:            host,
 		HTTPClient: &http.Client{
 			Timeout:   10 * time.Minute,
-			Transport: clonedTransport,
+			Transport: transport,
 		},
 	}
 }

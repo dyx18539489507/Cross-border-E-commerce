@@ -23,7 +23,7 @@ type FramePromptService struct {
 func NewFramePromptService(db *gorm.DB, cfg *config.Config, log *logger.Logger) *FramePromptService {
 	return &FramePromptService{
 		db:         db,
-		aiService:  NewAIService(db, log),
+		aiService:  NewAIService(db, log, cfg),
 		log:        log,
 		config:     cfg,
 		promptI18n: NewPromptI18n(cfg),

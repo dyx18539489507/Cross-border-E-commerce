@@ -4,7 +4,9 @@
     v-model="visible"
     :title="$t('drama.createNew')"
     width="640px"
+    align-center
     :close-on-click-modal="false"
+    modal-class="create-dialog-overlay"
     class="create-dialog dialog-form-safe"
     @closed="handleClosed"
   >
@@ -33,7 +35,7 @@
         <el-input
           v-model="form.description"
           type="textarea"
-          :rows="4"
+          :rows="3"
           :placeholder="$t('drama.projectDescPlaceholder')"
           maxlength="500"
           show-word-limit
@@ -67,7 +69,7 @@
         <el-input
           v-model="form.material_composition"
           type="textarea"
-          :rows="3"
+          :rows="2"
           :placeholder="$t('drama.materialCompositionPlaceholder')"
           maxlength="200"
           show-word-limit
@@ -79,7 +81,7 @@
         <el-input
           v-model="form.marketing_selling_points"
           type="textarea"
-          :rows="3"
+          :rows="2"
           :placeholder="$t('drama.marketingSellingPointsPlaceholder')"
           maxlength="200"
           show-word-limit
@@ -109,8 +111,11 @@
   <el-dialog
     v-model="complianceDialogVisible"
     title="合规校验详情"
-    width="1080px"
+    width="1240px"
+    top="0"
+    append-to-body
     :close-on-click-modal="false"
+    modal-class="compliance-dialog-overlay"
     class="compliance-dialog"
   >
     <div class="compliance-meta-row">
@@ -159,7 +164,12 @@
           <h3 class="section-title">不合规明细</h3>
           <span class="pending-count">{{ complianceIssueItems.length }} 项待处理</span>
         </header>
-        <div class="risk-item-list">
+        <div
+          ref="riskItemListRef"
+          class="risk-item-list"
+          :class="{ 'risk-item-list--scrollable': riskItemListScrollable }"
+          :style="riskItemListStyle"
+        >
           <article
             v-for="(item, index) in complianceIssueItems"
             :key="`${item.title}-${index}`"
@@ -206,10 +216,21 @@
 
     <template #footer>
       <div class="compliance-footer">
-        <el-button size="large" class="footer-secondary-btn" @click="handleComplianceCancel">
+        <el-button
+          size="large"
+          class="footer-secondary-btn"
+          :disabled="complianceSubmitting"
+          @click="handleComplianceCancel"
+        >
           {{ $t('common.cancel') }}
         </el-button>
-        <el-button type="primary" size="large" class="footer-primary-btn" @click="handleCompliancePrimaryAction">
+        <el-button
+          type="primary"
+          size="large"
+          class="footer-primary-btn"
+          :loading="complianceSubmitting"
+          @click="handleCompliancePrimaryAction"
+        >
           {{ complianceCanProceed ? $t('common.next') : '去修改' }}
         </el-button>
       </div>
@@ -218,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { ArrowRight, Download } from '@element-plus/icons-vue'
@@ -252,11 +273,15 @@ const { t } = useI18n()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const complianceSubmitting = ref(false)
 const countryKeyword = ref('')
 const complianceDialogVisible = ref(false)
 const complianceData = ref<ComplianceResult | null>(null)
 const complianceDramaId = ref('')
 const complianceCheckedAt = ref('')
+const riskItemListRef = ref<HTMLDivElement>()
+const riskItemListMaxHeight = ref('')
+const pendingCreatePayload = ref<CreateDramaRequest | null>(null)
 
 const visible = ref(props.modelValue)
 watch(() => props.modelValue, (val) => {
@@ -265,6 +290,15 @@ watch(() => props.modelValue, (val) => {
 watch(visible, (val) => {
   emit('update:modelValue', val)
 })
+
+watch(
+  () => complianceDialogVisible.value,
+  (open) => {
+    if (open) {
+      void updateRiskItemListHeight()
+    }
+  }
+)
 
 const form = reactive<CreateDramaRequest>({
   title: '',
@@ -306,7 +340,7 @@ const isComplianceBlocked = computed(() => {
 const isOrangeRisk = computed(() => currentCompliance.value.level === 'orange')
 
 const complianceCanProceed = computed(() => {
-  return !isComplianceBlocked.value && !!complianceDramaId.value
+  return !isComplianceBlocked.value && !!pendingCreatePayload.value
 })
 
 const scoreRingStyle = computed(() => {
@@ -343,6 +377,13 @@ const inferIssueLevel = (text: string): ComplianceRiskLevel => {
   return currentCompliance.value.level
 }
 
+const ISSUE_LEVEL_PRIORITY: Record<ComplianceRiskLevel, number> = {
+  red: 0,
+  orange: 1,
+  yellow: 2,
+  green: 3
+}
+
 const complianceIssueItems = computed<ComplianceIssueItem[]>(() => {
   const points = currentCompliance.value.non_compliance_points || []
   const suggestions = currentCompliance.value.rectification_suggestions || []
@@ -355,11 +396,89 @@ const complianceIssueItems = computed<ComplianceIssueItem[]>(() => {
     }]
   }
 
-  return points.map((title, index) => ({
-    level: inferIssueLevel(title),
-    title,
-    suggestion: suggestions[index] || suggestions[0] || '请补充相关资质文件并重新校验。'
-  }))
+  return points
+    .map((title, index) => ({
+      order: index,
+      level: inferIssueLevel(title),
+      title,
+      suggestion: suggestions[index] || suggestions[0] || '请补充相关资质文件并重新校验。'
+    }))
+    .sort((a, b) => {
+      const priorityDiff = ISSUE_LEVEL_PRIORITY[a.level] - ISSUE_LEVEL_PRIORITY[b.level]
+      if (priorityDiff !== 0) return priorityDiff
+      return a.order - b.order
+    })
+    .map(({ order, ...item }) => item)
+})
+
+const riskItemListScrollable = computed(() => complianceIssueItems.value.length > 3)
+
+const riskItemListStyle = computed(() => {
+  if (!riskItemListScrollable.value || !riskItemListMaxHeight.value) {
+    return undefined
+  }
+
+  return {
+    maxHeight: riskItemListMaxHeight.value
+  }
+})
+
+const getRiskItemListMaxAllowedHeight = () => {
+  if (typeof window === 'undefined') {
+    return 360
+  }
+
+  return Math.max(210, Math.round(window.innerHeight * 0.34))
+}
+
+const updateRiskItemListHeight = async () => {
+  await nextTick()
+
+  const listEl = riskItemListRef.value
+  if (!listEl || !riskItemListScrollable.value) {
+    riskItemListMaxHeight.value = ''
+    return
+  }
+
+  const items = Array.from(listEl.querySelectorAll<HTMLElement>('.risk-item'))
+  if (items.length === 0) {
+    riskItemListMaxHeight.value = ''
+    return
+  }
+
+  const twoItemHeight = items
+    .slice(0, 2)
+    .reduce((total, item) => total + item.offsetHeight, 0)
+  const halfThirdItemHeight = items[2] ? Math.round(items[2].offsetHeight * 0.5) : 0
+
+  const maxAllowedHeight = getRiskItemListMaxAllowedHeight()
+  const compressedHeight = Math.max(196, twoItemHeight + halfThirdItemHeight - 12)
+  riskItemListMaxHeight.value = `${Math.min(compressedHeight, maxAllowedHeight)}px`
+}
+
+watch(
+  () => complianceIssueItems.value.map((item) => `${item.level}:${item.title}:${item.suggestion}`).join('|'),
+  () => {
+    if (complianceDialogVisible.value) {
+      void updateRiskItemListHeight()
+    }
+  }
+)
+
+const handleComplianceResize = () => {
+  if (complianceDialogVisible.value) {
+    void updateRiskItemListHeight()
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', handleComplianceResize)
+}
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleComplianceResize)
+  }
 })
 
 const getRiskLevelLabel = (level: ComplianceRiskLevel) => {
@@ -496,7 +615,9 @@ const buildPdfBlobFromJpegDataUrl = (jpegDataUrl: string, imageWidth: number, im
   const trailer = textToUint8(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${currentOffset}\n%%EOF`)
 
   const pdfBytes = concatUint8Arrays([header, ...objects, xrefBytes, trailer])
-  return new Blob([pdfBytes], { type: 'application/pdf' })
+  const blobBytes = new Uint8Array(pdfBytes.byteLength)
+  blobBytes.set(pdfBytes)
+  return new Blob([blobBytes], { type: 'application/pdf' })
 }
 
 const downloadBlob = (blob: Blob, filename: string) => {
@@ -521,28 +642,21 @@ const formatDateTime = (date: Date) => {
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`
 }
 
-const openComplianceDialog = (rawCompliance: unknown, dramaId = '') => {
+const openComplianceDialog = (rawCompliance: unknown) => {
   const normalized = normalizeComplianceResult(rawCompliance)
   if (!normalized) {
     return false
   }
 
   complianceData.value = normalized
-  complianceDramaId.value = dramaId
+  complianceDramaId.value = ''
   complianceCheckedAt.value = formatDateTime(new Date())
   complianceDialogVisible.value = true
   return true
 }
 
-const handleComplianceClose = () => {
-  complianceDialogVisible.value = false
-}
-
 const handleComplianceCancel = () => {
   complianceDialogVisible.value = false
-  if (complianceCanProceed.value) {
-    visible.value = false
-  }
 }
 
 const handleCompliancePrimaryAction = () => {
@@ -550,22 +664,41 @@ const handleCompliancePrimaryAction = () => {
     handleComplianceConfirm()
     return
   }
-  handleComplianceClose()
+  ElMessage.info('请根据不合规明细和整改建议修改后，再继续下一步。')
 }
 
-const handleComplianceConfirm = () => {
-  if (!complianceCanProceed.value || !complianceDramaId.value) {
+const handleComplianceConfirm = async () => {
+  if (!complianceCanProceed.value || !pendingCreatePayload.value) {
     ElMessage.warning('风险评级为红色（>=80），请先根据整改建议完善后再提交。')
     return
   }
 
-  complianceDialogVisible.value = false
-  if (isOrangeRisk.value) {
-    ElMessage.warning('当前项目为橙色高风险，已进入下一步，请优先处理不合规项。')
-  } else {
-    ElMessage.success('创建成功')
+  complianceSubmitting.value = true
+  try {
+    const result = await dramaAPI.create(pendingCreatePayload.value)
+    const dramaId = String(result.drama.id)
+    complianceDramaId.value = dramaId
+    complianceDialogVisible.value = false
+    visible.value = false
+    pendingCreatePayload.value = null
+    emit('created', dramaId)
+
+    if (isOrangeRisk.value) {
+      ElMessage.warning('当前项目为橙色高风险，已进入下一步，请优先处理不合规项。')
+    } else {
+      ElMessage.success('创建成功')
+    }
+    router.push(`/dramas/${dramaId}`)
+  } catch (error: any) {
+    const opened = openComplianceDialog(error?.details?.compliance)
+    if (opened) {
+      ElMessage.warning(error.message || '风险评级发生变化，请根据最新整改建议处理后再继续。')
+      return
+    }
+    ElMessage.error(error.message || '创建失败')
+  } finally {
+    complianceSubmitting.value = false
   }
-  router.push(`/dramas/${complianceDramaId.value}`)
 }
 
 const handleExportCompliancePdf = () => {
@@ -723,6 +856,12 @@ const resetForm = () => {
   form.target_country = []
   form.material_composition = ''
   form.marketing_selling_points = ''
+  pendingCreatePayload.value = null
+  complianceData.value = null
+  complianceDramaId.value = ''
+  complianceCheckedAt.value = ''
+  riskItemListMaxHeight.value = ''
+  complianceSubmitting.value = false
 }
 
 const handleClosed = () => {
@@ -744,15 +883,13 @@ const handleSubmit = async () => {
   loading.value = true
   try {
     const payload = buildCreateDramaPayload(form)
-    const result = await dramaAPI.create(payload)
-    const dramaId = String(result.drama.id)
-    const opened = openComplianceDialog(result.compliance, dramaId)
+    pendingCreatePayload.value = payload
+    const result = await dramaAPI.checkCompliance(payload)
+    const opened = openComplianceDialog(result.compliance)
 
     if (!opened) {
-      visible.value = false
-      emit('created', dramaId)
-      ElMessage.success('创建成功')
-      router.push(`/dramas/${dramaId}`)
+      pendingCreatePayload.value = null
+      ElMessage.error('未获取到合规校验结果，请重试')
       return
     }
 
@@ -761,13 +898,11 @@ const handleSubmit = async () => {
       return
     }
 
-    visible.value = false
-    emit('created', dramaId)
-
     if (isOrangeRisk.value) {
-      ElMessage.warning('项目已创建，当前风险为橙色，请优先处理不合规项后继续推进。')
+      ElMessage.warning('当前风险为橙色，可继续下一步，但建议先优先处理高风险项。')
     }
   } catch (error: any) {
+    pendingCreatePayload.value = null
     const opened = openComplianceDialog(error?.details?.compliance)
     if (opened) {
       ElMessage.warning(error.message || '风险评级为红色（>=80），请先整改后再提交。')
@@ -781,11 +916,55 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
-.create-dialog :deep(.el-dialog) {
+:global(.create-dialog-overlay) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px 16px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+:global(.compliance-dialog-overlay) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 8px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+:global(.create-dialog-overlay .el-overlay-dialog) {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:global(.compliance-dialog-overlay .el-overlay-dialog) {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.el-dialog.create-dialog) {
+  width: min(640px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--radius-xl);
+  overflow: hidden;
 }
 
 .create-dialog :deep(.el-dialog__header) {
+  flex-shrink: 0;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border-primary);
   margin-right: 0;
@@ -798,7 +977,17 @@ const handleSubmit = async () => {
 }
 
 .create-dialog :deep(.el-dialog__body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 1.5rem;
+}
+
+.create-dialog :deep(.el-dialog__footer) {
+  flex-shrink: 0;
+  padding: 1rem 1.5rem 1.5rem;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-card);
 }
 
 .dialog-desc {
@@ -888,39 +1077,52 @@ const handleSubmit = async () => {
   min-width: 100px;
 }
 
-.compliance-dialog :deep(.el-dialog) {
-  border-radius: 20px;
+:deep(.el-dialog.compliance-dialog) {
+  width: min(1650px, calc(100vw - 16px)) !important;
+  max-width: calc(100vw - 16px);
+  height: auto;
+  max-height: calc(100vh - 60px);
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
   overflow: hidden;
 }
 
 .compliance-dialog :deep(.el-dialog__header) {
-  padding: 18px 28px;
-  border-bottom: 1px solid #e6ebf2;
+  flex-shrink: 0;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-primary);
   margin-right: 0;
 }
 
 .compliance-dialog :deep(.el-dialog__title) {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  color: #17243a;
+  color: var(--text-primary);
 }
 
 .compliance-dialog :deep(.el-dialog__body) {
-  padding: 24px 28px;
-  background: #f7f9fc;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px;
+  background: var(--bg-primary);
 }
 
 .compliance-dialog :deep(.el-dialog__footer) {
-  padding: 16px 28px 20px;
-  border-top: 1px solid #e6ebf2;
+  flex-shrink: 0;
+  padding: 10px 20px 14px;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-card);
 }
 
 .compliance-meta-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  color: #6f7f95;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
@@ -938,30 +1140,30 @@ const handleSubmit = async () => {
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
 }
 
 .compliance-alert {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .compliance-main-grid {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
-  gap: 18px;
+  gap: 12px;
 }
 
 .risk-score-card,
 .risk-details-card,
 .rectification-card {
-  background: #ffffff;
-  border: 1px solid #dce4ee;
-  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: 16px;
 }
 
 .risk-score-card {
-  padding: 22px 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -969,26 +1171,26 @@ const handleSubmit = async () => {
 
 .section-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
-  color: #1d293f;
+  color: var(--text-primary);
 }
 
 .risk-ring {
-  width: 170px;
-  height: 170px;
-  margin-top: 22px;
+  width: 136px;
+  height: 136px;
+  margin-top: 12px;
   border-radius: 50%;
-  background: conic-gradient(var(--risk-color) var(--risk-angle), #edf2f7 var(--risk-angle));
+  background: conic-gradient(var(--risk-color) var(--risk-angle), var(--bg-soft) var(--risk-angle));
   display: grid;
   place-items: center;
 }
 
 .risk-ring-inner {
-  width: 132px;
-  height: 132px;
+  width: 102px;
+  height: 102px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--bg-card);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -996,27 +1198,30 @@ const handleSubmit = async () => {
 }
 
 .risk-score-value {
-  font-size: 40px;
+  font-size: 34px;
   line-height: 1;
   font-weight: 700;
-  color: #1d293f;
+  color: var(--text-primary);
 }
 
 .risk-score-level {
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 14px;
   font-weight: 700;
 }
 
 .risk-summary-text {
-  margin: 20px 0 0;
-  color: #667891;
+  margin: 10px 0 0;
+  color: var(--text-secondary);
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.55;
   text-align: center;
 }
 
 .risk-details-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1024,30 +1229,36 @@ const handleSubmit = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 22px;
-  border-bottom: 1px solid #e8edf5;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .pending-count {
-  color: #ef4444;
-  background: #fff1f2;
-  border-radius: 10px;
+  color: var(--error);
+  background: var(--error-light);
+  border-radius: 12px;
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .risk-item-list {
-  max-height: 450px;
+  overflow: visible;
+}
+
+.risk-item-list--scrollable {
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .risk-item {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 18px 22px;
-  border-bottom: 1px solid #edf2f7;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .risk-item:last-child {
@@ -1055,7 +1266,7 @@ const handleSubmit = async () => {
 }
 
 .risk-item-dot {
-  margin-top: 8px;
+  margin-top: 6px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -1092,17 +1303,17 @@ const handleSubmit = async () => {
 
 .risk-item-title {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
-  color: #1d293f;
-  line-height: 1.5;
+  color: var(--text-primary);
+  line-height: 1.45;
 }
 
 .risk-item-desc {
-  margin: 8px 0 0;
-  color: #6b7c92;
-  font-size: 14px;
-  line-height: 1.6;
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .risk-level-chip {
@@ -1117,86 +1328,94 @@ const handleSubmit = async () => {
 }
 
 .risk-level-chip--red {
-  color: #ef4444;
-  background: #fff1f2;
+  color: var(--error);
+  background: var(--error-light);
 }
 
 .risk-level-chip--orange {
   color: #f97316;
-  background: #fff7ed;
+  background: rgba(249, 115, 22, 0.12);
 }
 
 .risk-level-chip--yellow {
   color: #d97706;
-  background: #fffbeb;
+  background: var(--warning-light);
 }
 
 .risk-level-chip--green {
   color: #16a34a;
-  background: #ecfdf3;
+  background: var(--success-light);
 }
 
 .rectification-card {
-  margin-top: 16px;
-  padding: 20px 22px;
+  margin-top: 12px;
+  padding: 14px 16px;
 }
 
 .rectification-list {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   padding-left: 20px;
-  color: #2f3f55;
-  font-size: 14px;
-  line-height: 1.75;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  columns: 2;
+  column-gap: 24px;
+}
+
+.rectification-list li {
+  break-inside: avoid;
+  margin-bottom: 6px;
 }
 
 .category-row {
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
 }
 
 .category-label {
-  font-size: 14px;
-  color: #5f7088;
+  font-size: 13px;
+  color: var(--text-secondary);
   flex: 0 0 auto;
 }
 
 .category-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 .category-tag {
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 999px;
-  background: #edf6ff;
-  color: #0284c7;
+  background: var(--accent-light);
+  color: var(--accent);
   font-size: 12px;
 }
 
 .compliance-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 14px;
 }
 
 .compliance-footer .el-button {
   min-width: 116px;
-  border-radius: 10px;
+  min-height: 44px;
+  border-radius: 12px;
 }
 
 .footer-secondary-btn {
-  border-color: #d3dce8;
-  color: #4b5565;
-  background: #fff;
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 
 .footer-secondary-btn:hover {
-  border-color: #b6c4d7;
-  color: #344153;
-  background: #fff;
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
 }
 
 .footer-primary-btn {
@@ -1212,16 +1431,113 @@ const handleSubmit = async () => {
 }
 
 @media (max-width: 1200px) {
-  .compliance-dialog :deep(.el-dialog) {
-    width: min(96vw, 1080px) !important;
+  :deep(.el-dialog.compliance-dialog) {
+    width: min(98vw, 1650px) !important;
   }
 
   .compliance-main-grid {
     grid-template-columns: 1fr;
   }
+
+  .rectification-list {
+    columns: 1;
+  }
+}
+
+@media (max-height: 860px) and (min-width: 769px) {
+  :global(.compliance-dialog-overlay) {
+    padding: 20px 6px;
+  }
+
+  :deep(.el-dialog.compliance-dialog) {
+    width: min(1600px, calc(100vw - 8px)) !important;
+    max-width: calc(100vw - 8px);
+    max-height: calc(100vh - 40px);
+  }
+
+  .compliance-dialog :deep(.el-dialog__header) {
+    padding: 11px 16px;
+  }
+
+  .compliance-dialog :deep(.el-dialog__body) {
+    padding: 11px 16px;
+  }
+
+  .compliance-dialog :deep(.el-dialog__footer) {
+    padding: 9px 16px 11px;
+  }
+
+  .section-title {
+    font-size: 17px;
+  }
+
+  .compliance-main-grid {
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .risk-score-card {
+    padding: 12px;
+  }
+
+  .risk-ring {
+    width: 122px;
+    height: 122px;
+    margin-top: 8px;
+  }
+
+  .risk-ring-inner {
+    width: 92px;
+    height: 92px;
+  }
+
+  .risk-score-value {
+    font-size: 30px;
+  }
+
+  .risk-summary-text {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .risk-item {
+    padding: 9px 12px;
+  }
+
+  .risk-item-title {
+    font-size: 13px;
+  }
+
+  .risk-item-desc,
+  .rectification-list,
+  .category-label {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .rectification-card {
+    margin-top: 6px;
+    padding: 11px 12px;
+  }
 }
 
 @media (max-width: 768px) {
+  :global(.create-dialog-overlay),
+  :global(.compliance-dialog-overlay) {
+    padding: 20px 10px;
+  }
+
+  :deep(.el-dialog.create-dialog),
+  :deep(.el-dialog.compliance-dialog) {
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  :deep(.el-dialog.compliance-dialog) {
+    max-height: calc(100vh - 40px);
+  }
+
   .create-dialog :deep(.el-dialog__body) {
     padding: 1rem;
   }

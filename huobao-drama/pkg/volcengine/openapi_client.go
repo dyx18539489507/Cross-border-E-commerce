@@ -51,12 +51,12 @@ func NewOpenAPIClient(accessKeyID, secretAccessKey, region, service, host string
 		host = DefaultOpenAPIHost
 	}
 
-	// Avoid unexpected failures from local proxy env vars (HTTP_PROXY/HTTPS_PROXY).
-	// These endpoints are generally reachable directly, and a misconfigured proxy
-	// can cause spurious 5xx/timeout errors.
-	transport, _ := http.DefaultTransport.(*http.Transport)
-	clonedTransport := transport.Clone()
-	clonedTransport.Proxy = nil
+	transport := http.DefaultTransport
+	if baseTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		// Respect HTTP(S)_PROXY by default. Some deployments require an egress
+		// proxy and direct connections to Volcengine will be reset.
+		transport = baseTransport.Clone()
+	}
 
 	return &OpenAPIClient{
 		AccessKeyID:     accessKeyID,
@@ -66,7 +66,7 @@ func NewOpenAPIClient(accessKeyID, secretAccessKey, region, service, host string
 		Host:            host,
 		HTTPClient: &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: clonedTransport,
+			Transport: transport,
 		},
 	}
 }

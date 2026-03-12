@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+var storageFilenameSeq atomic.Uint64
 
 type LocalStorage struct {
 	basePath string
@@ -32,8 +35,7 @@ func (s *LocalStorage) Upload(file io.Reader, filename string, category string) 
 		return "", fmt.Errorf("failed to create category directory: %w", err)
 	}
 
-	timestamp := time.Now().Format("20060102_150405")
-	newFilename := fmt.Sprintf("%s_%s", timestamp, filename)
+	newFilename := fmt.Sprintf("%s_%s", nextStorageToken(), filename)
 	filePath := filepath.Join(dir, newFilename)
 
 	dst, err := os.Create(filePath)
@@ -88,9 +90,8 @@ func (s *LocalStorage) DownloadFromURL(url, category string) (string, error) {
 		return "", fmt.Errorf("failed to create category directory: %w", err)
 	}
 
-	// 生成唯一文件名
-	timestamp := time.Now().Format("20060102_150405_000")
-	filename := fmt.Sprintf("%s%s", timestamp, ext)
+	// 生成唯一文件名，避免批量下载时互相覆盖。
+	filename := fmt.Sprintf("%s%s", nextStorageToken(), ext)
 	filePath := filepath.Join(dir, filename)
 
 	// 保存文件
@@ -107,6 +108,12 @@ func (s *LocalStorage) DownloadFromURL(url, category string) (string, error) {
 	// 返回本地URL
 	localURL := fmt.Sprintf("%s/%s/%s", s.baseURL, category, filename)
 	return localURL, nil
+}
+
+func nextStorageToken() string {
+	now := time.Now().UTC()
+	seq := storageFilenameSeq.Add(1)
+	return fmt.Sprintf("%s_%09d_%06d", now.Format("20060102_150405"), now.Nanosecond(), seq%1000000)
 }
 
 // getFileExtension 从URL或Content-Type推断文件扩展名

@@ -19,6 +19,7 @@ type VoiceSpeaker struct {
 	Age        string   `json:"age"`
 	TrialURL   string   `json:"trial_url"`
 	Categories []string `json:"categories,omitempty"`
+	ResourceID string   `json:"resource_id,omitempty"`
 }
 
 type VoiceLibraryService struct {
@@ -61,6 +62,7 @@ type listSpeakersResult struct {
 		Gender     string `json:"Gender"`
 		Age        string `json:"Age"`
 		TrialURL   string `json:"TrialURL"`
+		ResourceID string `json:"ResourceID"`
 		Categories []struct {
 			Categories []string `json:"Categories"`
 		} `json:"Categories"`
@@ -99,6 +101,7 @@ func (s *VoiceLibraryService) ListSpeakers(ctx context.Context) ([]VoiceSpeaker,
 			Age:        item.Age,
 			TrialURL:   item.TrialURL,
 			Categories: categories,
+			ResourceID: item.ResourceID,
 		})
 	}
 

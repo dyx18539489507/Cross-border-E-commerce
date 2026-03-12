@@ -63,6 +63,28 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 	})
 }
 
+func (h *DramaHandler) CheckCompliance(c *gin.Context) {
+	var req services.CreateDramaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	compliance, err := h.dramaService.EvaluateCompliance(&req)
+	if err != nil {
+		if errors.Is(err, services.ErrTargetCountryRequired) {
+			response.BadRequest(c, "请选择目标国家")
+			return
+		}
+		response.InternalError(c, "合规校验失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"compliance": compliance,
+	})
+}
+
 func (h *DramaHandler) GetDrama(c *gin.Context) {
 
 	dramaID := c.Param("id")

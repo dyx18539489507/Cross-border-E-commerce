@@ -62,17 +62,34 @@ type DramaListQuery struct {
 	Keyword  string `form:"keyword"`
 }
 
-func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *ComplianceResult, error) {
+type preparedCreateDramaInput struct {
+	title                  string
+	description            string
+	targetCountries        []string
+	targetCountry          string
+	materialComposition    string
+	marketingSellingPoints string
+}
+
+func prepareCreateDramaInput(req *CreateDramaRequest) (*preparedCreateDramaInput, error) {
 	title := strings.TrimSpace(req.Title)
 	description := strings.TrimSpace(req.Description)
 	targetCountries := normalizeCountryCodes(req.TargetCountry)
 	if len(targetCountries) == 0 {
-		return nil, nil, ErrTargetCountryRequired
+		return nil, ErrTargetCountryRequired
 	}
-	targetCountry := strings.Join(targetCountries, ",")
-	materialComposition := strings.TrimSpace(req.MaterialComposition)
-	marketingSellingPoints := strings.TrimSpace(req.MarketingSellingPoints)
 
+	return &preparedCreateDramaInput{
+		title:                  title,
+		description:            description,
+		targetCountries:        targetCountries,
+		targetCountry:          strings.Join(targetCountries, ","),
+		materialComposition:    strings.TrimSpace(req.MaterialComposition),
+		marketingSellingPoints: strings.TrimSpace(req.MarketingSellingPoints),
+	}, nil
+}
+
+func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput) *ComplianceResult {
 	complianceResult := &ComplianceResult{
 		Score:                    0,
 		Level:                    ComplianceRiskGreen,
@@ -84,11 +101,11 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *Com
 	}
 	if s.complianceService != nil {
 		if evaluated, err := s.complianceService.Evaluate(ComplianceRequest{
-			Title:                  title,
-			Description:            description,
-			TargetCountry:          targetCountries,
-			MaterialComposition:    materialComposition,
-			MarketingSellingPoints: marketingSellingPoints,
+			Title:                  input.title,
+			Description:            input.description,
+			TargetCountry:          input.targetCountries,
+			MaterialComposition:    input.materialComposition,
+			MarketingSellingPoints: input.marketingSellingPoints,
 		}); err == nil && evaluated != nil {
 			complianceResult = evaluated
 		} else if err != nil {
@@ -96,10 +113,29 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *Com
 		}
 	}
 
+	return complianceResult
+}
+
+func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest) (*ComplianceResult, error) {
+	input, err := prepareCreateDramaInput(req)
+	if err != nil {
+		return nil, err
+	}
+	return s.evaluateCompliance(input), nil
+}
+
+func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *ComplianceResult, error) {
+	input, err := prepareCreateDramaInput(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	complianceResult := s.evaluateCompliance(input)
+
 	if complianceResult.Level == ComplianceRiskRed {
 		s.log.Warnw(
 			"Drama creation blocked by compliance red risk",
-			"title", title,
+			"title", input.title,
 			"score", complianceResult.Score,
 			"level", complianceResult.Level,
 		)
@@ -109,25 +145,25 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *Com
 	complianceReportJSON, _ := json.Marshal(complianceResult)
 
 	drama := &models.Drama{
-		Title:            title,
+		Title:            input.title,
 		Status:           "draft",
-		TargetCountry:    targetCountry,
+		TargetCountry:    input.targetCountry,
 		ComplianceScore:  complianceResult.Score,
 		ComplianceLevel:  string(complianceResult.Level),
 		ComplianceReport: datatypes.JSON(complianceReportJSON),
 	}
 
-	if description != "" {
-		drama.Description = &description
+	if input.description != "" {
+		drama.Description = &input.description
 	}
 	if req.Genre != "" {
 		drama.Genre = &req.Genre
 	}
-	if materialComposition != "" {
-		drama.MaterialComposition = &materialComposition
+	if input.materialComposition != "" {
+		drama.MaterialComposition = &input.materialComposition
 	}
-	if marketingSellingPoints != "" {
-		drama.MarketingSellingPoints = &marketingSellingPoints
+	if input.marketingSellingPoints != "" {
+		drama.MarketingSellingPoints = &input.marketingSellingPoints
 	}
 
 	if err := s.db.Create(drama).Error; err != nil {

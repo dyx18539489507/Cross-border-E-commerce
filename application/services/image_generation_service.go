@@ -48,7 +48,7 @@ func truncateImageURL(url string) string {
 func NewImageGenerationService(db *gorm.DB, cfg *config.Config, transferService *ResourceTransferService, localStorage *storage.LocalStorage, log *logger.Logger) *ImageGenerationService {
 	return &ImageGenerationService{
 		db:              db,
-		aiService:       NewAIService(db, log),
+		aiService:       NewAIService(db, log, cfg),
 		transferService: transferService,
 		localStorage:    localStorage,
 		config:          cfg,

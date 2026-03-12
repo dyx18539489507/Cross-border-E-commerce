@@ -60,21 +60,21 @@ onMounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #f5f7fa;
+  background: var(--bg-primary);
 
   .editor-header {
     display: flex;
     align-items: center;
     gap: 16px;
     padding: 16px 24px;
-    background: white;
-    border-bottom: 1px solid #e4e7ed;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-primary);
 
     .back-button {
       display: flex;
       align-items: center;
       gap: 4px;
-      color: #606266;
+      color: var(--text-secondary);
       font-size: 14px;
       
       &:hover {
@@ -86,6 +86,7 @@ onMounted(() => {
       margin: 0;
       font-size: 18px;
       font-weight: 500;
+      color: var(--text-primary);
     }
   }
 

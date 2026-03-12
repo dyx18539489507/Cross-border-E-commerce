@@ -882,6 +882,7 @@ const { t } = useI18n()
 const drama = ref<Drama>()
 const currentStep = ref(0)
 const currentEpisodeNumber = ref(1) // 当前正在创作的集数
+const preferredTextModel = 'deepseek-v3-2-251201'
 const generatingCharacterIds = ref<(number | string)[]>([])
 const batchGenerating = ref(false)
 const selectedCharacterIds = ref<(number | string)[]>([])
@@ -1213,7 +1214,7 @@ const goToScriptGeneration = () => {
   router.push(`/dramas/${drama.value?.id}/script`)
 }
 
-// AI流式生成剧本
+// AI生成剧本
 const generateScriptByAI = async () => {
   if (!drama.value?.title) {
     ElMessage.warning('项目标题不存在')
@@ -1224,35 +1225,23 @@ const generateScriptByAI = async () => {
   scriptContent.value = ''
   
   try {
-    const response = await fetch('/api/v1/ai/generate-script-stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        drama_title: drama.value.title,
-        drama_id: drama.value.id
-      })
+    const fallbackPrompt = drama.value.description?.trim()
+      ? `请基于以下项目描述生成第${currentEpisodeNumber.value}章完整剧本，内容可直接用于后续分镜拆解：${drama.value.description.trim()}`
+      : `请围绕项目《${drama.value.title}》生成第${currentEpisodeNumber.value}章完整剧本，包含场景切换、动作和对白，可直接用于后续分镜拆解。`
+
+    const result = await generationAPI.generateAssistScript({
+      drama_id: drama.value.id,
+      episode_number: currentEpisodeNumber.value,
+      prompt: fallbackPrompt,
+      model: 'deepseek-v3-2-251201'
     })
 
-    if (!response.ok) {
-      throw new Error('生成失败')
+    const generated = String(result?.content || '').trim()
+    if (!generated) {
+      throw new Error('未生成有效剧本内容')
     }
 
-    const reader = response.body?.getReader()
-    const decoder = new TextDecoder()
-
-    if (!reader) {
-      throw new Error('无法读取响应流')
-    }
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      
-      const chunk = decoder.decode(value, { stream: true })
-      scriptContent.value += chunk
-    }
+    scriptContent.value = generated
 
     ElMessage.success('剧本生成完成')
   } catch (error: any) {
@@ -1333,6 +1322,12 @@ const loadVoiceLibrary = async () => {
   try {
     const data = await voiceLibraryAPI.list()
     voiceLibraryList.value = data || []
+    if (selectedVoice.value && !voiceLibraryList.value.some((item) => item.id === selectedVoice.value?.id)) {
+      selectedVoice.value = null
+    }
+    if (!voiceLibraryList.value.length) {
+      voiceLibraryError.value = '当前账号没有可用的文本音色，请上传音频后生成'
+    }
   } catch (error: any) {
     voiceLibraryError.value = error?.message || '获取音色库失败'
     ElMessage.error(voiceLibraryError.value)
@@ -1643,6 +1638,9 @@ const submitDigitalHuman = async () => {
       if (selectedVoice.value.voice_type) {
         formData.append('voice_type', selectedVoice.value.voice_type)
       }
+      if (selectedVoice.value.resource_id) {
+        formData.append('resource_id', selectedVoice.value.resource_id)
+      }
     }
 
     const result = await digitalHumanAPI.generate(formData)
@@ -1653,8 +1651,32 @@ const submitDigitalHuman = async () => {
     ElMessage.success('数字人视频生成完成')
   } catch (error: any) {
     const raw = String(error?.message || '')
-    if (raw.includes('DIGITAL_HUMAN_TTS_NOT_ENABLED') || raw.includes('未开通文本配音能力')) {
+    const errorCode = String(error?.code || '')
+    const errorStatus = Number(error?.status || 0)
+    if (
+      errorCode === 'DIGITAL_HUMAN_TTS_NOT_ENABLED' ||
+      raw.includes('DIGITAL_HUMAN_TTS_NOT_ENABLED') ||
+      raw.includes('未开通文本配音能力') ||
+      raw.includes('未配置文本转语音能力')
+    ) {
       ElMessage.error('当前账号未开通文本配音能力：请上传音色音频后生成，或联系管理员开通文本驱动配音')
+    } else if (raw.includes('requested resource not granted')) {
+      ElMessage.error('当前账号未开通所选平台音色的文本合成能力，请上传音频后生成')
+    } else if (raw.includes('当前音色不支持文本合成') || raw.includes('resource ID is mismatched with speaker related resource')) {
+      ElMessage.error('当前音色不支持文本合成，请更换其他音色后重试')
+    } else if (raw.includes('音频地址不可访问') || raw.includes('Pre Download Audio') || raw.includes('download audio failed')) {
+      ElMessage.error('音频地址不可访问，请改用文本+音色生成，或检查当前静态资源访问域名后重试')
+    } else if (raw.includes('"code":50430') || raw.includes('code=50430') || raw.includes('API Concurrent Limit') || errorStatus === 429) {
+      ElMessage.error('请求过于频繁，请稍后重试')
+    } else if (
+      raw.includes('DIGITAL_HUMAN_GENERATION_FAILED') ||
+      raw.includes('task status failed') ||
+      raw.includes('task status error') ||
+      raw.includes('video url is empty') ||
+      raw.includes('Request failed with status code 500') ||
+      errorStatus >= 500
+    ) {
+      ElMessage.error('数字人生成失败，可能是上游服务限流或任务执行失败。请稍后重试；若仍失败，建议改用上传音频，或更换角色图/文案后再试')
     } else {
       ElMessage.error(raw || '生成失败')
     }
@@ -1723,6 +1745,30 @@ const editCurrentEpisodeScript = () => {
   }
 }
 
+const formatStoryboardGenerationError = (raw?: string | null) => {
+  const message = String(raw || '').trim()
+  if (!message) return '拆分失败'
+
+  if (
+    message.includes('reached the set inference limit') ||
+    message.includes('model service has been paused') ||
+    message.includes('Safe Experience Mode')
+  ) {
+    return '当前默认文本模型额度已耗尽或服务已暂停，请在“设置 > AI服务配置”中切换可用文本模型，或在供应商控制台关闭 Safe Experience Mode 后重试'
+  }
+
+  if (
+    message.includes('no active config found') ||
+    message.includes('failed to get AI client') ||
+    message.includes('ModelNotOpen') ||
+    message.includes('InvalidEndpointOrModel')
+  ) {
+    return '当前没有可用的文本模型，请在“设置 > AI服务配置”中启用一个可用的文本模型后重试'
+  }
+
+  return message
+}
+
 // AI自动拆分分镜
 const generateShots = async () => {
   if (!currentEpisode.value?.script_content) {
@@ -1735,11 +1781,11 @@ const generateShots = async () => {
     ElMessage.info('AI正在拆分镜头...')
     
     // 调用分镜拆分API
-    const result = await generationAPI.generateStoryboard(currentEpisode.value.id.toString())
+    const result = await generationAPI.generateStoryboard(currentEpisode.value.id.toString(), preferredTextModel)
     ElMessage.success(result.message || '分镜拆分任务已提交')
     await loadDramaData()
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '拆分失败')
+    ElMessage.error(formatStoryboardGenerationError(error.response?.data?.message || error.message))
   } finally {
     generatingShots.value = false
   }

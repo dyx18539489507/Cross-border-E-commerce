@@ -8,8 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -64,7 +67,7 @@ func main() {
 	if cfg.Server.Host != "" && cfg.Server.Host != "0.0.0.0" {
 		listenAddr = net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
 	}
-	listener, err := net.Listen("tcp", listenAddr)
+	listener, err := listenWithDevPortTakeover(cfg, logr, "tcp", listenAddr)
 	if err != nil {
 		if errors.Is(err, syscall.EADDRINUSE) {
 			logr.Fatalw(
@@ -121,4 +124,97 @@ func main() {
 	}
 
 	logr.Info("Server exited")
+}
+
+func listenWithDevPortTakeover(cfg *config.Config, logr *logger.Logger, network, listenAddr string) (net.Listener, error) {
+	listener, err := net.Listen(network, listenAddr)
+	if err == nil || !cfg.App.Debug || !errors.Is(err, syscall.EADDRINUSE) {
+		return listener, err
+	}
+
+	pid, findErr := findListeningPID(cfg.Server.Port)
+	if findErr != nil {
+		logr.Warnw("Failed to inspect existing listener while retrying dev startup", "port", cfg.Server.Port, "error", findErr)
+		return nil, err
+	}
+
+	sameWorkspace, matchErr := isSameWorkspaceProcess(pid)
+	if matchErr != nil {
+		logr.Warnw("Failed to inspect existing listener while retrying dev startup", "pid", pid, "error", matchErr)
+		return nil, err
+	}
+	if !sameWorkspace {
+		return nil, err
+	}
+
+	logr.Warnw("Stopping previous dev server instance that is using the port", "port", cfg.Server.Port, "pid", pid)
+	if killErr := syscall.Kill(pid, syscall.SIGTERM); killErr != nil {
+		logr.Warnw("Failed to stop previous dev server instance", "pid", pid, "error", killErr)
+		return nil, err
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+
+		listener, retryErr := net.Listen(network, listenAddr)
+		if retryErr == nil {
+			logr.Infow("Reclaimed busy dev server port from previous instance", "port", cfg.Server.Port, "previous_pid", pid)
+			return listener, nil
+		}
+		if !errors.Is(retryErr, syscall.EADDRINUSE) {
+			return nil, retryErr
+		}
+	}
+
+	return nil, err
+}
+
+func findListeningPID(port int) (int, error) {
+	lsofPath, err := exec.LookPath("lsof")
+	if err != nil {
+		return 0, err
+	}
+
+	out, err := exec.Command(lsofPath, "-nP", fmt.Sprintf("-iTCP:%d", port), "-sTCP:LISTEN", "-t").Output()
+	if err != nil {
+		return 0, err
+	}
+
+	firstLine := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+	if firstLine == "" {
+		return 0, fmt.Errorf("no listening process found for port %d", port)
+	}
+
+	pid, err := strconv.Atoi(firstLine)
+	if err != nil {
+		return 0, fmt.Errorf("parse pid %q: %w", firstLine, err)
+	}
+	return pid, nil
+}
+
+func isSameWorkspaceProcess(pid int) (bool, error) {
+	if pid <= 0 || pid == os.Getpid() {
+		return false, nil
+	}
+
+	currentWD, err := os.Getwd()
+	if err != nil {
+		return false, err
+	}
+	currentWD, err = filepath.EvalSymlinks(currentWD)
+	if err != nil {
+		return false, err
+	}
+
+	processWD, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
+	if err != nil {
+		return false, err
+	}
+	processWD, err = filepath.EvalSymlinks(processWD)
+	if err != nil {
+		return false, err
+	}
+
+	return currentWD == processWD, nil
 }

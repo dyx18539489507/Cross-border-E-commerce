@@ -88,12 +88,62 @@ func TestListSFX(t *testing.T) {
 	}
 
 	var payload struct {
-		Items []SFXItem `json:"items"`
+		Items   []SFXItem `json:"items"`
+		Page    int       `json:"page"`
+		Limit   int       `json:"limit"`
+		Total   int       `json:"total"`
+		HasMore bool      `json:"has_more"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
 	if len(payload.Items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(payload.Items))
+	}
+	if payload.Page != 1 {
+		t.Fatalf("expected page 1, got %d", payload.Page)
+	}
+	if payload.Limit != 3 {
+		t.Fatalf("expected limit 3, got %d", payload.Limit)
+	}
+	if payload.Total <= len(payload.Items) {
+		t.Fatalf("expected total to be larger than current page size, got total=%d items=%d", payload.Total, len(payload.Items))
+	}
+	if !payload.HasMore {
+		t.Fatal("expected has_more to be true on the first page")
+	}
+	if payload.Items[0].Category != "转场" {
+		t.Fatalf("expected display category to be 转场, got %s", payload.Items[0].Category)
+	}
+	if payload.Items[0].Rank != 1 {
+		t.Fatalf("expected first item rank 1, got %d", payload.Items[0].Rank)
+	}
+
+	nextReq := httptest.NewRequest("GET", "/api/v1/sfx?category=转场&limit=3&page=2", nil)
+	nextResp := httptest.NewRecorder()
+	router.ServeHTTP(nextResp, nextReq)
+
+	if nextResp.Code != 200 {
+		t.Fatalf("expected page 2 status 200, got %d", nextResp.Code)
+	}
+
+	var nextPayload struct {
+		Items []SFXItem `json:"items"`
+		Page  int       `json:"page"`
+	}
+	if err := json.Unmarshal(nextResp.Body.Bytes(), &nextPayload); err != nil {
+		t.Fatalf("failed to parse page 2 response: %v", err)
+	}
+	if len(nextPayload.Items) != 3 {
+		t.Fatalf("expected 3 items on page 2, got %d", len(nextPayload.Items))
+	}
+	if nextPayload.Page != 2 {
+		t.Fatalf("expected page 2, got %d", nextPayload.Page)
+	}
+	if nextPayload.Items[0].ID == payload.Items[0].ID {
+		t.Fatal("expected page 2 to return a different first item")
+	}
+	if nextPayload.Items[0].Rank != 4 {
+		t.Fatalf("expected page 2 first rank 4, got %d", nextPayload.Items[0].Rank)
 	}
 }

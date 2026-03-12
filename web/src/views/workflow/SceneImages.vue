@@ -128,6 +128,7 @@ onMounted(() => {
   padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
+  color: var(--text-primary);
 }
 
 .main-card {
@@ -157,7 +158,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f7fa;
+  background: var(--bg-soft);
   border-radius: 8px;
   margin-bottom: 16px;
 }
@@ -170,7 +171,7 @@ onMounted(() => {
 
 .placeholder {
   text-align: center;
-  color: #909399;
+  color: var(--text-muted);
 }
 
 .placeholder p {
@@ -182,7 +183,7 @@ onMounted(() => {
 }
 
 .scene-info .description {
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
   margin: 8px 0;
   overflow: hidden;

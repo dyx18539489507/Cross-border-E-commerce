@@ -42,6 +42,7 @@
           <el-input
             v-model="scriptContent"
             type="textarea"
+            :autosize="{ minRows: 14, maxRows: 22 }"
 :placeholder="$t('workflow.scriptPlaceholder')"
             class="script-textarea script-textarea-fullscreen"
           />
@@ -102,7 +103,7 @@
                   :key="char.id"
                   type="info"
                 >
-                  {{ char.name }} <span v-if="char.role" class="secondary-text">({{ char.role }})</span>
+                  {{ char.name }}
                 </el-tag>
               </div>
             </div>
@@ -222,7 +223,7 @@
                 
                 <div class="card-image-container">
                   <div v-if="char.image_url" class="char-image">
-                    <el-image :src="fixImageUrl(char.image_url)" fit="cover" />
+                    <el-image :src="fixImageUrl(char.image_url)" fit="contain" />
                   </div>
                   <div v-else-if="char.image_generation_status === 'pending' || char.image_generation_status === 'processing' || generatingCharacterImages[char.id]" class="char-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -345,7 +346,7 @@
 
                 <div class="card-image-container">
                   <div v-if="scene.image_url" class="scene-image">
-                    <el-image :src="fixImageUrl(scene.image_url)" fit="cover" />
+                    <el-image :src="fixImageUrl(scene.image_url)" fit="contain" />
                   </div>
                   <div v-else-if="scene.image_generation_status === 'pending' || scene.image_generation_status === 'processing' || generatingSceneImages[scene.id]" class="scene-placeholder generating">
                     <el-icon :size="64" class="rotating"><Loading /></el-icon>
@@ -438,7 +439,11 @@
             <div class="shots-loading-card">
               <el-icon class="shots-loading-icon"><Loading /></el-icon>
               <div class="shots-loading-title">{{ $t('workflow.aiSplitting') }}</div>
-              <el-progress :percentage="taskProgress" :status="taskProgress === 100 ? 'success' : undefined">
+              <el-progress
+                class="task-progress-bar"
+                :percentage="taskProgress"
+                :status="taskProgress === 100 ? 'success' : undefined"
+              >
                 <template #default="{ percentage }">
                   <span style="font-size: 12px;">{{ percentage }}%</span>
                 </template>
@@ -565,8 +570,12 @@
             </el-button>
             
             <!-- 任务进度显示 -->
-            <div v-if="generatingShots" style="margin-top: 24px; max-width: 400px; margin-left: auto; margin-right: auto;">
-              <el-progress :percentage="taskProgress" :status="taskProgress === 100 ? 'success' : undefined">
+            <div v-if="generatingShots" class="task-progress-panel">
+              <el-progress
+                class="task-progress-bar"
+                :percentage="taskProgress"
+                :status="taskProgress === 100 ? 'success' : undefined"
+              >
                 <template #default="{ percentage }">
                   <span style="font-size: 12px;">{{ percentage }}%</span>
                 </template>
@@ -745,7 +754,7 @@
           class="library-item"
           @click="selectLibraryItem(item)"
         >
-          <el-image :src="fixImageUrl(item.image_url)" fit="cover" />
+          <el-image :src="fixImageUrl(item.image_url)" fit="contain" />
           <div class="library-item-name">{{ item.name }}</div>
         </div>
       </div>
@@ -1360,9 +1369,9 @@ const extractCharactersAndBackgrounds = async () => {
         episode_id: episodeId,
         outline: currentEpisode.value.script_content || '',
         count: 0,
-        model: selectedTextModel.value  // 传递用户选择的文本模型
+        model: selectedTextModel.value || undefined
       }),
-      dramaAPI.extractBackgrounds(episodeId.toString(), selectedTextModel.value)  // 传递用户选择的文本模型
+      dramaAPI.extractBackgrounds(episodeId.toString(), selectedTextModel.value || undefined)
     ])
     
     ElMessage.success('任务已创建，正在后台处理...')
@@ -1380,19 +1389,7 @@ const extractCharactersAndBackgrounds = async () => {
     
     const errorData = error.response?.data?.error
     const errorMsg = errorData?.message || error.message || '提取失败'
-    
-    if (errorMsg.includes('no config found') || 
-        errorMsg.includes('AI client') ||
-        errorMsg.includes('failed to get AI client')) {
-      ElMessage({
-        type: 'warning',
-        message: '未配置AI服务，请前往"设置 > AI服务配置"添加文本生成服务',
-        duration: 5000,
-        showClose: true
-      })
-    } else {
-      ElMessage.error(errorMsg)
-    }
+    ElMessage.error(errorMsg)
   } finally {
     extractingCharactersAndBackgrounds.value = false
   }
@@ -1656,7 +1653,7 @@ const generateShots = async () => {
     console.log('所有剧集列表:', drama.value?.episodes?.map(ep => ({ id: ep.id, episode_number: ep.episode_number, title: ep.title })))
     
     // 创建异步任务
-    const response = await generationAPI.generateStoryboard(episodeId, selectedTextModel.value)
+    const response = await generationAPI.generateStoryboard(episodeId, selectedTextModel.value || undefined)
     
     taskMessage.value = response.message || '任务已创建'
     
@@ -2221,7 +2218,7 @@ onMounted(() => {
   
   &.script-textarea-fullscreen {
     :deep(textarea) {
-      min-height: 500px;
+      min-height: clamp(420px, calc(var(--app-vh, 100vh) - 470px), 620px);
       font-size: 14px;
       line-height: 1.8;
     }
@@ -2279,6 +2276,11 @@ onMounted(() => {
   text-align: center;
 }
 
+.task-progress-panel {
+  width: min(560px, 90vw);
+  margin: 24px auto 0;
+}
+
 .shots-list {
   position: relative;
 }
@@ -2294,7 +2296,7 @@ onMounted(() => {
 }
 
 .shots-loading-card {
-  width: min(420px, 90%);
+  width: min(560px, 90%);
   padding: 20px 24px;
   border-radius: 12px;
   background: #fff;
@@ -2313,6 +2315,10 @@ onMounted(() => {
 .shots-loading-title {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.task-progress-bar {
+  width: 100%;
 }
 
 .extracted-title {
@@ -2400,6 +2406,9 @@ onMounted(() => {
     .scene-image {
       width: 100%;
       height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       position: relative;
       z-index: 1;
 
@@ -2407,6 +2416,10 @@ onMounted(() => {
         width: 100%;
         height: 100%;
         border-radius: 0;
+      }
+
+      :deep(.el-image__inner) {
+        object-position: center center;
       }
     }
 
@@ -2695,7 +2708,7 @@ onMounted(() => {
   }
 
   .script-textarea.script-textarea-fullscreen :deep(textarea) {
-    min-height: 260px;
+    min-height: 280px;
     font-size: 13px;
     line-height: 1.7;
   }

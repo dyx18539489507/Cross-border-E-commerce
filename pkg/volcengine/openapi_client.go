@@ -51,14 +51,11 @@ func NewOpenAPIClient(accessKeyID, secretAccessKey, region, service, host string
 		host = DefaultOpenAPIHost
 	}
 
-	// Avoid proxy-related handshake failures in environments with misconfigured
-	// HTTP(S)_PROXY settings. Volcengine OpenAPI endpoints are typically
-	// directly reachable from the service runtime.
 	transport := http.DefaultTransport
 	if baseTransport, ok := http.DefaultTransport.(*http.Transport); ok {
-		clonedTransport := baseTransport.Clone()
-		clonedTransport.Proxy = nil
-		transport = clonedTransport
+		// Respect HTTP(S)_PROXY by default. Some deployments require an egress
+		// proxy and direct connections to Volcengine will be reset.
+		transport = baseTransport.Clone()
 	}
 
 	return &OpenAPIClient{

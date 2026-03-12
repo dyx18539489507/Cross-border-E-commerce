@@ -1,4 +1,5 @@
 import type {
+    CheckDramaComplianceResponse,
     CreateDramaRequest,
     CreateDramaResponse,
     Drama,
@@ -23,6 +24,10 @@ export const dramaAPI = {
 
   create(data: CreateDramaRequest) {
     return request.post<CreateDramaResponse>('/dramas', data)
+  },
+
+  checkCompliance(data: CreateDramaRequest) {
+    return request.post<CheckDramaComplianceResponse>('/dramas/compliance-check', data)
   },
 
   get(id: string) {

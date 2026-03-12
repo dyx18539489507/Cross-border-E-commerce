@@ -34,6 +34,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	transferService := services2.NewResourceTransferService(db, log)
 	dramaHandler := handlers2.NewDramaHandler(db, cfg, log, nil)
 	aiConfigHandler := handlers2.NewAIConfigHandler(db, cfg, log)
+	aiAssistHandler := handlers2.NewAIAssistHandler(db, cfg, log)
 	scriptGenHandler := handlers2.NewScriptGenerationHandler(db, cfg, log)
 	imageGenService := services2.NewImageGenerationService(db, cfg, transferService, localStoragePtr, log)
 	imageGenHandler := handlers2.NewImageGenerationHandler(db, cfg, log, transferService, localStoragePtr)
@@ -72,6 +73,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		dramas := api.Group("/dramas")
 		{
 			dramas.GET("", dramaHandler.ListDramas)
+			dramas.POST("/compliance-check", dramaHandler.CheckCompliance)
 			dramas.POST("", dramaHandler.CreateDrama)
 			dramas.GET("/stats", dramaHandler.GetDramaStats)
 			dramas.GET("/:id/characters", dramaHandler.GetCharacters)
@@ -97,6 +99,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		generation := api.Group("/generation")
 		{
 			generation.POST("/characters", scriptGenHandler.GenerateCharacters)
+			generation.POST("/assist-script", aiAssistHandler.GenerateEpisodeScript)
 		}
 
 		// 角色库路由

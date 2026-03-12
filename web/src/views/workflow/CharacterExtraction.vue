@@ -167,6 +167,7 @@ onMounted(() => {
   padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
+  color: var(--text-primary);
 }
 
 .main-card {
@@ -200,7 +201,7 @@ onMounted(() => {
 .character-details p {
   margin: 8px 0;
   font-size: 14px;
-  color: #606266;
+  color: var(--text-secondary);
 }
 
 .actions {

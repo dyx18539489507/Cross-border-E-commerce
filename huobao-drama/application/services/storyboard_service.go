@@ -26,7 +26,7 @@ type StoryboardService struct {
 func NewStoryboardService(db *gorm.DB, cfg *config.Config, log *logger.Logger) *StoryboardService {
 	return &StoryboardService{
 		db:         db,
-		aiService:  NewAIService(db, log),
+		aiService:  NewAIService(db, log, cfg),
 		log:        log,
 		config:     cfg,
 		promptI18n: NewPromptI18n(cfg),
@@ -105,7 +105,7 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 		progress(p, msg)
 	}
 
-	report(12, "准备分镜生成任务...")
+	report(5, "准备分镜生成任务...")
 	// 从数据库获取剧集信息
 	var episode struct {
 		ID            string
@@ -138,7 +138,7 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 		return nil, fmt.Errorf("剧本内容为空，请先生成剧集内容")
 	}
 
-	report(15, "获取剧本内容完成，整理角色与场景信息...")
+	report(10, "获取剧本内容完成，整理角色与场景信息...")
 
 	// 获取该剧本的所有角色
 	var characters []models.Character
@@ -172,7 +172,7 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 		sceneList = fmt.Sprintf("[%s]", strings.Join(sceneInfoList, ", "))
 	}
 
-	report(20, "角色与场景信息准备完成，生成提示词...")
+	report(15, "角色与场景信息准备完成，生成提示词...")
 
 	s.log.Infow("Generating storyboard",
 		"episode_id", episodeID,
@@ -381,7 +381,7 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 - 为视频生成AI提供足够的画面构建信息
 - 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, scriptContent, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint, scriptContent)
 
-	report(25, "提示词准备完成，AI生成分镜中...")
+	report(18, "提示词准备完成，AI生成分镜中...")
 
 	startProgressTicker := func(start int, max int, message string) chan struct{} {
 		if progress == nil {
@@ -410,8 +410,8 @@ func (s *StoryboardService) generateStoryboard(episodeID string, model string, p
 
 	// 调用AI服务生成（如果指定了模型则使用指定的模型）
 	// 设置较大的max_tokens以确保完整返回所有分镜的JSON
-	report(30, "AI生成分镜中...")
-	progressStop := startProgressTicker(30, 75, "AI生成分镜中...")
+	report(22, "AI生成分镜中...")
+	progressStop := startProgressTicker(22, 75, "AI生成分镜中...")
 
 	var (
 		text   string

@@ -7,12 +7,19 @@
    Modern minimalist design system
    ======================================== */
 :root {
+  color-scheme: light;
+
   /* Background colors / 背景色 */
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
   --bg-card-hover: #f1f5f9;
   --bg-elevated: #ffffff;
+  --bg-soft: #f5f7fa;
+  --bg-muted: #fafafa;
+  --bg-overlay-soft: rgba(255, 255, 255, 0.92);
+  --bg-surface-accent: #ecf5ff;
+  --bg-surface-selected: #f1f8ff;
   --bg-overlay: rgba(15, 23, 42, 0.5);
 
   /* Text colors / 文字色 */
@@ -24,6 +31,7 @@
   /* Border colors / 边框色 */
   --border-primary: #e2e8f0;
   --border-secondary: #cbd5e1;
+  --border-strong: #dcdfe6;
   --border-focus: #0ea5e9;
 
   /* Primary accent / 主强调色 */
@@ -81,12 +89,19 @@
 
 /* Dark mode theme / 深色模式主题 - 参考深色UI设计 */
 .dark {
+  color-scheme: dark;
+
   /* Background - 深邃的蓝黑色调 */
   --bg-primary: #0c1015;
   --bg-secondary: #12181f;
   --bg-card: #181f28;
   --bg-card-hover: #1e2730;
   --bg-elevated: #1a2129;
+  --bg-soft: #1b2430;
+  --bg-muted: #151c24;
+  --bg-overlay-soft: rgba(7, 10, 14, 0.78);
+  --bg-surface-accent: rgba(34, 211, 238, 0.14);
+  --bg-surface-selected: rgba(34, 211, 238, 0.2);
   --bg-overlay: rgba(0, 0, 0, 0.8);
 
   /* Text - 清晰的层次对比 */
@@ -98,6 +113,7 @@
   /* Border - 微妙的边框 */
   --border-primary: #252d38;
   --border-secondary: #323d4d;
+  --border-strong: #3a4758;
   --border-focus: #22d3ee;
 
   /* Accent - 青色强调色 */
@@ -652,29 +668,78 @@ body {
 
 /* Alert overrides / 提示框样式覆盖 */
 .el-alert {
+  --el-alert-bg-color: var(--bg-soft);
+  --el-alert-title-color: currentColor;
+  --el-alert-description-color: currentColor;
+  --el-alert-border-color: transparent;
   border-radius: var(--radius-lg);
-  border: none;
+  border: 1px solid transparent;
   padding: var(--space-4);
+  background: var(--el-alert-bg-color);
+  color: var(--text-primary);
+}
+
+.el-alert__title,
+.el-alert__description {
+  color: inherit;
 }
 
 .el-alert--info {
-  background: var(--info-light);
+  --el-alert-bg-color: var(--info-light);
+  color: var(--info);
 }
 
 .el-alert--success {
-  background: var(--success-light);
+  --el-alert-bg-color: var(--success-light);
+  color: var(--success);
 }
 
 .el-alert--warning {
-  background: var(--warning-light);
+  --el-alert-bg-color: var(--warning-light);
+  color: var(--warning);
 }
 
 .el-alert--error {
-  background: var(--error-light);
+  --el-alert-bg-color: var(--error-light);
+  color: var(--error);
 }
 
 .dark .el-alert--info {
   --el-alert-bg-color: var(--info-light);
+}
+
+.dark .el-alert--success {
+  --el-alert-bg-color: var(--success-light);
+}
+
+.dark .el-alert--warning {
+  --el-alert-bg-color: var(--warning-light);
+}
+
+.dark .el-alert--error {
+  --el-alert-bg-color: var(--error-light);
+}
+
+.el-checkbox {
+  --el-checkbox-bg-color: var(--bg-secondary);
+  --el-checkbox-input-border-color: var(--border-secondary);
+  --el-checkbox-checked-bg-color: var(--accent);
+  --el-checkbox-checked-input-border-color: var(--accent);
+  --el-checkbox-hover-input-border-color: var(--accent);
+}
+
+.el-checkbox__label {
+  color: var(--text-secondary);
+}
+
+.el-checkbox.is-checked .el-checkbox__label,
+.el-checkbox:hover .el-checkbox__label {
+  color: var(--text-primary);
+}
+
+.el-divider {
+  --el-border-color-lighter: var(--border-primary);
+  border-color: var(--border-primary);
 }
 
 /* Form overrides / 表单样式覆盖 */
@@ -728,6 +793,18 @@ body {
   --el-popconfirm-bg-color: var(--bg-card);
 }
 
+.el-popper.is-light {
+  background: var(--bg-elevated);
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.el-popper.is-light .el-popper__arrow::before {
+  background: var(--bg-elevated);
+  border-color: var(--border-primary);
+}
+
 /* Loading overrides / 加载样式覆盖 */
 .el-loading-mask {
   background: var(--bg-overlay);
@@ -761,6 +838,14 @@ body {
 /* Avatar overrides / 头像样式覆盖 */
 .el-avatar {
   --el-avatar-bg-color: var(--accent);
+}
+
+.el-page-header__title {
+  color: var(--text-secondary);
+}
+
+.el-page-header__content {
+  color: var(--text-primary);
 }
 
 /* Scrollbar overrides / 滚动条样式覆盖 */

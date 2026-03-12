@@ -1,4 +1,6 @@
 import type {
+    GenerateAssistScriptRequest,
+    GenerateAssistScriptResponse,
     GenerateCharactersRequest
 } from '../types/generation'
 import request from '../utils/request'
@@ -6,6 +8,10 @@ import request from '../utils/request'
 export const generationAPI = {
   generateCharacters(data: GenerateCharactersRequest) {
     return request.post<{ task_id: string; status: string; message: string }>('/generation/characters', data)
+  },
+
+  generateAssistScript(data: GenerateAssistScriptRequest) {
+    return request.post<GenerateAssistScriptResponse>('/generation/assist-script', data)
   },
 
   generateStoryboard(episodeId: string, model?: string) {

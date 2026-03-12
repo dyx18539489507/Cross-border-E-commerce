@@ -330,6 +330,7 @@ onUnmounted(() => {
   padding: 24px;
   max-width: 1600px;
   margin: 0 auto;
+  color: var(--text-primary);
 }
 
 .page-header {
@@ -382,7 +383,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #909399;
+  color: var(--text-muted);
   font-size: 14px;
   background: #1a1a1a;
 }
@@ -403,7 +404,7 @@ onUnmounted(() => {
 .progress-text {
   margin-top: 8px;
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .loading-icon {
@@ -435,7 +436,7 @@ onUnmounted(() => {
 
 .prompt-text {
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 8px;
   line-height: 1.5;
   min-height: 42px;
@@ -446,7 +447,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -454,12 +455,12 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .spec-item {
   padding: 2px 6px;
-  background: #f5f7fa;
+  background: var(--bg-soft);
   border-radius: 3px;
 }
 

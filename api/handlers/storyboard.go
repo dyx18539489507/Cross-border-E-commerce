@@ -28,6 +28,12 @@ func NewStoryboardHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger) *
 // GenerateStoryboard 生成分镜头（异步）
 func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 	episodeID := c.Param("episode_id")
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Model = ""
+	}
 
 	// 创建异步任务
 	task, err := h.taskService.CreateTask("storyboard_generation", episodeID)
@@ -38,7 +44,7 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 	}
 
 	// 启动后台goroutine处理
-	go h.processStoryboardGeneration(task.ID, episodeID)
+	go h.processStoryboardGeneration(task.ID, episodeID, req.Model)
 
 	// 立即返回任务ID
 	response.Success(c, gin.H{
@@ -49,8 +55,8 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 }
 
 // processStoryboardGeneration 后台处理分镜生成
-func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID string) {
-	h.log.Infow("Starting storyboard generation", "task_id", taskID, "episode_id", episodeID)
+func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model string) {
+	h.log.Infow("Starting storyboard generation", "task_id", taskID, "episode_id", episodeID, "model", model)
 
 	var (
 		lastProgress = -1
@@ -83,10 +89,10 @@ func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID string
 	}
 
 	// 更新任务状态为处理中
-	reportProgress(10, "开始生成分镜...")
+	reportProgress(2, "开始生成分镜...")
 
 	// 调用实际的生成逻辑
-	result, err := h.storyboardService.GenerateStoryboardWithProgress(episodeID, reportProgress)
+	result, err := h.storyboardService.GenerateStoryboardWithProgress(episodeID, model, reportProgress)
 	if err != nil {
 		h.log.Errorw("Failed to generate storyboard", "error", err, "task_id", taskID)
 		if updateErr := h.taskService.UpdateTaskError(taskID, err); updateErr != nil {

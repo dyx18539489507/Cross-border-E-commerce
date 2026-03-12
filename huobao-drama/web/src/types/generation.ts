@@ -7,6 +7,18 @@ export interface GenerateCharactersRequest {
   model?: string  // 指定使用的文本模型
 }
 
+export interface GenerateAssistScriptRequest {
+  drama_id: string
+  episode_number?: number
+  prompt: string
+  model?: string
+}
+
+export interface GenerateAssistScriptResponse {
+  content: string
+  model: string
+}
+
 export interface ParseScriptRequest {
   drama_id: string
   script_content: string

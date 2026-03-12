@@ -61,11 +61,6 @@ const routes: RouteRecordRaw[] = [
     path: '/dramas/:dramaId/episode/:episodeNumber/professional',
     name: 'ProfessionalEditor',
     component: () => import('../views/drama/ProfessionalEditor.vue')
-  },
-  {
-    path: '/settings/ai-config',
-    name: 'AIConfig',
-    component: () => import('../views/settings/AIConfig.vue')
   }
 ]
 

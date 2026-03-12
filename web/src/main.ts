@@ -68,9 +68,10 @@ const setupInputFocusAssist = () => {
   document.addEventListener(
     'focusin',
     (event) => {
-      if (!isEditable(event.target)) return
-      window.setTimeout(() => bringIntoView(event.target), 180)
-      window.setTimeout(() => bringIntoView(event.target), 420)
+      const target = event.target
+      if (!isEditable(target)) return
+      window.setTimeout(() => bringIntoView(target), 180)
+      window.setTimeout(() => bringIntoView(target), 420)
     },
     true
   )

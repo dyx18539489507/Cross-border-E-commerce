@@ -74,13 +74,34 @@ const toStringList = (value: unknown): string[] => {
 }
 
 const hasChinese = (value: string): boolean => /[\u4e00-\u9fa5]/.test(value)
+const hasEnglishLetters = (value: string): boolean => /[A-Za-z]/.test(value)
 
-const normalizeCategoryKey = (value: string): string =>
+const cleanCategorySegment = (value: string): string =>
   value
-    .toLowerCase()
-    .replace(/[()]/g, '')
+    .replace(/[_|]+/g, ' ')
+    .replace(/[()]/g, ' ')
+    .replace(/[,&/]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
+const normalizeCategoryKey = (value: string): string =>
+  cleanCategorySegment(value)
+    .toLowerCase()
+    .replace(/\s*&\s*/g, ' & ')
+    .replace(/\s+/g, ' ')
+
+const GENERIC_CATEGORY_KEYS = new Set([
+  'other',
+  'others',
+  'other related categories',
+  'other related category',
+  'other categories',
+  'miscellaneous',
+  '其他',
+  '其他类目',
+  '其他分类',
+  '其他相关类目'
+])
 
 const EXACT_CATEGORY_MAP: Record<string, string> = {
   'pet supplies > feeders & waterers': '宠物用品 > 喂食器与饮水器',
@@ -88,9 +109,34 @@ const EXACT_CATEGORY_MAP: Record<string, string> = {
   'electronics > smart home': '电子产品 > 智能家居',
   'pet supplies': '宠物用品',
   'home & kitchen': '家居厨房',
+  'home kitchen': '家居厨房',
+  'home decor': '家居装饰',
+  'kitchen & dining': '厨房餐饮',
+  'kitchen dining': '厨房餐饮',
+  'kitchen & table linens': '厨房与桌布',
+  'household supplies': '家居日用',
+  'storage & organization': '收纳整理',
+  'furniture': '家具',
+  'patio, lawn & garden': '庭院、草坪与花园',
+  'patio lawn garden': '庭院、草坪与花园',
   'health & personal care': '健康与个护',
+  'health personal care': '健康与个护',
   'beauty & personal care': '美妆个护',
+  'beauty personal care': '美妆个护',
   'sports & outdoors': '运动与户外',
+  'sports outdoors': '运动与户外',
+  'outdoor': '户外',
+  'outdoors': '户外',
+  'camping & hiking': '露营与徒步',
+  'camping hiking': '露营与徒步',
+  'outdoor recreation': '户外休闲',
+  'camp furniture': '露营家具',
+  'outdoor furniture': '户外家具',
+  'outdoor chairs': '户外椅',
+  'outdoor chair': '户外椅',
+  'chairs': '椅子',
+  'chair': '椅子',
+  'tents': '帐篷',
   'toys & games': '玩具与游戏',
   'baby products': '母婴用品',
   'automotive': '汽车用品',
@@ -103,63 +149,220 @@ const EXACT_CATEGORY_MAP: Record<string, string> = {
 
 const SEGMENT_CATEGORY_MAP: Record<string, string> = {
   'pet supplies': '宠物用品',
+  'feeder': '喂食器',
+  'feeders': '喂食器',
   'feeders & waterers': '喂食器与饮水器',
+  'feeders waterers': '喂食器与饮水器',
+  'waterer': '饮水器',
+  'waterers': '饮水器',
   'pet cameras & feeders': '宠物摄像头与喂食器',
   'electronics': '电子产品',
   'smart home': '智能家居',
+  'home': '家居',
+  'kitchen': '厨房',
+  'home decor': '家居装饰',
   'home & kitchen': '家居厨房',
+  'home kitchen': '家居厨房',
+  'kitchen & dining': '厨房餐饮',
+  'kitchen dining': '厨房餐饮',
+  'household supplies': '家居日用',
+  'storage & organization': '收纳整理',
+  'furniture': '家具',
+  'patio, lawn & garden': '庭院、草坪与花园',
+  'patio lawn garden': '庭院、草坪与花园',
+  'garden': '园艺',
   'health & personal care': '健康与个护',
+  'health personal care': '健康与个护',
   'beauty & personal care': '美妆个护',
+  'beauty personal care': '美妆个护',
   'sports & outdoors': '运动与户外',
+  'sports outdoors': '运动与户外',
+  'outdoor': '户外',
+  'outdoors': '户外',
+  'camping': '露营',
+  'camping & hiking': '露营与徒步',
+  'camping hiking': '露营与徒步',
+  'outdoor recreation': '户外休闲',
+  'camp furniture': '露营家具',
+  'outdoor furniture': '户外家具',
+  'outdoor chairs': '户外椅',
+  'outdoor chair': '户外椅',
+  'chair': '椅子',
+  'chairs': '椅子',
+  'tent': '帐篷',
+  'tents': '帐篷',
   'toys & games': '玩具与游戏',
   'baby products': '母婴用品',
   'office products': '办公用品'
 }
 
-const CATEGORY_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/\bpet supplies\b/gi, '宠物用品'],
-  [/\bpet cameras?\b/gi, '宠物摄像头'],
-  [/\bfeeders?\b/gi, '喂食器'],
-  [/\bwaterers?\b/gi, '饮水器'],
-  [/\belectronics?\b/gi, '电子产品'],
-  [/\bsmart home\b/gi, '智能家居'],
-  [/\bhome\b/gi, '家居'],
-  [/\bkitchen\b/gi, '厨房'],
-  [/\bhealth\b/gi, '健康'],
-  [/\bpersonal care\b/gi, '个护'],
-  [/\bbeauty\b/gi, '美妆'],
-  [/\bsports?\b/gi, '运动'],
-  [/\boutdoors?\b/gi, '户外'],
-  [/\btoys?\b/gi, '玩具'],
-  [/\bgames?\b/gi, '游戏'],
-  [/\bbaby\b/gi, '母婴'],
-  [/\boffice\b/gi, '办公'],
-  [/\bfashion\b/gi, '时尚服饰'],
-  [/\bclothing\b/gi, '服装'],
-  [/\bautomotive\b/gi, '汽车用品'],
-  [/\s*&\s*/g, '与']
-]
+const CATEGORY_FRAGMENT_MAP: Record<string, string> = {
+  'pet supplies': '宠物用品',
+  'pet camera': '宠物摄像头',
+  'pet cameras': '宠物摄像头',
+  'pet cameras feeders': '宠物摄像头与喂食器',
+  'smart home': '智能家居',
+  'home kitchen': '家居厨房',
+  'home decor': '家居装饰',
+  'kitchen dining': '厨房餐饮',
+  'table linens': '桌布',
+  'household supplies': '家居日用',
+  'storage organization': '收纳整理',
+  'patio lawn garden': '庭院、草坪与花园',
+  'health personal care': '健康与个护',
+  'beauty personal care': '美妆个护',
+  'sports outdoors': '运动与户外',
+  'outdoor recreation': '户外休闲',
+  'camping hiking': '露营与徒步',
+  'camp furniture': '露营家具',
+  'outdoor furniture': '户外家具',
+  'outdoor chair': '户外椅',
+  'outdoor chairs': '户外椅',
+  'feeders waterers': '喂食器与饮水器',
+  'toys games': '玩具与游戏',
+  'baby products': '母婴用品',
+  'office products': '办公用品'
+}
+
+const CATEGORY_TOKEN_MAP: Record<string, string> = {
+  pet: '宠物',
+  supplies: '用品',
+  feeder: '喂食器',
+  feeders: '喂食器',
+  waterer: '饮水器',
+  waterers: '饮水器',
+  camera: '摄像头',
+  cameras: '摄像头',
+  electronics: '电子产品',
+  electronic: '电子产品',
+  smart: '智能',
+  home: '家居',
+  kitchen: '厨房',
+  decor: '装饰',
+  dining: '餐饮',
+  table: '桌',
+  linens: '布艺',
+  household: '家居',
+  storage: '收纳',
+  organization: '整理',
+  furniture: '家具',
+  patio: '庭院',
+  lawn: '草坪',
+  garden: '花园',
+  health: '健康',
+  beauty: '美妆',
+  personal: '个人',
+  care: '护理',
+  sports: '运动',
+  sport: '运动',
+  outdoor: '户外',
+  outdoors: '户外',
+  recreation: '休闲',
+  camping: '露营',
+  camp: '露营',
+  hiking: '徒步',
+  tent: '帐篷',
+  tents: '帐篷',
+  toys: '玩具',
+  toy: '玩具',
+  games: '游戏',
+  game: '游戏',
+  baby: '母婴',
+  products: '用品',
+  product: '用品',
+  automotive: '汽车用品',
+  office: '办公',
+  fashion: '时尚',
+  clothing: '服装',
+  chair: '椅',
+  chairs: '椅',
+  furnitures: '家具'
+}
+
+const stripNoiseTokens = (value: string): string =>
+  cleanCategorySegment(value)
+    .split(' ')
+    .filter((token) => {
+      if (!token) return false
+      if (/^[A-Za-z]$/.test(token)) return false
+      if (/^[&/+-]+$/.test(token)) return false
+      return true
+    })
+    .join(' ')
+    .trim()
+
+const isGenericCategorySegment = (value: string): boolean => {
+  const key = normalizeCategoryKey(value)
+  return GENERIC_CATEGORY_KEYS.has(key)
+}
+
+const translateCategoryByFragments = (raw: string): string => {
+  const key = normalizeCategoryKey(raw)
+  if (!key) return ''
+
+  if (CATEGORY_FRAGMENT_MAP[key]) {
+    return CATEGORY_FRAGMENT_MAP[key]
+  }
+
+  const tokens = key.split(' ').filter(Boolean)
+  if (!tokens.length) {
+    return ''
+  }
+
+  const translated: string[] = []
+
+  for (let index = 0; index < tokens.length;) {
+    let matched = ''
+    let matchedLength = 0
+
+    for (let size = Math.min(3, tokens.length - index); size >= 1; size -= 1) {
+      const fragment = tokens.slice(index, index + size).join(' ')
+      if (CATEGORY_FRAGMENT_MAP[fragment]) {
+        matched = CATEGORY_FRAGMENT_MAP[fragment]
+        matchedLength = size
+        break
+      }
+    }
+
+    if (matched) {
+      translated.push(matched)
+      index += matchedLength
+      continue
+    }
+
+    const current = CATEGORY_TOKEN_MAP[tokens[index]]
+    if (!current) {
+      return ''
+    }
+
+    translated.push(current)
+    index += 1
+  }
+
+  return translated.join('')
+}
 
 const localizeCategorySegment = (value: string): string => {
-  const raw = value.trim()
+  const raw = stripNoiseTokens(value)
   if (!raw) return raw
-  if (hasChinese(raw)) return raw
+  if (hasChinese(raw) && !hasEnglishLetters(raw)) return raw
 
-  const mapped = SEGMENT_CATEGORY_MAP[normalizeCategoryKey(raw)]
+  const key = normalizeCategoryKey(raw)
+  const mapped = SEGMENT_CATEGORY_MAP[key] || EXACT_CATEGORY_MAP[key]
   if (mapped) {
     return mapped
   }
 
-  let translated = raw
-  for (const [pattern, replacement] of CATEGORY_TOKEN_REPLACEMENTS) {
-    translated = translated.replace(pattern, replacement)
-  }
-  translated = translated.replace(/\s+/g, ' ').trim()
-
-  if (!hasChinese(translated)) {
+  if (isGenericCategorySegment(raw)) {
     return '其他相关类目'
   }
-  return translated
+
+  const translated = translateCategoryByFragments(raw)
+  if (translated && !hasEnglishLetters(translated)) {
+    return translated
+  }
+
+  return '其他相关类目'
 }
 
 const localizeSuggestedCategory = (value: string): string => {
@@ -173,10 +376,31 @@ const localizeSuggestedCategory = (value: string): string => {
   }
 
   if (raw.includes('>')) {
-    return raw
+    const segments = raw
       .split(/\s*>\s*/)
       .map((segment) => localizeCategorySegment(segment))
-      .join(' > ')
+      .filter((segment) => segment.length > 0)
+
+    const normalizedSegments: string[] = []
+    for (const segment of segments) {
+      const key = normalizeCategoryKey(segment)
+      if (!key) {
+        continue
+      }
+      if (isGenericCategorySegment(segment) && normalizedSegments.length > 0) {
+        continue
+      }
+      const prev = normalizedSegments[normalizedSegments.length - 1]
+      if (prev && normalizeCategoryKey(prev) === key) {
+        continue
+      }
+      normalizedSegments.push(segment)
+    }
+
+    if (normalizedSegments.length > 0) {
+      return normalizedSegments.join(' > ')
+    }
+    return '其他相关类目'
   }
 
   return localizeCategorySegment(raw)

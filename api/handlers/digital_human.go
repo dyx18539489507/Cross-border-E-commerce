@@ -65,8 +65,8 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 	motionText := strings.TrimSpace(c.PostForm("motion_text"))
 	voiceID := strings.TrimSpace(c.PostForm("voice_id"))
 	voiceType := strings.TrimSpace(c.PostForm("voice_type"))
+	ttsResourceID := strings.TrimSpace(c.PostForm("resource_id"))
 	audioURL := strings.TrimSpace(c.PostForm("audio_url"))
-	ttsResourceID := ""
 	if speechText == "" {
 		response.BadRequest(c, "请填写说话内容")
 		return
@@ -232,14 +232,22 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 			response.Error(c, 400, "DIGITAL_HUMAN_TTS_NOT_ENABLED", "当前模型仅支持音频驱动，暂不支持直接文本配音。请上传音频后重试")
 		case strings.Contains(msg, "Invalid parameter: AppID") || strings.Contains(msg, "UnauthorizedRequest.AppID"):
 			response.Error(c, 400, "DIGITAL_HUMAN_TTS_NOT_ENABLED", "当前火山账号未开通文本配音能力，请先上传音频，或联系管理员开通后再试")
-		case strings.Contains(msg, "\"code\":50218") || strings.Contains(msg, "Resource exists risk"):
+		case strings.Contains(msg, "\"code\":50218") || strings.Contains(msg, "code=50218") || strings.Contains(msg, "Resource exists risk"):
 			// Volcengine content risk control.
 			response.BadRequest(c, "内容安全审核未通过，请更换角色图片/文案/音色后重试")
-		case strings.Contains(msg, "\"code\":50514") || strings.Contains(msg, "Pre Audio Risk Not Pass"):
+		case strings.Contains(msg, "\"code\":50514") || strings.Contains(msg, "code=50514") || strings.Contains(msg, "Pre Audio Risk Not Pass"):
 			response.BadRequest(c, "音频内容安全审核未通过，请更换说话内容或音色后重试")
-		case strings.Contains(msg, "\"code\":50430") || strings.Contains(msg, "API Concurrent Limit"):
+		case strings.Contains(msg, "\"code\":50430") || strings.Contains(msg, "code=50430") || strings.Contains(msg, "API Concurrent Limit"):
 			// Volcengine concurrency limit.
 			response.Error(c, 429, "TOO_MANY_REQUESTS", "请求过于频繁，请稍后重试")
+		case strings.Contains(msg, "\"code\":50513") || strings.Contains(msg, "code=50513") ||
+			strings.Contains(msg, "Pre Download Audio") || strings.Contains(msg, "download audio failed"):
+			response.BadRequest(c, "音频地址不可访问，请改用文本+音色生成，或检查当前静态资源访问域名后重试")
+		case strings.Contains(msg, "task status failed") || strings.Contains(msg, "task status error") ||
+			strings.Contains(msg, "task status rejected") || strings.Contains(msg, "video url is empty"):
+			response.Error(c, 502, "DIGITAL_HUMAN_GENERATION_FAILED", "数字人任务执行失败，请稍后重试；若仍失败，请改用上传音频，或更换角色图/文案后再试")
+		case strings.Contains(msg, "context deadline exceeded"):
+			response.Error(c, 504, "DIGITAL_HUMAN_TIMEOUT", "数字人生成超时，请稍后重试")
 		default:
 			response.InternalError(c, msg)
 		}

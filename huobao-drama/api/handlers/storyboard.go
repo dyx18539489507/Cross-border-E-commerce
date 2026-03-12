@@ -94,7 +94,7 @@ func (h *StoryboardHandler) processStoryboardGeneration(taskID, episodeID, model
 	}
 
 	// 更新任务状态为处理中
-	reportProgress(10, "开始生成分镜...")
+	reportProgress(2, "开始生成分镜...")
 
 	// 调用实际的生成逻辑
 	result, err := h.storyboardService.GenerateStoryboardWithProgress(episodeID, model, reportProgress, deviceID)

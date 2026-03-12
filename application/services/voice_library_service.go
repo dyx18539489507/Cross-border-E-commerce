@@ -144,6 +144,7 @@ type listSpeakersResult struct {
 		Gender     string `json:"Gender"`
 		Age        string `json:"Age"`
 		TrialURL   string `json:"TrialURL"`
+		ResourceID string `json:"ResourceID"`
 		Categories []struct {
 			Categories []string `json:"Categories"`
 		} `json:"Categories"`
@@ -325,6 +326,7 @@ func (s *VoiceLibraryService) listLegacySpeakers(ctx context.Context) ([]VoiceSp
 			Age:        item.Age,
 			TrialURL:   item.TrialURL,
 			Categories: categories,
+			ResourceID: item.ResourceID,
 		})
 	}
 

@@ -60,11 +60,24 @@ type AIConfig struct {
 }
 
 type VolcengineConfig struct {
-	AccessKeyID     string `mapstructure:"access_key_id"`
-	SecretAccessKey string `mapstructure:"secret_access_key"`
-	Region          string `mapstructure:"region"`
-	Service         string `mapstructure:"service"`
-	VisualHost      string `mapstructure:"visual_host"`
+	AccessKeyID     string                 `mapstructure:"access_key_id"`
+	SecretAccessKey string                 `mapstructure:"secret_access_key"`
+	Region          string                 `mapstructure:"region"`
+	Service         string                 `mapstructure:"service"`
+	VisualHost      string                 `mapstructure:"visual_host"`
+	Speech          VolcengineSpeechConfig `mapstructure:"speech"`
+}
+
+type VolcengineSpeechConfig struct {
+	AppID          string `mapstructure:"app_id"`
+	Token          string `mapstructure:"token"`
+	Cluster        string `mapstructure:"cluster"`
+	Endpoint       string `mapstructure:"endpoint"`
+	SubmitEndpoint string `mapstructure:"submit_endpoint"`
+	QueryEndpoint  string `mapstructure:"query_endpoint"`
+	ResourceID     string `mapstructure:"resource_id"`
+	Namespace      string `mapstructure:"namespace"`
+	VoiceType      string `mapstructure:"voice_type"`
 }
 
 type ComplianceConfig struct {
@@ -119,6 +132,19 @@ func LoadConfig() (*Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+
+	mergeVolcengineSpeechConfig(&config.Volcengine.Speech, loadSharedVolcengineSpeechConfig())
+	config.Storage.LocalPath = firstNonEmpty(os.Getenv("STORAGE_LOCAL_PATH"), config.Storage.LocalPath)
+	config.Storage.BaseURL = firstNonEmpty(os.Getenv("STORAGE_BASE_URL"), config.Storage.BaseURL)
+	config.Volcengine.Speech.AppID = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_APP_ID"), config.Volcengine.Speech.AppID)
+	config.Volcengine.Speech.Token = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_TOKEN"), config.Volcengine.Speech.Token)
+	config.Volcengine.Speech.Cluster = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_CLUSTER"), config.Volcengine.Speech.Cluster)
+	config.Volcengine.Speech.Endpoint = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_ENDPOINT"), config.Volcengine.Speech.Endpoint)
+	config.Volcengine.Speech.SubmitEndpoint = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_SUBMIT_ENDPOINT"), config.Volcengine.Speech.SubmitEndpoint)
+	config.Volcengine.Speech.QueryEndpoint = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_QUERY_ENDPOINT"), config.Volcengine.Speech.QueryEndpoint)
+	config.Volcengine.Speech.ResourceID = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_RESOURCE_ID"), config.Volcengine.Speech.ResourceID)
+	config.Volcengine.Speech.Namespace = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_NAMESPACE"), config.Volcengine.Speech.Namespace)
+	config.Volcengine.Speech.VoiceType = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_VOICE_TYPE"), config.Volcengine.Speech.VoiceType)
 
 	if envPort := os.Getenv("SERVER_PORT"); envPort != "" {
 		port, err := strconv.Atoi(envPort)
@@ -193,4 +219,42 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func loadSharedVolcengineSpeechConfig() VolcengineSpeechConfig {
+	sharedViper := viper.New()
+	sharedViper.SetConfigName("config")
+	sharedViper.SetConfigType("yaml")
+	sharedViper.AddConfigPath("../configs")
+
+	if err := sharedViper.ReadInConfig(); err != nil {
+		return VolcengineSpeechConfig{}
+	}
+
+	var shared struct {
+		Volcengine struct {
+			Speech VolcengineSpeechConfig `mapstructure:"speech"`
+		} `mapstructure:"volcengine"`
+	}
+	if err := sharedViper.Unmarshal(&shared); err != nil {
+		return VolcengineSpeechConfig{}
+	}
+
+	return shared.Volcengine.Speech
+}
+
+func mergeVolcengineSpeechConfig(target *VolcengineSpeechConfig, fallback VolcengineSpeechConfig) {
+	if target == nil {
+		return
+	}
+
+	target.AppID = firstNonEmpty(target.AppID, fallback.AppID)
+	target.Token = firstNonEmpty(target.Token, fallback.Token)
+	target.Cluster = firstNonEmpty(target.Cluster, fallback.Cluster)
+	target.Endpoint = firstNonEmpty(target.Endpoint, fallback.Endpoint)
+	target.SubmitEndpoint = firstNonEmpty(target.SubmitEndpoint, fallback.SubmitEndpoint)
+	target.QueryEndpoint = firstNonEmpty(target.QueryEndpoint, fallback.QueryEndpoint)
+	target.ResourceID = firstNonEmpty(target.ResourceID, fallback.ResourceID)
+	target.Namespace = firstNonEmpty(target.Namespace, fallback.Namespace)
+	target.VoiceType = firstNonEmpty(target.VoiceType, fallback.VoiceType)
 }

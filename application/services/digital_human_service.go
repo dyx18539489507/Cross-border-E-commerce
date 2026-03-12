@@ -152,11 +152,15 @@ func (s *DigitalHumanService) waitForVideo(ctx context.Context, taskID string) (
 		return "", err
 	}
 
-	if result.VideoURL == "" {
+	videoURL := resolveDigitalHumanVideoURL(result)
+	if videoURL == "" {
+		if failure := describeDigitalHumanTaskFailure(result); failure != "" {
+			return "", fmt.Errorf("video url is empty: %s", failure)
+		}
 		return "", fmt.Errorf("video url is empty")
 	}
 
-	return result.VideoURL, nil
+	return videoURL, nil
 }
 
 func (s *DigitalHumanService) submitTask(ctx context.Context, reqKey string, payload map[string]any) (string, error) {
@@ -174,6 +178,7 @@ func (s *DigitalHumanService) submitTask(ctx context.Context, reqKey string, pay
 		return "", fmt.Errorf("task_id is empty")
 	}
 
+	s.log.Infow("Submitted digital human task", "task_id", data.TaskID, "req_key", reqKey)
 	return data.TaskID, nil
 }
 
@@ -184,10 +189,16 @@ func (s *DigitalHumanService) pollTask(ctx context.Context, reqKey, taskID strin
 			return nil, err
 		}
 
-		switch result.Status {
-		case "done":
+		status := strings.ToLower(strings.TrimSpace(result.Status))
+		switch status {
+		case "done", "success", "succeeded", "completed":
 			return result, nil
 		case "expired", "not_found":
+			return nil, fmt.Errorf("task status %s", result.Status)
+		case "fail", "failed", "error", "rejected", "canceled", "cancelled", "aborted":
+			if failure := describeDigitalHumanTaskFailure(result); failure != "" {
+				return nil, fmt.Errorf("task status %s: %s", result.Status, failure)
+			}
 			return nil, fmt.Errorf("task status %s", result.Status)
 		}
 
@@ -221,9 +232,174 @@ func (s *DigitalHumanService) getTaskResult(ctx context.Context, reqKey, taskID 
 }
 
 func buildPrompt(motionText string) string {
-	parts := make([]string, 0, 1)
-	if strings.TrimSpace(motionText) != "" {
-		parts = append(parts, fmt.Sprintf("动作描述：%s", strings.TrimSpace(motionText)))
+	parts := []string{
+		"严格以上传角色为唯一主角，保持同一张脸、五官、发型、肤色和服饰，不替换人物，不改变性别年龄，不新增第二人物",
+		"优先保持参考图原始景别与构图，自然说话并保持口型同步，避免生成与参考图不一致的新人物",
 	}
+
+	if strings.TrimSpace(motionText) != "" {
+		parts = append(parts, fmt.Sprintf("在人物身份不变的前提下执行以下动作：%s", strings.TrimSpace(motionText)))
+	} else {
+		parts = append(parts, "仅做自然说话、轻微点头或手势动作，避免大幅改造人物造型")
+	}
+
 	return strings.Join(parts, "；")
+}
+
+func resolveDigitalHumanVideoURL(result *getResultData) string {
+	if result == nil {
+		return ""
+	}
+
+	if videoURL := strings.TrimSpace(result.VideoURL); videoURL != "" {
+		return videoURL
+	}
+
+	respData := parseDigitalHumanRespData(strings.TrimSpace(result.RespData))
+	if respData == nil {
+		return ""
+	}
+
+	return firstDigitalHumanURL(respData, "video_url", "videoUrl", "url", "video_urls", "videos", "data", "result")
+}
+
+func describeDigitalHumanTaskFailure(result *getResultData) string {
+	if result == nil {
+		return ""
+	}
+
+	raw := strings.TrimSpace(result.RespData)
+	if raw == "" || raw == "null" {
+		return ""
+	}
+
+	respData := parseDigitalHumanRespData(raw)
+	if respData == nil {
+		return raw
+	}
+
+	message := firstDigitalHumanString(respData, "message", "msg", "detail", "reason")
+	nestedError := firstDigitalHumanMap(respData, "error")
+	if message == "" {
+		if nestedError != nil {
+			message = firstDigitalHumanString(nestedError, "message", "msg", "detail", "reason")
+		}
+	}
+
+	code := strings.TrimSpace(digitalHumanAnyToString(respData["code"]))
+	if code == "" && nestedError != nil {
+		code = strings.TrimSpace(digitalHumanAnyToString(nestedError["code"]))
+	}
+	switch {
+	case code != "" && message != "":
+		return fmt.Sprintf("code=%s: %s", code, message)
+	case code != "":
+		return fmt.Sprintf("code=%s", code)
+	case message != "":
+		return message
+	default:
+		return raw
+	}
+}
+
+func parseDigitalHumanRespData(raw string) map[string]any {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "null" {
+		return nil
+	}
+
+	var parsed any
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		return nil
+	}
+
+	for i := 0; i < 2; i++ {
+		if text, ok := parsed.(string); ok {
+			text = strings.TrimSpace(text)
+			if text == "" || text == "null" {
+				return nil
+			}
+			if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+				return nil
+			}
+			continue
+		}
+		break
+	}
+
+	data, _ := parsed.(map[string]any)
+	return data
+}
+
+func firstDigitalHumanURL(data map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if nested := firstDigitalHumanMap(data, key); nested != nil {
+			if value := firstDigitalHumanURL(nested, keys...); value != "" {
+				return value
+			}
+			continue
+		}
+		if list := firstDigitalHumanList(data, key); len(list) > 0 {
+			for _, item := range list {
+				switch typed := item.(type) {
+				case string:
+					if value := strings.TrimSpace(typed); value != "" {
+						return value
+					}
+				case map[string]any:
+					if value := firstDigitalHumanURL(typed, keys...); value != "" {
+						return value
+					}
+				}
+			}
+			continue
+		}
+		switch typed := data[key].(type) {
+		case string:
+			if value := strings.TrimSpace(typed); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func firstDigitalHumanString(data map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(digitalHumanAnyToString(data[key])); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstDigitalHumanMap(data map[string]any, key string) map[string]any {
+	value, ok := data[key]
+	if !ok {
+		return nil
+	}
+	nested, _ := value.(map[string]any)
+	return nested
+}
+
+func firstDigitalHumanList(data map[string]any, key string) []any {
+	value, ok := data[key]
+	if !ok {
+		return nil
+	}
+	list, _ := value.([]any)
+	return list
+}
+
+func digitalHumanAnyToString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		return fmt.Sprintf("%v", typed)
+	}
 }

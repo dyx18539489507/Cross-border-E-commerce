@@ -24,28 +24,17 @@
           
           <!-- Theme Toggle | 主题切换 -->
           <ThemeToggle v-if="showTheme" />
-          
-          <!-- AI Config (Model Switch) | AI 配置（模型切换） -->
-          <el-button v-if="showAIConfig" @click="handleOpenAIConfig" class="header-btn">
-            <el-icon><Setting /></el-icon>
-            <span class="btn-text">{{ $t('drama.aiConfig') }}</span>
-          </el-button>
+
           <!-- Right slot for business content (before actions) | 右侧插槽（在操作按钮前） -->
           <slot name="right" />
         </div>
       </div>
     </header>
-    
-    <!-- AI Config Dialog | AI 配置对话框 -->
-    <AIConfigDialog v-model="showConfigDialog" @config-updated="emit('config-updated')" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Setting } from '@element-plus/icons-vue'
 import ThemeToggle from './ThemeToggle.vue'
-import AIConfigDialog from './AIConfigDialog.vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 /**
@@ -72,37 +61,13 @@ interface Props {
   showLanguage?: boolean
   /** Show theme toggle | 是否显示主题切换 */
   showTheme?: boolean
-  /** Show AI config button | 是否显示 AI 配置按钮 */
-  showAIConfig?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   fixed: true,
   showLogo: true,
   showLanguage: true,
-  showTheme: true,
-  showAIConfig: true
-})
-
-const emit = defineEmits<{
-  (e: 'open-ai-config'): void
-  (e: 'config-updated'): void
-}>()
-
-// AI Config dialog state | AI 配置对话框状态
-const showConfigDialog = ref(false)
-
-// Handle open AI config | 处理打开 AI 配置
-const handleOpenAIConfig = () => {
-  showConfigDialog.value = true
-  emit('open-ai-config')
-}
-
-// Expose methods for external control | 暴露方法供外部控制
-defineExpose({
-  openAIConfig: () => {
-    showConfigDialog.value = true
-  }
+  showTheme: true
 })
 </script>
 

@@ -605,13 +605,12 @@
 
                     <!-- 多图模式 -->
                     <div v-else-if="selectedReferenceMode === 'multiple'" style="text-align: center;">
-                      <div style="margin-bottom: 12px; font-size: 13px; color: #606266; font-weight: 500;">
+                      <div class="reference-mode-title">
                         多图参考 ({{ selectedImagesForVideo.length }}/{{ currentModelCapability?.maxImages || 6 }})
                       </div>
                       <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                         <div v-for="index in (currentModelCapability?.maxImages || 6)" :key="index"
                           class="image-slot image-slot-small"
-                          style="position: relative; width: 80px; height: 52px; border: 2px dashed #dcdfe6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff;"
                           @click="selectedImageObjects[index - 1] && removeSelectedImage(selectedImageObjects[index - 1].id)">
                           <img v-if="selectedImageObjects[index - 1]" :src="fixMediaUrl(selectedImageObjects[index - 1].image_url)"
                             alt="" style="width: 100%; height: 100%; object-fit: contain;" />
@@ -619,7 +618,7 @@
                             <el-icon :size="20" color="#c0c4cc">
                               <Plus />
                             </el-icon>
-                            <div style="margin-top: 4px; font-size: 10px; color: #909399;">{{ index }}</div>
+                            <div class="image-slot-index">{{ index }}</div>
                           </div>
                           <div v-if="selectedImageObjects[index - 1]" class="image-slot-remove">
                             <el-icon :size="14" color="#fff">
@@ -650,10 +649,8 @@
                   </div>
                   <div class="image-grid"
                     style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px;">
-                    <div v-for="video in generatedVideos" :key="video.id" class="image-item video-item"
-                      style="position: relative; border-radius: 8px; overflow: hidden; background: #fff; border: 1px solid #e8e8e8; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06); cursor: pointer; transition: all 0.2s ease;">
+                    <div v-for="video in generatedVideos" :key="video.id" class="image-item video-item">
                       <div class="video-thumbnail" v-if="video.video_url"
-                        style="position: relative; width: 100%; aspect-ratio: 16/9; overflow: hidden; cursor: pointer;"
                     @mouseenter="(e) => ((e.currentTarget as HTMLElement).querySelector('.play-overlay') as HTMLElement).style.opacity = '1'"
                     @mouseleave="(e) => ((e.currentTarget as HTMLElement).querySelector('.play-overlay') as HTMLElement).style.opacity = '0'"
                         @click="playVideo(video)">
@@ -668,8 +665,7 @@
                           </el-icon>
                         </div>
                       </div>
-                      <div v-else class="image-placeholder"
-                        style="width: 100%; aspect-ratio: 16/9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf0 100%); color: #909399;">
+                      <div v-else class="image-placeholder">
                         <el-icon v-if="video.status === 'failed'" :size="32" color="#f56c6c">
                           <WarningFilled />
                         </el-icon>
@@ -680,8 +676,7 @@
                           {{ video.status === 'failed' ? '生成失败' : '生成中...' }}
                         </p>
                       </div>
-                      <div class="image-info"
-                        style="position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 8px; background: linear-gradient(to top, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.2) 70%, transparent); display: flex; justify-content: space-between; align-items: center; gap: 4px;">
+                      <div class="image-info">
                         <div style="display: flex; align-items: center; gap: 4px;">
                           <el-tag :type="getStatusType(video.status)" size="small"
                             style="font-size: 10px; height: 20px; padding: 0 6px;">{{ getStatusText(video.status)
@@ -697,6 +692,7 @@
                     </div>
                   </div>
                 </div>
+                <div ref="videoGenerationBottomRef"></div>
               </div>
             </div>
             <el-empty v-else description="未选择镜头" />
@@ -865,7 +861,7 @@
               <div class="merges-list" v-loading="loadingMerges">
                 <el-empty v-if="videoMerges.length === 0" :description="$t('video.noMergeRecords')" :image-size="120">
                   <template #description>
-                    <div style="color: #909399; font-size: 14px; margin-top: 12px;">
+                    <div style="color: var(--text-muted); font-size: 14px; margin-top: 12px;">
                       <p style="margin: 0;">{{ $t('video.noMergeYet') }}</p>
                       <p style="margin: 8px 0 0 0; font-size: 12px;">{{ $t('video.mergeInstructions') }}</p>
                     </div>
@@ -1131,14 +1127,14 @@
           <el-icon :size="48" color="#ccc">
             <VideoCamera />
           </el-icon>
-          <p style="margin-top: 16px; color: #909399;">视频生成中...</p>
+          <p style="margin-top: 16px; color: var(--text-muted);">视频生成中...</p>
         </div>
         <div class="video-meta">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
               <el-tag :type="getStatusType(previewVideo.status)" size="small">{{ getStatusText(previewVideo.status)
                 }}</el-tag>
-              <span v-if="previewVideo.duration" style="margin-left: 12px; color: #606266; font-size: 14px;">{{
+              <span v-if="previewVideo.duration" style="margin-left: 12px; color: var(--text-secondary); font-size: 14px;">{{
                 $t('professionalEditor.duration') }}: {{ previewVideo.duration }}{{ $t('professionalEditor.seconds')
                 }}</span>
             </div>
@@ -1147,7 +1143,7 @@
               {{ $t('professionalEditor.downloadVideo') }}
             </el-button>
           </div>
-          <div v-if="previewVideo.prompt" style="margin-top: 12px; font-size: 12px; color: #606266; line-height: 1.6;">
+          <div v-if="previewVideo.prompt" style="margin-top: 12px; font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
             <strong>提示词：</strong>{{ previewVideo.prompt }}
           </div>
         </div>
@@ -1279,12 +1275,15 @@ const previewAudioPlayer = ref<HTMLAudioElement | null>(null)
 const unsupportedPreviewAudioIds = ref<Set<string>>(new Set())
 const timelineEditorRef = ref<InstanceType<typeof VideoTimelineEditor> | null>(null)
 const videoReferenceImages = ref<ImageGeneration[]>([])
-const selectedVideoModel = ref<string>('')
-const selectedReferenceMode = ref<string>('')  // 参考图模式：single, first_last, multiple, none
+const DEFAULT_VIDEO_MODEL_ID = 'doubao-seedance-1-5-pro-251215'
+const DEFAULT_REFERENCE_MODE = 'single'
+const selectedVideoModel = ref<string>(DEFAULT_VIDEO_MODEL_ID)
+const selectedReferenceMode = ref<string>(DEFAULT_REFERENCE_MODE)  // 参考图模式：single, first_last, multiple, none
 const previewImageUrl = ref<string>('')  // 预览大图的URL
 const videoModelCapabilities = ref<VideoModelCapability[]>([])
 let videoPollingTimer: any = null
 let mergePollingTimer: any = null  // 视频合成列表轮询定时器
+const videoGenerationBottomRef = ref<HTMLElement | null>(null)
 
 // 视频合成列表
 const videoMerges = ref<VideoMerge[]>([])
@@ -1451,6 +1450,22 @@ const defaultModelCapabilities: Record<string, Omit<VideoModelCapability, 'id' |
   }
 }
 
+const getVideoModelCapability = (modelName: string): VideoModelCapability => {
+  const capability = defaultModelCapabilities[modelName] || {
+    supportSingleImage: true,
+    supportMultipleImages: false,
+    supportFirstLastFrame: false,
+    supportTextOnly: true,
+    maxImages: 1
+  }
+
+  return {
+    id: modelName,
+    name: modelName,
+    ...capability
+  }
+}
+
 // 从模型名称提取provider
 const extractProviderFromModel = (modelName: string): string => {
   if (modelName.startsWith('doubao-') || modelName.startsWith('seedance')) {
@@ -1503,21 +1518,7 @@ const loadVideoModels = async () => {
     })
 
     // 构建模型能力列表
-    videoModelCapabilities.value = Array.from(modelMap.keys()).map(modelName => {
-      const capability = defaultModelCapabilities[modelName] || {
-        supportSingleImage: true,
-        supportMultipleImages: false,
-        supportFirstLastFrame: false,
-        supportTextOnly: true,
-        maxImages: 1
-      }
-
-      return {
-        id: modelName,
-        name: modelName,
-        ...capability
-      }
-    })
+    videoModelCapabilities.value = Array.from(modelMap.keys()).map(getVideoModelCapability)
 
     // 默认优先选择豆包模型
     if (videoModelCapabilities.value.length > 0) {
@@ -2021,14 +2022,17 @@ const searchNeteaseSongs = async (keywords: string) => {
   }
 }
 
-const mapSfxItems = (items: any[], fallbackCategory: string): AudioListItem[] => {
+const mapSfxItems = (items: any[], fallbackCategory: string, rankOffset = 0): AudioListItem[] => {
   const now = Date.now()
   const mappedRaw: Array<AudioListItem | null> = items
     .map((item: any, index: number) => {
       const sourceName = `${item.source || ''}`.trim().toLowerCase()
       const sourceLabel = sourceName === 'pixabay' ? 'Pixabay' : (sourceName === 'freesound' ? 'Freesound' : '')
       const category = item.category || fallbackCategory || '热门音效'
-      const rank = Number(item.rank || index + 1)
+      const rawRank = Number(item.rank)
+      const rank = rankOffset > 0
+        ? (rankOffset + index + 1)
+        : ((Number.isFinite(rawRank) && rawRank > 0) ? rawRank : (index + 1))
       const url = resolveAudioUrl(item.url || item.audio_url || item.file_url || item.file_path || item.preview_url)
       if (!url) {
         return null
@@ -2084,7 +2088,7 @@ const loadSfx = async (append = false) => {
 
     const data = await fetchJsonWithTimeout(`/api/v1/sfx?${params.toString()}`, SFX_FETCH_TIMEOUT_MS)
     const { items } = resolveListPayload(data)
-    const mapped = mapSfxItems(items, sfxCategory.value)
+    const mapped = mapSfxItems(items, sfxCategory.value, isAppendMode ? sfxAssets.value.length : 0)
     const hasMoreFromResponse = typeof data?.has_more === 'boolean'
       ? data.has_more
       : mapped.length >= SFX_LAZY_PAGE_SIZE
@@ -2654,6 +2658,19 @@ const getScrollContainer = (el: HTMLElement | null): HTMLElement | null => {
   return null
 }
 
+const scrollVideoGenerationToBottom = async () => {
+  await nextTick()
+  window.requestAnimationFrame(() => {
+    const container = getScrollContainer(videoGenerationBottomRef.value)
+    if (!container) return
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth'
+    })
+  })
+}
+
 const growHotMusicVisibleCount = () => {
   if (!isHotMusicLazyMode.value) return
   if (hotMusicVisibleCount.value >= filteredAudioAssets.value.length) return
@@ -2674,19 +2691,28 @@ const canLoadMoreHotMusicFromSource = () => {
 
 const tryLoadMoreHotMusicWhileScrolling = async () => {
   if (!isAudioLazyMode.value || !hotMusicScrollContainer) return
-
-  if (isSfxLazyMode.value) {
-    if (sfxLoadingMore.value || !sfxHasMore.value) return
-    await loadSfx(true)
-    return
-  }
-
   if (hotMusicScrollLoading.value) return
 
   hotMusicScrollLoading.value = true
   try {
     let guard = 0
     while (guard < 12 && hotMusicScrollContainer && isNearBottom(hotMusicScrollContainer)) {
+      if (isSfxLazyMode.value) {
+        if (sfxLoadingMore.value || !sfxHasMore.value) {
+          break
+        }
+
+        const before = sfxAssets.value.length
+        await loadSfx(true)
+        guard += 1
+        await nextTick()
+
+        if (sfxAssets.value.length <= before) {
+          break
+        }
+        continue
+      }
+
       if (hotMusicVisibleCount.value < filteredAudioAssets.value.length) {
         growHotMusicVisibleCount()
         guard += 1
@@ -3160,15 +3186,7 @@ const currentModelCapability = computed<VideoModelCapability | null>(() => {
   if (!selectedVideoModel.value) return null
   const matched = videoModelCapabilities.value.find(m => m.id === selectedVideoModel.value)
   if (matched) return matched
-  return {
-    id: selectedVideoModel.value,
-    name: selectedVideoModel.value,
-    supportSingleImage: true,
-    supportMultipleImages: false,
-    supportFirstLastFrame: false,
-    supportTextOnly: true,
-    maxImages: 1
-  }
+  return getVideoModelCapability(selectedVideoModel.value)
 })
 
 // 当前模型支持的参考图模式
@@ -4017,6 +4035,7 @@ const generateVideo = async () => {
     const result = await videoAPI.generateVideo(requestParams)
 
     generatedVideos.value.unshift(normalizeVideo(result))
+    await scrollVideoGenerationToBottom()
     ElMessage.success('视频生成任务已提交')
 
     // 启动视频轮询
@@ -5145,22 +5164,22 @@ onBeforeUnmount(() => {
     width: 100%;
     height: 80px;
     border-radius: 6px;
-    border: 1px dashed #d0d0d0;
+    border: 1px dashed var(--border-secondary);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    background: #fafafa;
+    background: var(--bg-soft);
 
     .el-icon {
       font-size: 32px !important;
-      color: #c0c0c0;
+      color: var(--text-muted);
     }
 
     div {
       font-size: 11px;
-      color: #999;
+      color: var(--text-muted);
     }
   }
 
@@ -6301,7 +6320,7 @@ onBeforeUnmount(() => {
 
     .section-label {
       font-size: 13px;
-      color: #303133;
+      color: var(--text-primary);
       font-weight: 600;
       margin-bottom: 12px;
       display: flex;
@@ -6326,16 +6345,16 @@ onBeforeUnmount(() => {
         position: relative;
         border-radius: 8px;
         overflow: hidden;
-        background: #fff;
-        border: 1px solid #e8e8e8;
+        background: var(--bg-card);
+        border: 1px solid var(--border-primary);
         transition: all 0.2s ease;
         cursor: pointer;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        box-shadow: var(--shadow-card);
 
         &:hover {
           transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-          border-color: #409eff;
+          box-shadow: var(--shadow-card-hover);
+          border-color: var(--accent);
         }
 
         .image-placeholder {
@@ -6346,8 +6365,8 @@ onBeforeUnmount(() => {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf0 100%);
-          color: #909399;
+          background: linear-gradient(135deg, var(--bg-soft) 0%, var(--bg-secondary) 100%);
+          color: var(--text-muted);
           position: relative;
           overflow: hidden;
 
@@ -6536,6 +6555,12 @@ onBeforeUnmount(() => {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .image-slot-index {
+    margin-top: 4px;
+    font-size: 10px;
     color: var(--text-muted);
   }
 
