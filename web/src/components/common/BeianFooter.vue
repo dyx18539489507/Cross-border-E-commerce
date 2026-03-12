@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-const publicSecurityBadge = '/beian-icon.png'
+import publicSecurityBadge from '@/assets/beian-icon.png'
 </script>
 
 <style scoped>

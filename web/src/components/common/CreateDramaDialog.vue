@@ -929,7 +929,6 @@ const handleSubmit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 30px 8px;
   overflow: hidden;
   overscroll-behavior: contain;
 }
@@ -950,6 +949,8 @@ const handleSubmit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  padding: 30px 8px;
 }
 
 :deep(.el-dialog.create-dialog) {
@@ -1445,7 +1446,7 @@ const handleSubmit = async () => {
 }
 
 @media (max-height: 860px) and (min-width: 769px) {
-  :global(.compliance-dialog-overlay) {
+  :global(.compliance-dialog-overlay .el-overlay-dialog) {
     padding: 20px 6px;
   }
 
@@ -1523,8 +1524,11 @@ const handleSubmit = async () => {
 }
 
 @media (max-width: 768px) {
-  :global(.create-dialog-overlay),
-  :global(.compliance-dialog-overlay) {
+  :global(.create-dialog-overlay) {
+    padding: 20px 10px;
+  }
+
+  :global(.compliance-dialog-overlay .el-overlay-dialog) {
     padding: 20px 10px;
   }
 
