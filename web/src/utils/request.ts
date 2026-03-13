@@ -17,9 +17,39 @@ const request = axios.create({
   }
 }) as CustomAxiosInstance
 
+const DEVICE_ID_STORAGE_KEY = 'drama_device_id'
+const DEVICE_ID_HEADER = 'X-Device-ID'
+
+const generateDeviceID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `dev_${crypto.randomUUID().replace(/-/g, '')}`
+  }
+
+  const timestamp = Date.now().toString(16)
+  const random = `${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`
+  return `dev_${timestamp}${random}`.slice(0, 48)
+}
+
+const getOrCreateDeviceID = (): string => {
+  const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY)
+  if (existing && /^[a-zA-Z0-9_-]{16,128}$/.test(existing)) {
+    return existing
+  }
+
+  const created = generateDeviceID()
+  localStorage.setItem(DEVICE_ID_STORAGE_KEY, created)
+  return created
+}
+
 // 开源版本 - 无需认证token
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    const deviceID = getOrCreateDeviceID()
+    if (config.headers && typeof (config.headers as any).set === 'function') {
+      ;(config.headers as any).set(DEVICE_ID_HEADER, deviceID)
+    } else {
+      ;(config.headers as Record<string, string>)[DEVICE_ID_HEADER] = deviceID
+    }
     return config
   },
   (error: AxiosError) => {

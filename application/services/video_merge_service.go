@@ -966,10 +966,20 @@ type FinalizeEpisodeRequest struct {
 }
 
 // FinalizeEpisode 完成集数制作，根据时间线场景顺序合成最终视频
-func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *FinalizeEpisodeRequest) (map[string]interface{}, error) {
+func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *FinalizeEpisodeRequest, deviceIDs ...string) (map[string]interface{}, error) {
+	deviceID := ""
+	if len(deviceIDs) > 0 {
+		deviceID = strings.TrimSpace(deviceIDs[0])
+	}
+
 	// 验证episode存在且属于该用户
 	var episode models.Episode
-	if err := s.db.Preload("Drama").Preload("Storyboards").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	query := s.db.Preload("Drama").Preload("Storyboards").Where("episodes.id = ?", episodeID)
+	if deviceID != "" {
+		query = query.Joins("JOIN dramas ON dramas.id = episodes.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := query.First(&episode).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
 	}
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -25,11 +26,13 @@ func NewAIAssistHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger) *AI
 }
 
 func (h *AIAssistHandler) GenerateEpisodeScript(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var req services.GenerateAssistScriptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	req.DeviceID = deviceID
 
 	result, err := h.assistService.GenerateEpisodeScript(&req)
 	if err != nil {

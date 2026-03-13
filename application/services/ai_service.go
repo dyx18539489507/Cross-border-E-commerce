@@ -31,6 +31,13 @@ func NewAIService(db *gorm.DB, log *logger.Logger, cfgs ...*config.Config) *AISe
 	}
 }
 
+func firstAIDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
 type CreateAIConfigRequest struct {
 	ServiceType   string            `json:"service_type" binding:"required,oneof=text image video"`
 	Name          string            `json:"name" binding:"required,min=1,max=100"`
@@ -67,7 +74,8 @@ type TestConnectionRequest struct {
 	Endpoint string            `json:"endpoint"`
 }
 
-func (s *AIService) CreateConfig(req *CreateAIConfigRequest) (*models.AIServiceConfig, error) {
+func (s *AIService) CreateConfig(req *CreateAIConfigRequest, deviceIDs ...string) (*models.AIServiceConfig, error) {
+	deviceID := firstAIDeviceID(deviceIDs)
 	// 根据 provider 和 service_type 自动设置 endpoint
 	endpoint := req.Endpoint
 	queryEndpoint := req.QueryEndpoint
@@ -120,6 +128,7 @@ func (s *AIService) CreateConfig(req *CreateAIConfigRequest) (*models.AIServiceC
 	}
 
 	config := &models.AIServiceConfig{
+		DeviceID:      deviceID,
 		ServiceType:   req.ServiceType,
 		Name:          req.Name,
 		Provider:      req.Provider,
@@ -143,9 +152,13 @@ func (s *AIService) CreateConfig(req *CreateAIConfigRequest) (*models.AIServiceC
 	return config, nil
 }
 
-func (s *AIService) GetConfig(configID uint) (*models.AIServiceConfig, error) {
+func (s *AIService) GetConfig(configID uint, deviceIDs ...string) (*models.AIServiceConfig, error) {
+	deviceID := firstAIDeviceID(deviceIDs)
 	var config models.AIServiceConfig
-	err := s.db.Where("id = ? ", configID).First(&config).Error
+	err := s.scopedConfigQuery().
+		Where("id = ?", configID).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		First(&config).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("config not found")
@@ -155,9 +168,10 @@ func (s *AIService) GetConfig(configID uint) (*models.AIServiceConfig, error) {
 	return &config, nil
 }
 
-func (s *AIService) ListConfigs(serviceType string) ([]models.AIServiceConfig, error) {
+func (s *AIService) ListConfigs(serviceType string, deviceIDs ...string) ([]models.AIServiceConfig, error) {
+	deviceID := firstAIDeviceID(deviceIDs)
 	var configs []models.AIServiceConfig
-	query := s.db
+	query := s.scopedConfigQuery().Scopes(withScopedDeviceFallback(deviceID))
 
 	if serviceType != "" {
 		query = query.Where("service_type = ?", serviceType)
@@ -172,9 +186,13 @@ func (s *AIService) ListConfigs(serviceType string) ([]models.AIServiceConfig, e
 	return configs, nil
 }
 
-func (s *AIService) UpdateConfig(configID uint, req *UpdateAIConfigRequest) (*models.AIServiceConfig, error) {
+func (s *AIService) UpdateConfig(configID uint, req *UpdateAIConfigRequest, deviceIDs ...string) (*models.AIServiceConfig, error) {
+	deviceID := firstAIDeviceID(deviceIDs)
 	var config models.AIServiceConfig
-	if err := s.db.Where("id = ? ", configID).First(&config).Error; err != nil {
+	if err := s.scopedConfigQuery().
+		Where("id = ?", configID).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		First(&config).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("config not found")
 		}
@@ -260,8 +278,12 @@ func (s *AIService) UpdateConfig(configID uint, req *UpdateAIConfigRequest) (*mo
 	return &config, nil
 }
 
-func (s *AIService) DeleteConfig(configID uint) error {
-	result := s.db.Where("id = ? ", configID).Delete(&models.AIServiceConfig{})
+func (s *AIService) DeleteConfig(configID uint, deviceIDs ...string) error {
+	deviceID := firstAIDeviceID(deviceIDs)
+	result := s.scopedConfigQuery().
+		Where("id = ?", configID).
+		Scopes(withScopedDeviceFallback(deviceID)).
+		Delete(&models.AIServiceConfig{})
 
 	if result.Error != nil {
 		s.log.Errorw("Failed to delete AI config", "error", result.Error)
@@ -324,11 +346,12 @@ func (s *AIService) TestConnection(req *TestConnectionRequest) error {
 	return err
 }
 
-func (s *AIService) GetDefaultConfig(serviceType string) (*models.AIServiceConfig, error) {
+func (s *AIService) GetDefaultConfig(serviceType string, deviceIDs ...string) (*models.AIServiceConfig, error) {
+	deviceID := firstAIDeviceID(deviceIDs)
 	var config models.AIServiceConfig
-	// 按优先级降序获取第一个激活的配置
-	err := s.db.Where("service_type = ? AND is_active = ?", serviceType, true).
-		Order("priority DESC, created_at DESC").
+	err := s.scopedConfigQuery().
+		Where("service_type = ? AND is_active = ?", serviceType, true).
+		Scopes(withScopedDeviceFallback(deviceID)).
 		First(&config).Error
 
 	if err != nil {
@@ -342,10 +365,12 @@ func (s *AIService) GetDefaultConfig(serviceType string) (*models.AIServiceConfi
 }
 
 // GetConfigForModel 根据服务类型和模型名称获取优先级最高的激活配置
-func (s *AIService) GetConfigForModel(serviceType string, modelName string) (*models.AIServiceConfig, error) {
+func (s *AIService) GetConfigForModel(serviceType string, modelName string, deviceIDs ...string) (*models.AIServiceConfig, error) {
+	deviceID := firstAIDeviceID(deviceIDs)
 	var configs []models.AIServiceConfig
-	err := s.db.Where("service_type = ? AND is_active = ?", serviceType, true).
-		Order("priority DESC, created_at DESC").
+	err := s.scopedConfigQuery().
+		Where("service_type = ? AND is_active = ?", serviceType, true).
+		Scopes(withScopedDeviceFallback(deviceID)).
 		Find(&configs).Error
 
 	if err != nil {
@@ -364,8 +389,25 @@ func (s *AIService) GetConfigForModel(serviceType string, modelName string) (*mo
 	return nil, errors.New("no active config found for model: " + modelName)
 }
 
-func (s *AIService) GetAIClient(serviceType string) (ai.AIClient, error) {
-	config, err := s.GetDefaultConfig(serviceType)
+func (s *AIService) scopedConfigQuery() *gorm.DB {
+	return s.db.Model(&models.AIServiceConfig{}).
+		Order("CASE WHEN device_id = '' THEN 1 ELSE 0 END ASC").
+		Order("priority DESC").
+		Order("created_at DESC")
+}
+
+func withScopedDeviceFallback(deviceID string) func(*gorm.DB) *gorm.DB {
+	deviceID = strings.TrimSpace(deviceID)
+	return func(db *gorm.DB) *gorm.DB {
+		if deviceID == "" {
+			return db
+		}
+		return db.Where("(device_id = ? OR device_id = '')", deviceID)
+	}
+}
+
+func (s *AIService) GetAIClient(serviceType string, deviceIDs ...string) (ai.AIClient, error) {
+	config, err := s.GetDefaultConfig(serviceType, deviceIDs...)
 	if err != nil {
 		if serviceType == "text" && isNoActiveConfigError(err) {
 			client, fallbackErr := s.newComplianceTextClient("")
@@ -407,8 +449,8 @@ func (s *AIService) GetAIClient(serviceType string) (ai.AIClient, error) {
 }
 
 // GetAIClientForModel 根据服务类型和模型名称获取对应的AI客户端
-func (s *AIService) GetAIClientForModel(serviceType string, modelName string) (ai.AIClient, error) {
-	config, err := s.GetConfigForModel(serviceType, modelName)
+func (s *AIService) GetAIClientForModel(serviceType string, modelName string, deviceIDs ...string) (ai.AIClient, error) {
+	config, err := s.GetConfigForModel(serviceType, modelName, deviceIDs...)
 	if err != nil {
 		if serviceType == "text" && isNoActiveConfigError(err) {
 			client, fallbackErr := s.newComplianceTextClient(modelName)

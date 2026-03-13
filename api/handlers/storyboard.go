@@ -3,6 +3,7 @@ package handlers
 import (
 	"sync"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -27,6 +28,7 @@ func NewStoryboardHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger) *
 
 // GenerateStoryboard 生成分镜头（异步）
 func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	episodeID := c.Param("episode_id")
 	var req struct {
 		Model string `json:"model"`
@@ -36,7 +38,7 @@ func (h *StoryboardHandler) GenerateStoryboard(c *gin.Context) {
 	}
 
 	// 创建异步任务
-	task, err := h.taskService.CreateTask("storyboard_generation", episodeID)
+	task, err := h.taskService.CreateTask("storyboard_generation", episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create task", "error", err)
 		response.InternalError(c, err.Error())

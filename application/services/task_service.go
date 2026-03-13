@@ -23,10 +23,19 @@ func NewTaskService(db *gorm.DB, log *logger.Logger) *TaskService {
 	}
 }
 
+func firstTaskDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return deviceIDs[0]
+}
+
 // CreateTask 创建新任务
-func (s *TaskService) CreateTask(taskType, resourceID string) (*models.AsyncTask, error) {
+func (s *TaskService) CreateTask(taskType, resourceID string, deviceIDs ...string) (*models.AsyncTask, error) {
+	deviceID := firstTaskDeviceID(deviceIDs)
 	task := &models.AsyncTask{
 		ID:         uuid.New().String(),
+		DeviceID:   deviceID,
 		Type:       taskType,
 		Status:     "pending",
 		Progress:   0,
@@ -93,18 +102,28 @@ func (s *TaskService) UpdateTaskResult(taskID string, result interface{}) error 
 }
 
 // GetTask 获取任务信息
-func (s *TaskService) GetTask(taskID string) (*models.AsyncTask, error) {
+func (s *TaskService) GetTask(taskID string, deviceIDs ...string) (*models.AsyncTask, error) {
+	deviceID := firstTaskDeviceID(deviceIDs)
 	var task models.AsyncTask
-	if err := s.db.Where("id = ?", taskID).First(&task).Error; err != nil {
+	query := s.db.Where("id = ?", taskID)
+	if deviceID != "" {
+		query = query.Where("device_id = ?", deviceID)
+	}
+	if err := query.First(&task).Error; err != nil {
 		return nil, err
 	}
 	return &task, nil
 }
 
 // GetTasksByResource 获取资源相关的所有任务
-func (s *TaskService) GetTasksByResource(resourceID string) ([]*models.AsyncTask, error) {
+func (s *TaskService) GetTasksByResource(resourceID string, deviceIDs ...string) ([]*models.AsyncTask, error) {
+	deviceID := firstTaskDeviceID(deviceIDs)
 	var tasks []*models.AsyncTask
-	if err := s.db.Where("resource_id = ?", resourceID).
+	query := s.db.Where("resource_id = ?", resourceID)
+	if deviceID != "" {
+		query = query.Where("device_id = ?", deviceID)
+	}
+	if err := query.
 		Order("created_at DESC").
 		Find(&tasks).Error; err != nil {
 		return nil, err

@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/infrastructure/storage"
 	"github.com/drama-generator/backend/pkg/config"
@@ -91,10 +92,11 @@ func (h *ImageGenerationHandler) GetBackgroundsForEpisode(c *gin.Context) {
 }
 
 func (h *ImageGenerationHandler) ExtractBackgroundsForEpisode(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	episodeID := c.Param("episode_id")
 
 	// 创建异步任务
-	task, err := h.taskService.CreateTask("background_extraction", episodeID)
+	task, err := h.taskService.CreateTask("background_extraction", episodeID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create task", "error", err)
 		response.InternalError(c, err.Error())

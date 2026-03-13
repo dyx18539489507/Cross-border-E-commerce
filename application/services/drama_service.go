@@ -25,6 +25,37 @@ var (
 	ErrComplianceRiskForbidden = errors.New("compliance risk level red, creation forbidden")
 )
 
+func firstDramaDeviceID(deviceIDs []string) string {
+	if len(deviceIDs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(deviceIDs[0])
+}
+
+func scopeDramaByDevice(query *gorm.DB, deviceID string) *gorm.DB {
+	if deviceID == "" {
+		return query
+	}
+	return query.Where("device_id = ?", deviceID)
+}
+
+func (s *DramaService) claimLegacyDramas(deviceID string) error {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return nil
+	}
+
+	var total int64
+	if err := s.db.Model(&models.Drama{}).Where("device_id = ?", deviceID).Count(&total).Error; err != nil {
+		return err
+	}
+	if total > 0 {
+		return nil
+	}
+
+	return s.db.Model(&models.Drama{}).Where("device_id = ''").Update("device_id", deviceID).Error
+}
+
 func NewDramaService(db *gorm.DB, log *logger.Logger, complianceService *ComplianceService) *DramaService {
 	return &DramaService{
 		db:                db,
@@ -124,7 +155,8 @@ func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest) (*ComplianceR
 	return s.evaluateCompliance(input), nil
 }
 
-func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *ComplianceResult, error) {
+func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string) (*models.Drama, *ComplianceResult, error) {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	input, err := prepareCreateDramaInput(req)
 	if err != nil {
 		return nil, nil, err
@@ -138,6 +170,7 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *Com
 			"title", input.title,
 			"score", complianceResult.Score,
 			"level", complianceResult.Level,
+			"device_id", deviceID,
 		)
 		return nil, complianceResult, ErrComplianceRiskForbidden
 	}
@@ -145,6 +178,7 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *Com
 	complianceReportJSON, _ := json.Marshal(complianceResult)
 
 	drama := &models.Drama{
+		DeviceID:         deviceID,
 		Title:            input.title,
 		Status:           "draft",
 		TargetCountry:    input.targetCountry,
@@ -175,9 +209,10 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, *Com
 	return drama, complianceResult, nil
 }
 
-func (s *DramaService) GetDrama(dramaID string) (*models.Drama, error) {
+func (s *DramaService) GetDrama(dramaID string, deviceIDs ...string) (*models.Drama, error) {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var drama models.Drama
-	err := s.db.Where("id = ? ", dramaID).
+	err := scopeDramaByDevice(s.db.Where("id = ?", dramaID), deviceID).
 		Preload("Characters").          // 加载Drama级别的角色
 		Preload("Scenes").              // 加载Drama级别的场景
 		Preload("Episodes.Characters"). // 加载每个章节关联的角色
@@ -293,11 +328,16 @@ func (s *DramaService) GetDrama(dramaID string) (*models.Drama, error) {
 	return &drama, nil
 }
 
-func (s *DramaService) ListDramas(query *DramaListQuery) ([]models.Drama, int64, error) {
+func (s *DramaService) ListDramas(query *DramaListQuery, deviceIDs ...string) ([]models.Drama, int64, error) {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var dramas []models.Drama
 	var total int64
 
-	db := s.db.Model(&models.Drama{})
+	if err := s.claimLegacyDramas(deviceID); err != nil {
+		s.log.Warnw("Failed to claim legacy dramas", "error", err, "device_id", deviceID)
+	}
+
+	db := scopeDramaByDevice(s.db.Model(&models.Drama{}), deviceID)
 
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
@@ -350,9 +390,10 @@ func (s *DramaService) ListDramas(query *DramaListQuery) ([]models.Drama, int64,
 	return dramas, total, nil
 }
 
-func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest) (*models.Drama, error) {
+func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest, deviceIDs ...string) (*models.Drama, error) {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", dramaID).First(&drama).Error; err != nil {
+	if err := scopeDramaByDevice(s.db.Where("id = ?", dramaID), deviceID).First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("drama not found")
 		}
@@ -400,8 +441,9 @@ func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest) (*mo
 	return &drama, nil
 }
 
-func (s *DramaService) DeleteDrama(dramaID string) error {
-	result := s.db.Where("id = ? ", dramaID).Delete(&models.Drama{})
+func (s *DramaService) DeleteDrama(dramaID string, deviceIDs ...string) error {
+	deviceID := firstDramaDeviceID(deviceIDs)
+	result := scopeDramaByDevice(s.db.Where("id = ?", dramaID), deviceID).Delete(&models.Drama{})
 
 	if result.Error != nil {
 		s.log.Errorw("Failed to delete drama", "error", result.Error)
@@ -416,18 +458,23 @@ func (s *DramaService) DeleteDrama(dramaID string) error {
 	return nil
 }
 
-func (s *DramaService) GetDramaStats() (map[string]interface{}, error) {
+func (s *DramaService) GetDramaStats(deviceIDs ...string) (map[string]interface{}, error) {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var total int64
 	var byStatus []struct {
 		Status string
 		Count  int64
 	}
 
-	if err := s.db.Model(&models.Drama{}).Count(&total).Error; err != nil {
+	if err := s.claimLegacyDramas(deviceID); err != nil {
+		s.log.Warnw("Failed to claim legacy dramas for stats", "error", err, "device_id", deviceID)
+	}
+
+	if err := scopeDramaByDevice(s.db.Model(&models.Drama{}), deviceID).Count(&total).Error; err != nil {
 		return nil, err
 	}
 
-	if err := s.db.Model(&models.Drama{}).
+	if err := scopeDramaByDevice(s.db.Model(&models.Drama{}), deviceID).
 		Select("status, count(*) as count").
 		Group("status").
 		Scan(&byStatus).Error; err != nil {
@@ -463,9 +510,10 @@ type SaveEpisodesRequest struct {
 	Episodes []models.Episode `json:"episodes" binding:"required"`
 }
 
-func (s *DramaService) SaveOutline(dramaID string, req *SaveOutlineRequest) error {
+func (s *DramaService) SaveOutline(dramaID string, req *SaveOutlineRequest, deviceIDs ...string) error {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", dramaID).First(&drama).Error; err != nil {
+	if err := scopeDramaByDevice(s.db.Where("id = ?", dramaID), deviceID).First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("drama not found")
 		}
@@ -500,9 +548,10 @@ func (s *DramaService) SaveOutline(dramaID string, req *SaveOutlineRequest) erro
 	return nil
 }
 
-func (s *DramaService) GetCharacters(dramaID string, episodeID *string) ([]models.Character, error) {
+func (s *DramaService) GetCharacters(dramaID string, episodeID *string, deviceIDs ...string) ([]models.Character, error) {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", dramaID).First(&drama).Error; err != nil {
+	if err := scopeDramaByDevice(s.db.Where("id = ?", dramaID), deviceID).First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("drama not found")
 		}
@@ -514,7 +563,7 @@ func (s *DramaService) GetCharacters(dramaID string, episodeID *string) ([]model
 	// 如果指定了episodeID，只获取该章节关联的角色
 	if episodeID != nil {
 		var episode models.Episode
-		if err := s.db.Preload("Characters").Where("id = ? AND drama_id = ?", *episodeID, dramaID).First(&episode).Error; err != nil {
+		if err := s.db.Preload("Characters").Where("id = ? AND drama_id = ?", *episodeID, drama.ID).First(&episode).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, errors.New("episode not found")
 			}
@@ -555,7 +604,8 @@ func (s *DramaService) GetCharacters(dramaID string, episodeID *string) ([]model
 	return characters, nil
 }
 
-func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest) error {
+func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest, deviceIDs ...string) error {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	// 转换dramaID
 	id, err := strconv.ParseUint(dramaID, 10, 32)
 	if err != nil {
@@ -564,7 +614,7 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 	dramaIDUint := uint(id)
 
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", dramaIDUint).First(&drama).Error; err != nil {
+	if err := scopeDramaByDevice(s.db.Where("id = ?", dramaIDUint), deviceID).First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("drama not found")
 		}
@@ -657,7 +707,8 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 	return nil
 }
 
-func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest) error {
+func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest, deviceIDs ...string) error {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	// 转换dramaID
 	id, err := strconv.ParseUint(dramaID, 10, 32)
 	if err != nil {
@@ -666,7 +717,7 @@ func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest) er
 	dramaIDUint := uint(id)
 
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", dramaIDUint).First(&drama).Error; err != nil {
+	if err := scopeDramaByDevice(s.db.Where("id = ?", dramaIDUint), deviceID).First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("drama not found")
 		}
@@ -705,9 +756,10 @@ func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest) er
 	return nil
 }
 
-func (s *DramaService) SaveProgress(dramaID string, req *SaveProgressRequest) error {
+func (s *DramaService) SaveProgress(dramaID string, req *SaveProgressRequest, deviceIDs ...string) error {
+	deviceID := firstDramaDeviceID(deviceIDs)
 	var drama models.Drama
-	if err := s.db.Where("id = ? ", dramaID).First(&drama).Error; err != nil {
+	if err := scopeDramaByDevice(s.db.Where("id = ?", dramaID), deviceID).First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("drama not found")
 		}

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -24,6 +25,7 @@ func NewScriptGenerationHandler(db *gorm.DB, cfg *config.Config, log *logger.Log
 }
 
 func (h *ScriptGenerationHandler) GenerateCharacters(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	var req services.GenerateCharactersRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
@@ -31,7 +33,7 @@ func (h *ScriptGenerationHandler) GenerateCharacters(c *gin.Context) {
 	}
 
 	// 创建异步任务
-	task, err := h.taskService.CreateTask("character_generation", req.DramaID)
+	task, err := h.taskService.CreateTask("character_generation", req.DramaID, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to create task", "error", err)
 		response.InternalError(c, err.Error())

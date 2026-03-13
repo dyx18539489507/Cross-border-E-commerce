@@ -17,6 +17,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	r.Use(gin.Recovery())
 	r.Use(middlewares2.LoggerMiddleware(log))
 	r.Use(middlewares2.CORSMiddleware(cfg.Server.CORSOrigins))
+	r.Use(middlewares2.DeviceIdentityMiddleware())
 
 	// 静态文件服务（用户上传的文件）
 	r.Static("/static", cfg.Storage.LocalPath)

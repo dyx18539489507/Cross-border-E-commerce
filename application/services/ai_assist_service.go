@@ -22,6 +22,7 @@ type GenerateAssistScriptRequest struct {
 	EpisodeNumber int    `json:"episode_number"`
 	Prompt        string `json:"prompt" binding:"required"`
 	Model         string `json:"model"`
+	DeviceID      string `json:"-"`
 }
 
 type GenerateAssistScriptResult struct {
@@ -54,7 +55,11 @@ func (s *AIAssistService) GenerateEpisodeScript(req *GenerateAssistScriptRequest
 	}
 
 	var drama models.Drama
-	if err := s.db.Where("id = ?", req.DramaID).First(&drama).Error; err != nil {
+	dramaQuery := s.db.Where("id = ?", req.DramaID)
+	if req.DeviceID != "" {
+		dramaQuery = dramaQuery.Where("device_id = ?", req.DeviceID)
+	}
+	if err := dramaQuery.First(&drama).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrAssistDramaNotFound
 		}
@@ -69,7 +74,7 @@ func (s *AIAssistService) GenerateEpisodeScript(req *GenerateAssistScriptRequest
 	systemPrompt := s.buildSystemPrompt()
 	userPrompt := s.buildUserPrompt(&drama, episodeNumber, prompt)
 
-	content, model, err := s.generateWithDeepSeek(systemPrompt, userPrompt, req.Model)
+	content, model, err := s.generateWithDeepSeek(systemPrompt, userPrompt, req.Model, req.DeviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +139,8 @@ func (s *AIAssistService) buildUserPrompt(drama *models.Drama, episodeNumber int
 		title, description, episodeNumber, prompt)
 }
 
-func (s *AIAssistService) generateWithDeepSeek(systemPrompt string, userPrompt string, requestedModel string) (string, string, error) {
-	activeDeepSeekModels := s.listActiveDeepSeekTextModels()
+func (s *AIAssistService) generateWithDeepSeek(systemPrompt string, userPrompt string, requestedModel string, deviceID string) (string, string, error) {
+	activeDeepSeekModels := s.listActiveDeepSeekTextModels(deviceID)
 	models := buildAssistCandidateModels(requestedModel, s.cfg.Compliance.Model, activeDeepSeekModels...)
 	var lastErr error
 
@@ -168,7 +173,7 @@ func (s *AIAssistService) generateWithDeepSeek(systemPrompt string, userPrompt s
 
 	// 其次尝试数据库中配置的文本服务（必须匹配 DeepSeek 模型）
 	for _, model := range models {
-		client, err := s.aiService.GetAIClientForModel("text", model)
+		client, err := s.aiService.GetAIClientForModel("text", model, deviceID)
 		if err != nil {
 			lastErr = err
 			continue
@@ -196,8 +201,8 @@ func (s *AIAssistService) generateWithDeepSeek(systemPrompt string, userPrompt s
 	return "", "", fmt.Errorf("%w: %v", ErrAssistDeepSeekUnavailable, lastErr)
 }
 
-func (s *AIAssistService) listActiveDeepSeekTextModels() []string {
-	configs, err := s.aiService.ListConfigs("text")
+func (s *AIAssistService) listActiveDeepSeekTextModels(deviceID string) []string {
+	configs, err := s.aiService.ListConfigs("text", deviceID)
 	if err != nil {
 		if s.log != nil {
 			s.log.Warnw("failed to list text AI configs for assist model fallback", "error", err)
