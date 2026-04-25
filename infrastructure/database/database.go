@@ -83,6 +83,11 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.VideoGeneration{},
 		&models.VideoMerge{},
 		&models.VideoDistribution{},
+		&models.SocialAccountBinding{},
+		&models.UploadPostProfile{},
+		&models.DistributionTarget{},
+		&models.DistributionJob{},
+		&models.DistributionResult{},
 
 		// AI配置
 		&models.AIServiceConfig{},

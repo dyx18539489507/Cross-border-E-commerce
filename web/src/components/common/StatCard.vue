@@ -80,16 +80,19 @@ const trendIcon = computed(() => {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-3);
+  padding: var(--space-5);
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
+  border-radius: 26px;
+  box-shadow: var(--shadow-card);
   transition: all var(--transition-normal);
+  backdrop-filter: blur(18px);
 }
 
 .stat-card:hover {
   border-color: var(--border-secondary);
   box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
 }
 
 /* Compact variant / 紧凑变体 */
@@ -114,7 +117,7 @@ const trendIcon = computed(() => {
   justify-content: center;
   width: 3rem;
   height: 3rem;
-  border-radius: var(--radius-lg);
+  border-radius: 18px;
   flex-shrink: 0;
 }
 
@@ -127,9 +130,9 @@ const trendIcon = computed(() => {
 }
 
 .stat-label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 
 .stat-value-row {
@@ -139,9 +142,9 @@ const trendIcon = computed(() => {
 }
 
 .stat-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   line-height: 1.2;
 }
 
@@ -152,8 +155,8 @@ const trendIcon = computed(() => {
 }
 
 .stat-description {
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
   margin-top: var(--space-1);
 }
 
@@ -163,9 +166,9 @@ const trendIcon = computed(() => {
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
-  border-radius: var(--radius-md);
+  border-radius: 999px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .stat-trend.up {

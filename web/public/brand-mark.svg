@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="goldBrand" x1="12" y1="20" x2="34" y2="39" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E2BE67" />
+      <stop offset="1" stop-color="#A66E18" />
+    </linearGradient>
+    <linearGradient id="blueBrand" x1="29" y1="13" x2="52" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A5E98" />
+      <stop offset="1" stop-color="#123B73" />
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M17 22C14 20 12 20 10 21C13 21 14 22 16 24C13 25 11 27 11 29C14 28 16 28 19 30"
+    stroke="url(#goldBrand)"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M17 36C22 34 28 33 34 34"
+    stroke="url(#goldBrand)"
+    stroke-width="3.2"
+    stroke-linecap="round"
+  />
+  <path
+    d="M43 11C37 11 32 13 28 17C24 21 24 25 30 28L37 31C42 34 42 38 39 41C35 44 29 46 22 46"
+    stroke="url(#blueBrand)"
+    stroke-width="3.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M34 17L47 14M32 21L45 18M31 25L42 22"
+    stroke="url(#blueBrand)"
+    stroke-width="1.9"
+    stroke-linecap="round"
+  />
+  <path
+    d="M29 39L16 44M33 42L19 47M37 44L23 49"
+    stroke="url(#blueBrand)"
+    stroke-width="1.9"
+    stroke-linecap="round"
+  />
+  <path
+    d="M29 18C32 16 35 15 38 15C38 18 38 21 39 24C39 27 40 30 42 33"
+    stroke="url(#goldBrand)"
+    stroke-width="2.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <circle cx="48" cy="14" r="1.4" fill="#123B73" />
+  <circle cx="45" cy="18" r="1.4" fill="#123B73" />
+  <circle cx="42" cy="22" r="1.4" fill="#123B73" />
+  <circle cx="15" cy="44" r="1.4" fill="#123B73" />
+  <circle cx="18" cy="47" r="1.4" fill="#123B73" />
+  <circle cx="22" cy="49" r="1.4" fill="#123B73" />
+</svg>

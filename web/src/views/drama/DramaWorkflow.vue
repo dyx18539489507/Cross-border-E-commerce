@@ -545,7 +545,7 @@
                   <div class="character-info">
                     <h4>{{ character.name }}</h4>
                     <el-tag :type="character.role === 'main' ? 'danger' : 'info'" size="small">
-                      {{ character.role === 'main' ? '主角' : character.role === 'supporting' ? '配角' : '次要' }}
+                      {{ formatCharacterRole(character.role) }}
                     </el-tag>
                     <p class="desc">{{ character.appearance || character.description }}</p>
                     <el-button 
@@ -555,14 +555,14 @@
                       @click="editCharacterDescription(character)"
                       :icon="Edit"
                     >
-                      编辑描述
+                      {{ $t('common.edit') }}
                     </el-button>
                   </div>
 
                   <div v-if="character.image_generation_status === 'failed'" class="error-hint" style="margin-bottom: 10px;">
                     <el-alert type="error" :closable="false" show-icon>
                       <template #title>
-                        生成失败
+                        {{ $t('common.generateFailed') }}
                       </template>
                       <template #default v-if="character.image_generation_error">
                         {{ character.image_generation_error }}
@@ -811,7 +811,7 @@
     </el-dialog>
 
     <!-- 角色库选择对话框 -->
-    <el-dialog v-model="libraryDialogVisible" title="从角色库选择" width="800px">
+    <el-dialog v-model="libraryDialogVisible" :title="$t('workflow.selectFromLibrary')" width="800px">
       <div class="library-grid" v-if="characterLibrary.length > 0">
         <el-row :gutter="16">
           <el-col :span="6" v-for="item in characterLibrary" :key="item.id">
@@ -824,13 +824,13 @@
               <img :src="fixImageUrl(item.image_url)" :alt="item.name" class="library-image" />
               <div class="library-info">
                 <div class="library-name">{{ item.name }}</div>
-                <el-tag size="small">{{ item.category || '未分类' }}</el-tag>
+                <el-tag size="small">{{ item.category || $t('workflow.uncategorized') }}</el-tag>
               </div>
             </el-card>
           </el-col>
         </el-row>
       </div>
-      <el-empty v-else description="角色库为空，生成形象后可添加到角色库" />
+      <el-empty v-else :description="$t('workflow.emptyLibrary')" />
     </el-dialog>
   </div>
 </template>
@@ -898,6 +898,14 @@ const digitalHumanResultUrl = ref('')
 const digitalHumanImageList = ref<UploadUserFile[]>([])
 const digitalHumanAudioList = ref<UploadUserFile[]>([])
 const digitalHumanImagePreview = ref('')
+
+const formatCharacterRole = (role?: string) => {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (normalized === 'main') return t('character.roles.main')
+  if (normalized === 'supporting') return t('character.roles.supporting')
+  if (normalized === 'minor') return t('character.roles.minor')
+  return role || '-'
+}
 const digitalHumanAudioPreview = ref('')
 const digitalHumanImagePreviewVisible = ref(false)
 const digitalHumanAudioPreviewVisible = ref(false)

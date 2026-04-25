@@ -1170,36 +1170,74 @@ const loadDramaData = async () => {
 
 const activeImagePolls = new Set<number>()
 
+const loadActiveImageGenerationMaps = async () => {
+  const [pendingResult, processingResult] = await Promise.all([
+    imageAPI.listImages({
+      drama_id: dramaId,
+      status: 'pending',
+      page: 1,
+      page_size: 100
+    }),
+    imageAPI.listImages({
+      drama_id: dramaId,
+      status: 'processing',
+      page: 1,
+      page_size: 100
+    })
+  ])
+
+  const items = [...pendingResult.items, ...processingResult.items].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+
+  const characterImageMap = new Map<number, number>()
+  const sceneImageMap = new Map<number, number>()
+
+  items.forEach((item) => {
+    if (item.character_id && !characterImageMap.has(item.character_id)) {
+      characterImageMap.set(item.character_id, item.id)
+    }
+    if (item.scene_id) {
+      const sceneId = Number(item.scene_id)
+      if (!Number.isNaN(sceneId) && !sceneImageMap.has(sceneId)) {
+        sceneImageMap.set(sceneId, item.id)
+      }
+    }
+  })
+
+  return {
+    characterImageMap,
+    sceneImageMap
+  }
+}
+
 // 检查并启动轮询
 const checkAndStartPolling = async () => {
   if (!currentEpisode.value) return
 
+  let characterImageMap = new Map<number, number>()
+  let sceneImageMap = new Map<number, number>()
+
+  try {
+    const activeImageMaps = await loadActiveImageGenerationMaps()
+    characterImageMap = activeImageMaps.characterImageMap
+    sceneImageMap = activeImageMaps.sceneImageMap
+  } catch (error) {
+    console.error('[轮询] 查询活跃图片生成记录失败:', error)
+    return
+  }
+
   // 检查角色的生成状态
   for (const char of currentEpisode.value.characters || []) {
     if (char.image_generation_status === 'pending' || char.image_generation_status === 'processing') {
-      // 查找对应的image_generation记录
-      try {
-        const imageGenList = await imageAPI.listImages({
-          drama_id: dramaId,
-          status: char.image_generation_status as any
+      const imageGenId = characterImageMap.get(Number(char.id))
+      if (imageGenId && !activeImagePolls.has(imageGenId)) {
+        generatingCharacterImages.value[char.id] = true
+        pollImageStatus(imageGenId, async () => {
+          await loadDramaData()
+        }, { silent: true }).finally(() => {
+          generatingCharacterImages.value[char.id] = false
         })
-        
-        // 找到这个角色的image_generation记录
-        const charImageGen = imageGenList.items.find(img => 
-          img.character_id === char.id && (img.status === 'pending' || img.status === 'processing')
-        )
-        
-        if (charImageGen && !activeImagePolls.has(charImageGen.id)) {
-          // 启动轮询
-          generatingCharacterImages.value[char.id] = true
-          pollImageStatus(charImageGen.id, async () => {
-            await loadDramaData()
-          }, { silent: true }).finally(() => {
-            generatingCharacterImages.value[char.id] = false
-          })
-        }
-      } catch (error) {
-        console.error('[轮询] 查询角色图片生成记录失败:', error)
       }
     }
   }
@@ -1207,29 +1245,15 @@ const checkAndStartPolling = async () => {
   // 检查场景的生成状态
   for (const scene of currentEpisode.value.scenes || []) {
     if (scene.image_generation_status === 'pending' || scene.image_generation_status === 'processing') {
-      // 查找对应的image_generation记录
-      try {
-        const imageGenList = await imageAPI.listImages({
-          drama_id: dramaId,
-          status: scene.image_generation_status as any
+      const sceneId = Number(scene.id)
+      const imageGenId = sceneImageMap.get(sceneId)
+      if (imageGenId && !activeImagePolls.has(imageGenId)) {
+        generatingSceneImages.value[scene.id] = true
+        pollImageStatus(imageGenId, async () => {
+          await loadDramaData()
+        }, { silent: true }).finally(() => {
+          generatingSceneImages.value[scene.id] = false
         })
-        
-        // 找到这个场景的image_generation记录
-        const sceneImageGen = imageGenList.items.find(img => 
-          img.scene_id === scene.id && (img.status === 'pending' || img.status === 'processing')
-        )
-        
-        if (sceneImageGen && !activeImagePolls.has(sceneImageGen.id)) {
-          // 启动轮询
-          generatingSceneImages.value[scene.id] = true
-          pollImageStatus(sceneImageGen.id, async () => {
-            await loadDramaData()
-          }, { silent: true }).finally(() => {
-            generatingSceneImages.value[scene.id] = false
-          })
-        }
-      } catch (error) {
-        console.error('[轮询] 查询场景图片生成记录失败:', error)
       }
     }
   }

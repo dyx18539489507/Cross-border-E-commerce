@@ -9,13 +9,14 @@ import (
 )
 
 type Config struct {
-	App        AppConfig        `mapstructure:"app"`
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Storage    StorageConfig    `mapstructure:"storage"`
-	AI         AIConfig         `mapstructure:"ai"`
-	Volcengine VolcengineConfig `mapstructure:"volcengine"`
-	Compliance ComplianceConfig `mapstructure:"compliance"`
+	App          AppConfig          `mapstructure:"app"`
+	Server       ServerConfig       `mapstructure:"server"`
+	Database     DatabaseConfig     `mapstructure:"database"`
+	Storage      StorageConfig      `mapstructure:"storage"`
+	AI           AIConfig           `mapstructure:"ai"`
+	Volcengine   VolcengineConfig   `mapstructure:"volcengine"`
+	Compliance   ComplianceConfig   `mapstructure:"compliance"`
+	Distribution DistributionConfig `mapstructure:"distribution"`
 }
 
 type AppConfig struct {
@@ -96,6 +97,18 @@ type ComplianceConfig struct {
 	Model    string `mapstructure:"model"`
 }
 
+type DistributionConfig struct {
+	UploadPostBaseURL        string `mapstructure:"upload_post_base_url"`
+	UploadPostConnectTitle   string `mapstructure:"upload_post_connect_title"`
+	UploadPostConnectDesc    string `mapstructure:"upload_post_connect_description"`
+	UploadPostRedirectURL    string `mapstructure:"upload_post_redirect_url"`
+	UploadPostLogoImage      string `mapstructure:"upload_post_logo_image"`
+	DiscordUsername          string `mapstructure:"discord_username"`
+	DiscordAvatarURL         string `mapstructure:"discord_avatar_url"`
+	StatusPollIntervalSecond int    `mapstructure:"status_poll_interval_seconds"`
+	HistoryLookbackPages     int    `mapstructure:"history_lookback_pages"`
+}
+
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -134,6 +147,34 @@ func LoadConfig() (*Config, error) {
 		config.Compliance.Enabled = true
 	}
 
+	if config.Distribution.UploadPostBaseURL == "" {
+		config.Distribution.UploadPostBaseURL = firstNonEmpty(os.Getenv("UPLOAD_POST_BASE_URL"), "https://api.upload-post.com/api")
+	}
+	if config.Distribution.UploadPostConnectTitle == "" {
+		config.Distribution.UploadPostConnectTitle = firstNonEmpty(os.Getenv("UPLOAD_POST_CONNECT_TITLE"), "Connect Pinterest / Reddit")
+	}
+	if config.Distribution.UploadPostConnectDesc == "" {
+		config.Distribution.UploadPostConnectDesc = firstNonEmpty(os.Getenv("UPLOAD_POST_CONNECT_DESCRIPTION"), "Connect your own Pinterest and Reddit accounts before distributing content.")
+	}
+	if config.Distribution.UploadPostRedirectURL == "" {
+		config.Distribution.UploadPostRedirectURL = os.Getenv("UPLOAD_POST_REDIRECT_URL")
+	}
+	if config.Distribution.UploadPostLogoImage == "" {
+		config.Distribution.UploadPostLogoImage = os.Getenv("UPLOAD_POST_LOGO_IMAGE")
+	}
+	if config.Distribution.DiscordUsername == "" {
+		config.Distribution.DiscordUsername = firstNonEmpty(os.Getenv("DISTRIBUTION_DISCORD_USERNAME"), "Drama Generator")
+	}
+	if config.Distribution.DiscordAvatarURL == "" {
+		config.Distribution.DiscordAvatarURL = os.Getenv("DISTRIBUTION_DISCORD_AVATAR_URL")
+	}
+	if config.Distribution.StatusPollIntervalSecond <= 0 {
+		config.Distribution.StatusPollIntervalSecond = readIntEnv("DISTRIBUTION_STATUS_POLL_INTERVAL_SECONDS", 20)
+	}
+	if config.Distribution.HistoryLookbackPages <= 0 {
+		config.Distribution.HistoryLookbackPages = readIntEnv("DISTRIBUTION_HISTORY_LOOKBACK_PAGES", 3)
+	}
+
 	return &config, nil
 }
 
@@ -159,4 +200,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func readIntEnv(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+
+	return parsed
 }

@@ -38,8 +38,19 @@ compliance:
   enabled: true
   base_url: "https://ark.cn-beijing.volces.com/api/v3"
   endpoint: "/chat/completions"
-  api_key: "3ff8f8b3-5112-4954-8e27-27c35bd3fab6"
+  api_key: ""
   model: "deepseek-v3-2-251201"
+
+distribution:
+  upload_post_base_url: "https://api.upload-post.com/api"
+  upload_post_connect_title: "Connect Pinterest / Reddit"
+  upload_post_connect_description: "Connect your own Pinterest and Reddit accounts before distributing content."
+  upload_post_redirect_url: ""
+  upload_post_logo_image: ""
+  discord_username: "Drama Generator"
+  discord_avatar_url: ""
+  status_poll_interval_seconds: 20
+  history_lookback_pages: 3
 
 volcengine:
   access_key_id: ""

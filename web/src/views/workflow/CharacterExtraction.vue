@@ -32,7 +32,7 @@
                 <el-avatar :size="60">{{ character.name[0] }}</el-avatar>
                 <div class="character-info">
                   <h4>{{ character.name }}</h4>
-                  <el-tag size="small">{{ character.role }}</el-tag>
+                  <el-tag size="small">{{ formatCharacterRole(character.role) }}</el-tag>
                 </div>
               </div>
             </template>
@@ -63,24 +63,24 @@
     </el-card>
 
     <!-- 编辑对话框 -->
-    <el-dialog v-model="editDialogVisible" title="编辑角色" width="600px">
+    <el-dialog v-model="editDialogVisible" :title="$t('character.edit')" width="600px">
       <el-form :model="editForm" label-width="80px">
-        <el-form-item label="姓名">
+        <el-form-item :label="$t('character.name')">
           <el-input v-model="editForm.name" />
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item :label="$t('character.role')">
           <el-input v-model="editForm.role" />
         </el-form-item>
-        <el-form-item label="性格">
+        <el-form-item :label="$t('character.personality')">
           <el-input v-model="editForm.personality" type="textarea" :rows="3" />
         </el-form-item>
-        <el-form-item label="外貌">
+        <el-form-item :label="$t('character.appearance')">
           <el-input v-model="editForm.appearance" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveCharacter">保存</el-button>
+        <el-button @click="editDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveCharacter">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -90,13 +90,13 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Plus } from '@element-plus/icons-vue'
-import { MagicStick } from '@element-plus/icons-vue'
-import { generationAPI } from '@/api/generation'
 import type { Character } from '@/types/drama'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const dramaId = route.params.id as string
 
 const characters = ref<Character[]>([])
@@ -125,14 +125,22 @@ const addCharacter = () => {
   editDialogVisible.value = true
 }
 
+const formatCharacterRole = (role?: string) => {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (normalized === 'main') return t('character.roles.main')
+  if (normalized === 'supporting') return t('character.roles.supporting')
+  if (normalized === 'minor') return t('character.roles.minor')
+  return role || '-'
+}
+
 const saveCharacters = async () => {
   saving.value = true
   try {
     // TODO: 调用保存角色API
     await new Promise(resolve => setTimeout(resolve, 1000))
-    ElMessage.success('保存成功')
+    ElMessage.success(t('character.messages.saveSuccess'))
   } catch (error: any) {
-    ElMessage.error(error.message || '保存失败')
+    ElMessage.error(error.message || t('character.messages.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -146,7 +154,7 @@ const editCharacter = (character: Character) => {
 const saveCharacter = () => {
   // TODO: 保存角色信息
   editDialogVisible.value = false
-  ElMessage.success('保存成功')
+  ElMessage.success(t('character.messages.saveSuccess'))
 }
 
 const generateCharacterImage = (character: Character) => {

@@ -86,6 +86,12 @@ Huobao Drama 是一个基于 AI 的短剧自动化生产平台，实现从剧本
 - ✅ 资源导入导出
 - ✅ 任务进度追踪
 
+### 📣 一键分发
+
+- ✅ 当前设备身份绑定自己的 Pinterest / Reddit / Discord 目标
+- ✅ Upload-Post profile 自动创建、连接链接生成、Pinterest boards 拉取
+- ✅ 统一分发任务、平台级状态跟踪、失败重试
+
 ---
 
 ## 🚀 快速开始
@@ -176,6 +182,34 @@ ai:
 - `storage.base_url`: 静态资源访问 URL
 - `ai.default_*_provider`: AI 服务提供商配置（在 Web 界面中配置具体的 API Key）
 
+### 🔐 分发相关环境变量
+
+分发功能不会在仓库中硬编码任何密钥。下面这些变量需要由你在运行环境中配置：
+
+```bash
+# Upload-Post 官方 API Key
+export UPLOAD_POST_API_KEY="your-upload-post-api-key"
+
+# 用于加密保存 Discord webhook URL，必须配置
+export DISTRIBUTION_SECRET_KEY="replace-with-a-long-random-string"
+
+# 可选：Upload-Post 连接完成后的回跳地址
+export UPLOAD_POST_REDIRECT_URL="http://localhost:3012/dramas/1/settings"
+
+# 可选：覆盖 Upload-Post API 地址
+export UPLOAD_POST_BASE_URL="https://api.upload-post.com/api"
+
+# 可选：自定义 Discord webhook 显示名称
+export DISTRIBUTION_DISCORD_USERNAME="Drama Generator"
+export DISTRIBUTION_DISCORD_AVATAR_URL=""
+```
+
+说明：
+
+- `UPLOAD_POST_API_KEY` 用于创建/查询 Upload-Post profile、生成连接链接、拉取 Pinterest boards、向 Pinterest/Reddit 发起分发。
+- `DISTRIBUTION_SECRET_KEY` 用于安全加密用户自己的 Discord webhook URL，不配置时 Discord 目标无法保存。
+- 如果使用本地存储，请确保 `storage.base_url` 是外部可访问地址；否则 Upload-Post 无法拉取图片或视频资源。
+
 ### 📥 安装依赖
 
 ```bash
@@ -230,6 +264,15 @@ go run main.go
 ### 🗄️ 数据库初始化
 
 数据库表会在首次启动时自动创建（使用 GORM AutoMigrate），无需手动迁移。
+
+### 📣 分发功能接入说明
+
+1. 打开项目设置页 `/dramas/:id/settings`，进入“分发账号”标签。
+2. 点击“创建 / 查询 Upload-Post Profile”，为当前设备身份生成 profile 映射。
+3. 分别点击“连接 Pinterest”或“连接 Reddit”，在新窗口完成 Upload-Post 授权。
+4. 回到设置页点击“刷新连接状态”，然后拉取 Pinterest boards、保存默认 subreddit、添加 Discord webhook 目标。
+5. 在专业编辑器的视频合成卡片或图片详情弹窗中点击“一键分发”，勾选平台并填写 subreddit / board / Discord 目标后提交。
+6. 分发结果会写入 `distribution_jobs` 与 `distribution_results`，前端会轮询展示 success / pending / failed 状态。
 
 ---
 

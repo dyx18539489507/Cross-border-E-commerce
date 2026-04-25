@@ -1,373 +1,1139 @@
 <template>
-  <!-- Drama Create Page / 创建短剧页面 -->
-  <div class="page-container">
-    <div class="content-wrapper animate-fade-in">
-      <!-- Header / 头部 -->
-      <AppHeader :fixed="false" :show-logo="false">
-        <template #left>
-          <el-button text @click="goBack" class="back-btn">
-            <el-icon><ArrowLeft /></el-icon>
-            <span>返回</span>
-          </el-button>
-          <div class="page-title">
-            <h1>创建新项目</h1>
-            <span class="subtitle">填写基本信息并进行合规校验</span>
-          </div>
-        </template>
-      </AppHeader>
+  <div class="product-entry-page">
+    <header class="product-entry-header">
+      <div class="product-entry-header__inner">
+        <div class="product-entry-header__left">
+          <button type="button" class="brand-link" aria-label="返回首页" @click="router.push('/')">
+            <span class="brand-link__mark">
+              <img :src="brandLogo" alt="" />
+            </span>
+            <span class="brand-link__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
+          </button>
 
-      <!-- Form Card / 表单卡片 -->
-      <div class="form-card">
-        <el-form
-          ref="formRef"
-          :model="form"
-          :rules="rules"
-          label-position="top"
-          class="create-form long-form form-enter-flow"
-          @submit.prevent="handleSubmit"
-          @keydown.enter="handleFormEnterNavigation"
-        >
-          <el-form-item label="项目标题" prop="title" required>
-            <el-input
-              v-model="form.title"
-              placeholder="给你的短剧起个名字"
-              size="large"
-              maxlength="50"
-              show-word-limit
-            />
-          </el-form-item>
-
-          <el-form-item label="项目描述" prop="description" required>
-            <el-input
-              v-model="form.description"
-              type="textarea"
-              :rows="4"
-              placeholder="简要描述你的短剧内容、风格或创意"
-              maxlength="500"
-              show-word-limit
-              resize="none"
-            />
-          </el-form-item>
-
-          <el-form-item label="目标国家" prop="target_country" required>
-            <el-select
-              v-model="form.target_country"
-              size="large"
-              multiple
-              filterable
-              :reserve-keyword="false"
-              :filter-method="handleCountryFilter"
-              @change="handleCountryChange"
-              @visible-change="handleCountryVisibleChange"
-              placeholder="请选择目标国家"
-              :class="['country-select', { 'has-value': (form.target_country?.length || 0) > 0 }]"
+          <nav class="product-entry-nav" aria-label="主导航">
+            <button
+              v-for="item in navItems"
+              :key="item.label"
+              type="button"
+              class="product-entry-nav__item"
+              :class="{ 'product-entry-nav__item--active': item.active }"
+              :style="{ width: item.width }"
+              :aria-current="item.active ? 'page' : undefined"
+              @click="handleNavClick(item.path)"
             >
-              <el-option
-                v-for="country in filteredCountries"
-                :key="country.code"
-                :label="country.label"
-                :value="country.value"
-              />
-            </el-select>
-          </el-form-item>
+              {{ item.label }}
+            </button>
+          </nav>
+        </div>
 
-          <el-form-item label="材质/成分" prop="material_composition">
-            <el-input
-              v-model="form.material_composition"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入产品材质、成分或主要原料"
-              maxlength="200"
-              show-word-limit
-              resize="none"
-            />
-          </el-form-item>
-
-          <el-form-item label="宣传卖点" prop="marketing_selling_points">
-            <el-input
-              v-model="form.marketing_selling_points"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入宣传卖点（如功能优势、适用场景等）"
-              maxlength="200"
-              show-word-limit
-              resize="none"
-            />
-          </el-form-item>
-
-          <div class="form-actions">
-            <el-button size="large" @click="goBack">取消</el-button>
-            <el-button
-              type="primary"
-              size="large"
-              :loading="loading"
-              @click="handleSubmit"
-            >
-              <el-icon v-if="!loading"><ArrowRight /></el-icon>
-              下一步
-            </el-button>
-          </div>
-        </el-form>
+        <div class="product-entry-header__right">
+          <button type="button" class="header-icon-button" aria-label="通知">
+            <img :src="bellIcon" alt="" />
+            <span class="header-icon-button__dot"></span>
+          </button>
+        </div>
       </div>
-    </div>
+    </header>
+
+    <main class="product-entry-main">
+      <div class="product-entry-shell">
+        <div class="product-entry-layout">
+          <section class="product-entry-head">
+            <h1 class="product-entry-head__title">商品信息录入</h1>
+            <p class="product-entry-head__subtitle">填写商品基本信息，开启智能合规检测与内容生成流程</p>
+          </section>
+
+          <section class="product-entry-steps" aria-label="步骤进度">
+            <div
+              v-for="(step, index) in steps"
+              :key="step.label"
+              class="product-entry-step"
+              :class="{ 'product-entry-step--last': index === steps.length - 1 }"
+            >
+              <div class="product-entry-step__lead">
+                <span
+                  class="product-entry-step__icon"
+                  :class="{ 'product-entry-step__icon--active': step.active }"
+                >
+                  <img :src="step.icon" alt="" />
+                </span>
+                <span
+                  class="product-entry-step__label"
+                  :class="{ 'product-entry-step__label--active': step.active }"
+                >
+                  {{ step.label }}
+                </span>
+              </div>
+
+              <span v-if="index !== steps.length - 1" class="product-entry-step__line" aria-hidden="true">
+                <span class="product-entry-step__line-fill"></span>
+              </span>
+            </div>
+          </section>
+
+          <section class="product-entry-card">
+            <div class="product-entry-card__body">
+              <div class="field-block">
+                <label class="field-block__label" for="product-name">
+                  商品名称
+                  <span class="field-block__required">*</span>
+                </label>
+                <input
+                  id="product-name"
+                  v-model.trim="form.title"
+                  type="text"
+                  class="field-block__control"
+                  :class="{ 'field-block__control--error': Boolean(errors.title) }"
+                  placeholder="例如: 智能手表 Pro Max"
+                  maxlength="50"
+                  @input="handleTextInput('title')"
+                />
+                <p v-if="errors.title" class="field-block__error">{{ errors.title }}</p>
+              </div>
+
+              <div class="product-entry-grid">
+                <div class="field-block">
+                  <label class="field-block__label" for="product-category">
+                    品类
+                    <span class="field-block__required">*</span>
+                  </label>
+                  <div class="select-shell" :class="{ 'select-shell--error': Boolean(errors.category) }">
+                    <select
+                      id="product-category"
+                      v-model="form.category"
+                      class="select-shell__control"
+                      :class="{ 'select-shell__control--placeholder': !form.category }"
+                      @change="handleCategoryChange"
+                    >
+                      <option value="" disabled>请选择商品品类</option>
+                      <option v-for="option in categoryOptions" :key="option" :value="option">
+                        {{ option }}
+                      </option>
+                    </select>
+                    <img :src="chevronDownIcon" alt="" class="select-shell__icon" />
+                  </div>
+                  <p v-if="errors.category" class="field-block__error">{{ errors.category }}</p>
+                </div>
+
+                <div class="field-block">
+                  <label class="field-block__label" for="product-brand">品牌</label>
+                  <input
+                    id="product-brand"
+                    v-model.trim="form.brand"
+                    type="text"
+                    class="field-block__control"
+                    placeholder="品牌名称"
+                    maxlength="50"
+                    @input="persistStepDraft"
+                  />
+                </div>
+              </div>
+
+              <div class="field-block">
+                <label class="field-block__label">商品图片</label>
+                <input
+                  ref="fileInputRef"
+                  type="file"
+                  class="upload-input"
+                  accept="image/png,image/jpeg"
+                  @change="handleFileChange"
+                />
+
+                <button
+                  type="button"
+                  class="upload-zone"
+                  :class="{
+                    'upload-zone--dragging': isDragOver,
+                    'upload-zone--filled': Boolean(imagePreviewUrl)
+                  }"
+                  @click="openFileDialog"
+                  @keydown.enter.prevent="openFileDialog"
+                  @keydown.space.prevent="openFileDialog"
+                  @dragenter.prevent="isDragOver = true"
+                  @dragover.prevent="isDragOver = true"
+                  @dragleave.prevent="isDragOver = false"
+                  @drop.prevent="handleDrop"
+                >
+                  <template v-if="imagePreviewUrl">
+                    <div class="upload-zone__preview">
+                      <img :src="imagePreviewUrl" alt="商品预览" class="upload-zone__preview-image" />
+                      <div class="upload-zone__preview-copy">
+                        <strong>{{ imageName || '已选择商品图片' }}</strong>
+                        <span>已完成图片上传，可点击替换或移除当前图片</span>
+                        <div class="upload-zone__preview-actions">
+                          <span class="upload-zone__preview-link">点击替换</span>
+                          <span
+                            class="upload-zone__preview-link upload-zone__preview-link--danger"
+                            @click.stop="removeImage"
+                          >
+                            移除图片
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="upload-zone__empty">
+                      <img :src="uploadIcon" alt="" class="upload-zone__icon" />
+                      <span class="upload-zone__title">点击上传或拖拽图片到此处</span>
+                      <span class="upload-zone__hint">支持 JPG、PNG 格式，最大 5MB</span>
+                    </div>
+                  </template>
+                </button>
+              </div>
+            </div>
+
+            <div class="product-entry-card__footer">
+              <button type="button" class="footer-button footer-button--ghost" disabled>
+                上一步
+              </button>
+
+              <button type="button" class="footer-button footer-button--primary" @click="handleNextStep">
+                <span>下一步</span>
+                <img :src="arrowRightIcon" alt="" />
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
-import { dramaAPI } from '@/api/drama'
-import { ALL_COUNTRIES } from '@/constants/countries'
-import type { ComplianceResult, CreateDramaRequest } from '@/types/drama'
-import { handleFormEnterNavigation } from '@/utils/formFocus'
-import {
-  buildCreateDramaPayload,
-  getComplianceRiskMeta,
-  localizeSuggestedCategories,
-  normalizeComplianceResult
-} from '@/utils/compliance'
-import { AppHeader } from '@/components/common'
+import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
+import type { CreateDramaRequest } from '@/types/drama'
+import arrowRightIcon from '@/assets/figma/product-entry/arrow-right.svg'
+import bellIcon from '@/assets/figma/product-entry/bell.svg'
+import chevronDownIcon from '@/assets/figma/product-entry/chevron-down.svg'
+import stepBasicIcon from '@/assets/figma/product-entry/step-basic.svg'
+import stepCompleteIcon from '@/assets/figma/product-entry/step-complete.svg'
+import stepDetailIcon from '@/assets/figma/product-entry/step-detail.svg'
+import stepMarketIcon from '@/assets/figma/product-entry/step-market.svg'
+import uploadIcon from '@/assets/figma/product-entry/upload.svg'
+
+interface ProductEntryDraft {
+  title: string
+  category: string
+  brand: string
+}
+
+const PRODUCT_ENTRY_DRAFT_KEY = 'drama:create:product-entry:basic'
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 
 const router = useRouter()
-const { t } = useI18n()
-const formRef = ref<FormInstance>()
-const loading = ref(false)
-const countryKeyword = ref('')
+const brandLogo = '/logo_circle.png'
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const imagePreviewUrl = ref('')
+const imageName = ref('')
+const isDragOver = ref(false)
 
-const form = reactive<CreateDramaRequest>({
+const form = reactive({
   title: '',
-  description: '',
+  category: '',
+  brand: ''
+})
+
+const errors = reactive({
+  title: '',
+  category: ''
+})
+
+const navItems = [
+  { label: '工作台', path: '/dramas', active: false, width: '66px' },
+  { label: '商品录入', path: '/dramas/create', active: true, width: '80px' },
+  { label: '合规分析', path: '/compliance', active: false, width: '80px' },
+  { label: '脚本/分镜', path: '/workspace/script', active: false, width: '92px' },
+  { label: '内容创作', path: '/workspace/content', active: false, width: '80px' },
+  { label: '视频剪辑', path: '/workspace/timeline', active: false, width: '80px' },
+  { label: '数据分析', path: '/analytics', active: false, width: '80px' }
+] as const
+
+const steps = [
+  { label: '基本信息', icon: stepBasicIcon, active: true },
+  { label: '目标市场', icon: stepMarketIcon, active: false },
+  { label: '商品详情', icon: stepDetailIcon, active: false },
+  { label: '完成', icon: stepCompleteIcon, active: false }
+] as const
+
+const categoryOptions = [
+  '消费电子',
+  '家居家电',
+  '运动户外',
+  '美妆个护',
+  '母婴玩具',
+  '宠物用品'
+]
+
+const getCompatibleDraft = (): CreateDramaRequest => ({
+  title: form.title.trim(),
+  description: [form.category.trim(), form.brand.trim()].filter(Boolean).join(' / '),
   target_country: [],
   material_composition: '',
-  marketing_selling_points: ''
+  marketing_selling_points: '',
+  genre: form.category.trim() || undefined,
+  tags: form.brand.trim() || undefined
 })
 
-const filteredCountries = computed(() => {
-  const keyword = countryKeyword.value.trim().toLowerCase()
-  if (!keyword) {
-    return ALL_COUNTRIES
+const persistStepDraft = () => {
+  if (typeof window === 'undefined') {
+    return
   }
-  return ALL_COUNTRIES.filter((country) => country.searchText.includes(keyword))
-})
 
-const handleCountryFilter = (keyword: string) => {
-  countryKeyword.value = keyword
-}
-
-const handleCountryVisibleChange = (visible: boolean) => {
-  if (!visible) {
-    countryKeyword.value = ''
+  const draft: ProductEntryDraft = {
+    title: form.title,
+    category: form.category,
+    brand: form.brand
   }
+
+  window.sessionStorage.setItem(PRODUCT_ENTRY_DRAFT_KEY, JSON.stringify(draft))
+  saveCreateDramaDraft(getCompatibleDraft())
 }
 
-const handleCountryChange = () => {
-  countryKeyword.value = ''
-}
-
-const rules: FormRules = {
-  title: [
-    { required: true, message: '请输入项目标题', trigger: 'blur' },
-    { min: 1, max: 50, message: '标题长度在 1 到 50 个字符', trigger: 'blur' }
-  ],
-  description: [
-    { required: true, message: '请输入项目描述', trigger: 'blur' },
-    { min: 1, max: 500, message: '描述长度在 1 到 500 个字符', trigger: 'blur' }
-  ],
-  target_country: [
-    { type: 'array', required: true, min: 1, message: '请选择目标国家', trigger: 'change' }
-  ],
-  material_composition: [
-    { max: 200, message: '材质/成分长度不能超过 200 个字符', trigger: 'blur' }
-  ],
-  marketing_selling_points: [
-    { max: 200, message: '宣传卖点长度不能超过 200 个字符', trigger: 'blur' }
-  ]
-}
-
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-
-const renderList = (items: string[]) => {
-  if (!items.length) {
-    return '<li>无</li>'
+const restoreStepDraft = () => {
+  if (typeof window === 'undefined') {
+    return
   }
-  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
-}
 
-const showComplianceReport = async (compliance: ComplianceResult) => {
-  const riskMeta = getComplianceRiskMeta(compliance)
-  const levelLabel = compliance.level_label || riskMeta.text
-  const riskLabel = `${levelLabel}（${riskMeta.range}）`
-  const localizedCategories = localizeSuggestedCategories(compliance.suggested_categories || [])
-
-  const html = `
-    <div style="line-height: 1.6;">
-      <p><strong>风险评分：</strong><span style="color:${riskMeta.color};font-weight:700;">${compliance.score}</span></p>
-      <p><strong>风险等级：</strong><span style="color:${riskMeta.color};font-weight:700;">${riskLabel}</span></p>
-      <p><strong>评估结论：</strong>${escapeHtml(compliance.summary || '无')}</p>
-      <p><strong>不合规点：</strong></p>
-      <ul>${renderList(compliance.non_compliance_points || [])}</ul>
-      <p><strong>整改建议：</strong></p>
-      <ul>${renderList(compliance.rectification_suggestions || [])}</ul>
-      <p><strong>建议类目：</strong></p>
-      <ul>${renderList(localizedCategories)}</ul>
-    </div>
-  `
-
-  await ElMessageBox.alert(html, t('drama.complianceReportTitle'), {
-    confirmButtonText: t('common.confirm'),
-    dangerouslyUseHTMLString: true
-  })
-}
-
-const tryShowComplianceFromError = async (error: any): Promise<boolean> => {
-  const compliance = normalizeComplianceResult(error?.details?.compliance)
-  if (!compliance) {
-    return false
+  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_DRAFT_KEY)
+  if (!raw) {
+    return
   }
-  await showComplianceReport(compliance)
-  return true
-}
 
-// Submit form / 提交表单
-const handleSubmit = async () => {
-  if (!formRef.value) return
-
-  const valid = await formRef.value.validate().then(() => true).catch(() => false)
-  if (!valid) return
-
-  loading.value = true
   try {
-    const payload = buildCreateDramaPayload(form)
-    const result = await dramaAPI.create(payload)
-    const dramaId = String(result.drama.id)
-    await showComplianceReport(result.compliance)
-
-    ElMessage.success('创建成功')
-    router.push(`/dramas/${dramaId}`)
-  } catch (error: any) {
-    const hasCompliance = await tryShowComplianceFromError(error)
-    if (hasCompliance) {
-      ElMessage.warning(error.message || '风险过高，请先整改后再提交')
-      return
-    }
-    ElMessage.error(error.message || '创建失败')
-  } finally {
-    loading.value = false
+    const draft = JSON.parse(raw) as Partial<ProductEntryDraft>
+    form.title = typeof draft.title === 'string' ? draft.title : ''
+    form.category = typeof draft.category === 'string' ? draft.category : ''
+    form.brand = typeof draft.brand === 'string' ? draft.brand : ''
+  } catch {
+    window.sessionStorage.removeItem(PRODUCT_ENTRY_DRAFT_KEY)
   }
 }
 
-// Go back / 返回上一页
-const goBack = () => {
-  router.back()
+const revokeImagePreview = () => {
+  if (!imagePreviewUrl.value) {
+    return
+  }
+
+  URL.revokeObjectURL(imagePreviewUrl.value)
+  imagePreviewUrl.value = ''
 }
 
+const clearFieldError = (field: keyof typeof errors) => {
+  errors[field] = ''
+}
+
+const handleTextInput = (field: keyof typeof errors) => {
+  clearFieldError(field)
+  persistStepDraft()
+}
+
+const handleCategoryChange = () => {
+  clearFieldError('category')
+  persistStepDraft()
+}
+
+const validateVisibleFields = () => {
+  let valid = true
+
+  if (!form.title.trim()) {
+    errors.title = '请输入商品名称'
+    valid = false
+  }
+
+  if (!form.category.trim()) {
+    errors.category = '请选择商品品类'
+    valid = false
+  }
+
+  return valid
+}
+
+const applySelectedFile = (file: File) => {
+  if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
+    ElMessage.error('仅支持 JPG、PNG 格式的图片')
+    return
+  }
+
+  if (file.size > MAX_UPLOAD_SIZE) {
+    ElMessage.error('图片大小不能超过 5MB')
+    return
+  }
+
+  revokeImagePreview()
+  imagePreviewUrl.value = URL.createObjectURL(file)
+  imageName.value = file.name
+}
+
+const openFileDialog = () => {
+  fileInputRef.value?.click()
+}
+
+const handleFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const [file] = target.files || []
+  if (!file) {
+    return
+  }
+
+  applySelectedFile(file)
+  target.value = ''
+}
+
+const handleDrop = (event: DragEvent) => {
+  isDragOver.value = false
+  const [file] = Array.from(event.dataTransfer?.files || [])
+  if (!file) {
+    return
+  }
+
+  applySelectedFile(file)
+}
+
+const removeImage = () => {
+  imageName.value = ''
+  revokeImagePreview()
+}
+
+const handleNextStep = () => {
+  if (!validateVisibleFields()) {
+    ElMessage.warning('请先完善必填信息')
+    return
+  }
+
+  persistStepDraft()
+  router.push('/compliance')
+}
+
+const handleNavClick = (path: string) => {
+  if (!path) {
+    return
+  }
+
+  router.push(path)
+}
+
+onMounted(() => {
+  restoreStepDraft()
+})
+
+onBeforeUnmount(() => {
+  revokeImagePreview()
+})
 </script>
 
 <style scoped>
-/* ========================================
-   Page Layout / 页面布局 - 紧凑边距
-   ======================================== */
-.page-container {
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Urbanist:wght@700&display=swap');
+
+.product-entry-page {
   min-height: 100vh;
-  background-color: var(--bg-primary);
-  padding: var(--space-2) var(--space-3);
-  transition: background-color var(--transition-normal);
+  width: 100%;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  color: #0a2463;
+  overflow-x: hidden;
 }
 
-@media (min-width: 768px) {
-  .page-container {
-    padding: var(--space-3) var(--space-4);
-  }
+.product-entry-page,
+.product-entry-page :is(button, input, select) {
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-.content-wrapper {
-  max-width: 640px;
+.product-entry-header {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  height: 65px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.product-entry-header__inner {
+  width: min(100%, 1075px);
+  height: 64px;
   margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
 
-/* ========================================
-   Form Card / 表单卡片
-   ======================================== */
-.form-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  box-shadow: var(--shadow-card);
+.product-entry-header__left {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 32px;
 }
 
-/* ========================================
-   Form Styles / 表单样式 - 紧凑内边距
-   ======================================== */
-.create-form {
-  padding: var(--space-4);
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.create-form :deep(.el-form-item) {
-  margin-bottom: var(--space-4);
+.brand-link__mark {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
 }
 
-.country-select {
+.brand-link__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
+  display: block;
+}
+
+.brand-link__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-link__copy strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.brand-link__copy small {
+  color: #62748e;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.product-entry-nav {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.product-entry-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.product-entry-nav__item {
+  height: 32px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #45556c;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+  white-space: nowrap;
+}
+
+.product-entry-nav__item:hover {
+  color: #0a2463;
+  background: rgba(241, 245, 249, 0.92);
+}
+
+.product-entry-nav__item--active {
+  color: #0a2463;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%);
+}
+
+.product-entry-header__right {
+  width: 188px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+}
+
+.header-icon-button {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 180ms ease;
+}
+
+.header-icon-button:hover {
+  background: rgba(241, 245, 249, 0.92);
+}
+
+.header-icon-button img {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.header-icon-button__dot {
+  position: absolute;
+  top: 6px;
+  left: 22px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f97316;
+}
+
+
+.product-entry-main {
   width: 100%;
 }
 
-.country-select :deep(.el-select__placeholder) {
-  color: #a8b5c6;
+.product-entry-shell {
+  width: min(100%, 1075px);
+  margin: 0 auto;
 }
 
-.country-select.has-value :deep(.el-select__placeholder) {
-  color: var(--text-primary);
+.product-entry-layout {
+  padding: 104px 25.5px 48px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
 }
 
-/* ========================================
-   Form Actions / 表单操作区
-   ======================================== */
-.form-actions {
+.product-entry-head {
+  width: 960px;
+  margin: 0 auto;
+}
+
+.product-entry-head__title {
+  margin: 0;
+  color: #0a2463;
+  font-family: 'Urbanist', 'Noto Sans SC', 'PingFang SC', sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 36px;
+}
+
+.product-entry-head__subtitle {
+  margin: 8px 0 0;
+  color: #45556c;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.product-entry-steps {
+  width: 960px;
+  height: 76px;
+  margin: 32px auto 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.product-entry-step {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-primary);
-  margin-top: var(--space-2);
+  align-items: center;
+  gap: 16px;
+  padding-right: 16px;
 }
 
-.form-actions .el-button {
-  min-width: 100px;
+.product-entry-step--last {
+  padding-right: 0;
 }
 
-@media (max-width: 768px) {
-  .page-container {
-    padding: var(--space-2);
-  }
+.product-entry-step__lead {
+  width: 56px;
+  height: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 
-  .create-form {
-    padding: var(--space-3);
-  }
+.product-entry-step__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
 
-  .form-actions {
-    position: sticky;
-    bottom: max(env(safe-area-inset-bottom), 0px);
-    z-index: 5;
-    flex-direction: column-reverse;
-    align-items: stretch;
-    gap: var(--space-2);
-    background: var(--bg-card);
-    margin-top: var(--space-4);
-    padding: var(--space-3) 0 max(var(--space-2), env(safe-area-inset-bottom)) 0;
-  }
+.product-entry-step__icon--active {
+  background: linear-gradient(135deg, #06b6d4 0%, #7c3aed 100%);
+  box-shadow:
+    0 10px 15px 0 rgba(0, 0, 0, 0.1),
+    0 4px 6px 0 rgba(0, 0, 0, 0.1);
+}
 
-  .form-actions .el-button {
+.product-entry-step__icon img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.product-entry-step__label {
+  color: #90a1b9;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.product-entry-step__label--active {
+  color: #0a2463;
+}
+
+.product-entry-step__line {
+  width: 152px;
+  height: 2px;
+  background: #e2e8f0;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.product-entry-step__line-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #06b6d4 0%, #6382e2 50%, #7c3aed 100%);
+}
+
+.product-entry-card {
+  width: 960px;
+  min-height: 607px;
+  margin: 48px auto 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow:
+    0 10px 15px 0 rgba(0, 0, 0, 0.1),
+    0 4px 6px 0 rgba(0, 0, 0, 0.1);
+}
+
+.product-entry-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 33px 33px 0;
+}
+
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-block__label {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.field-block__required {
+  color: #fb2c36;
+}
+
+.field-block__control,
+.select-shell {
+  width: 100%;
+  height: 50px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.field-block__control {
+  padding: 12px 16px;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: normal;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.field-block__control::placeholder {
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.field-block__control:hover,
+.select-shell:hover {
+  border-color: #cad5e2;
+}
+
+.field-block__control:focus,
+.select-shell:focus-within {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08);
+  background: #ffffff;
+}
+
+.field-block__control--error,
+.select-shell--error {
+  border-color: #fb7185;
+}
+
+.field-block__error {
+  color: #e11d48;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.product-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.select-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.select-shell__control {
+  width: 100%;
+  height: 100%;
+  padding: 12px 48px 12px 16px;
+  border: none;
+  background: transparent;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: normal;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select-shell__control:focus {
+  outline: none;
+}
+
+.select-shell__control--placeholder {
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.select-shell__icon {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.upload-input {
+  display: none;
+}
+
+.upload-zone {
+  min-height: 184px;
+  width: 100%;
+  border: 2px dashed #cad5e2;
+  border-radius: 16px;
+  background: transparent;
+  padding: 24px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.upload-zone:hover {
+  border-color: #b6c6da;
+  background: rgba(248, 250, 252, 0.62);
+}
+
+.upload-zone:focus-visible {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08);
+}
+
+.upload-zone--dragging {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.04);
+}
+
+.upload-zone--filled {
+  border-style: solid;
+  background: #f8fafc;
+}
+
+.upload-zone__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.upload-zone__icon {
+  width: 48px;
+  height: 48px;
+  display: block;
+}
+
+.upload-zone__title {
+  margin-top: 16px;
+  color: #45556c;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.upload-zone__hint {
+  margin-top: 4px;
+  color: #90a1b9;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.upload-zone__preview {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.upload-zone__preview-image {
+  width: 148px;
+  height: 104px;
+  border-radius: 14px;
+  object-fit: cover;
+  border: 1px solid #d7e0eb;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
+}
+
+.upload-zone__preview-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.upload-zone__preview-copy strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.upload-zone__preview-copy span {
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.upload-zone__preview-actions {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.upload-zone__preview-link {
+  color: #0a2463;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.upload-zone__preview-link--danger {
+  color: #dc2626;
+}
+
+.product-entry-card__footer {
+  margin: 32px 33px 32px;
+  padding-top: 33px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.footer-button {
+  height: 48px;
+  border: none;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.footer-button img {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.footer-button--ghost {
+  width: 96px;
+  background: #f1f5f9;
+  color: #0a2463;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.footer-button--primary {
+  width: 124px;
+  color: #ffffff;
+  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%);
+}
+
+.footer-button--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(99, 102, 241, 0.24);
+}
+
+.footer-button--primary:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 1120px) {
+  .product-entry-header__inner,
+  .product-entry-shell {
     width: 100%;
-    min-width: 0;
+  }
+
+  .product-entry-layout {
+    padding-inline: 20px;
+  }
+
+  .product-entry-head,
+  .product-entry-steps,
+  .product-entry-card {
+    width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .product-entry-header {
+    height: auto;
+  }
+
+  .product-entry-header__inner {
+    height: auto;
+    padding-block: 12px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .product-entry-header__left,
+  .product-entry-header__right {
+    width: 100%;
+  }
+
+  .product-entry-header__right {
+    justify-content: flex-end;
+  }
+
+  .product-entry-layout {
+    padding-top: 140px;
+  }
+
+  .product-entry-steps {
+    height: auto;
+    gap: 20px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-entry-step {
+    padding-right: 0;
+  }
+
+  .product-entry-step__line {
+    display: none;
+  }
+
+  .product-entry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-zone__preview {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .product-entry-layout {
+    padding: 148px 16px 24px;
+  }
+
+  .product-entry-head__title {
+    font-size: 28px;
+    line-height: 34px;
+  }
+
+  .product-entry-card__body {
+    padding: 24px 20px 0;
+  }
+
+  .product-entry-card__footer {
+    margin: 28px 20px 24px;
+    padding-top: 24px;
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+
+  .footer-button {
+    width: 100%;
+  }
+
+  .upload-zone {
+    padding: 24px 20px;
   }
 }
 </style>

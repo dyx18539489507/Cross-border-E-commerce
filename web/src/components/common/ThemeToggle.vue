@@ -3,7 +3,8 @@
   <!-- 主题切换按钮，用于切换浅色/深色模式 -->
   <button
     class="theme-toggle"
-    :aria-label="isDark ? '切换到浅色模式' : '切换到深色模式'"
+    :aria-label="themeLabel"
+    :title="themeLabel"
     @click="toggleTheme"
   >
     <transition name="icon-fade" mode="out-in">
@@ -18,14 +19,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Moon, Sunny } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 
 /**
  * ThemeToggle - Dark/Light mode toggle button
  * 主题切换按钮 - 深色/浅色模式切换
  */
 const isDark = ref(false)
+const { t } = useI18n()
+const themeLabel = computed(() => (
+  isDark.value ? t('theme.switchToLight') : t('theme.switchToDark')
+))
 
 // Initialize theme from localStorage or system preference
 // 从 localStorage 或系统偏好初始化主题

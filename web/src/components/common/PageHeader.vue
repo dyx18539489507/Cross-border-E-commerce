@@ -74,12 +74,17 @@ const handleBack = () => {
 
 <style scoped>
 .page-header {
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: 20px 24px;
+  border: 1px solid var(--border-primary);
+  border-radius: 30px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(24px);
 }
 
 .page-header.with-border {
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 20px;
 }
 
 .header-content {
@@ -161,7 +166,7 @@ const handleBack = () => {
   justify-content: center;
   width: 2.5rem;
   height: 2.5rem;
-  background: linear-gradient(135deg, var(--accent) 0%, #06b6d4 100%);
+  background: linear-gradient(135deg, var(--theme-blue) 0%, var(--theme-indigo) 100%);
   border-radius: var(--radius-lg);
   color: white;
   flex-shrink: 0;
@@ -169,10 +174,10 @@ const handleBack = () => {
 
 .header-title {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.65rem;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.025em;
+  letter-spacing: -0.04em;
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -190,9 +195,9 @@ const handleBack = () => {
 
 .header-subtitle {
   margin: 0;
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  font-weight: 600;
   max-width: 480px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -219,5 +224,12 @@ const handleBack = () => {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-primary);
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    padding: 18px 18px;
+    border-radius: 24px;
+  }
 }
 </style>

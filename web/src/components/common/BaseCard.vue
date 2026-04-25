@@ -79,9 +79,10 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
-  border-radius: var(--radius-xl);
+  border-radius: 28px;
   transition: all var(--transition-normal);
   overflow: hidden;
+  backdrop-filter: blur(20px);
 }
 
 /* Variants / 变体样式 */
@@ -110,6 +111,7 @@ defineEmits<{
 .is-hoverable:hover {
   box-shadow: var(--shadow-card-hover);
   border-color: var(--border-secondary);
+  transform: translateY(-2px);
 }
 
 .is-clickable {
@@ -117,8 +119,9 @@ defineEmits<{
 }
 
 .is-clickable:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-glow);
+  border-color: var(--border-secondary);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
 }
 
 .is-clickable:focus-visible {
@@ -135,7 +138,7 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-primary);
 }
 
@@ -151,9 +154,9 @@ defineEmits<{
   justify-content: center;
   width: 2.5rem;
   height: 2.5rem;
-  background: var(--accent-light);
-  border-radius: var(--radius-lg);
-  color: var(--accent);
+  background: linear-gradient(135deg, rgba(52, 183, 232, 0.14), rgba(139, 92, 246, 0.1));
+  border-radius: 18px;
+  color: var(--theme-indigo);
 }
 
 .header-text {
@@ -164,16 +167,17 @@ defineEmits<{
 
 .card-title {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.08rem;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .card-subtitle {
   margin: 0;
-  font-size: 0.8125rem;
-  color: var(--text-muted);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .header-actions {
@@ -184,7 +188,7 @@ defineEmits<{
 
 /* Card Body / 卡片内容 */
 .card-body {
-  padding: var(--space-5);
+  padding: var(--space-6);
   flex: 1;
 }
 
@@ -198,9 +202,9 @@ defineEmits<{
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   border-top: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(247, 250, 255, 0.58));
 }
 
 /* Dark mode adjustments / 深色模式调整 */

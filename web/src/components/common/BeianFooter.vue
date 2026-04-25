@@ -31,21 +31,25 @@ import publicSecurityBadge from '@/assets/beian-icon.png'
 
 <style scoped>
 .beian-records {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  column-gap: 16px;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  column-gap: 44px;
   row-gap: 6px;
+  max-width: 100%;
+  min-width: max-content;
 }
 
 .beian-record-link {
   color: var(--text-secondary, #6b7280);
   font-size: 13px;
+  font-weight: 600;
   line-height: 1.3;
   text-align: center;
   text-decoration: none;
   transition: color 0.2s ease;
+  white-space: nowrap;
 }
 
 .beian-record-link:hover {

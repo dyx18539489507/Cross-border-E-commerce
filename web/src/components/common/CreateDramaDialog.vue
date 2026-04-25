@@ -5,13 +5,12 @@
     :title="$t('drama.createNew')"
     width="640px"
     align-center
+    append-to-body
     :close-on-click-modal="false"
     modal-class="create-dialog-overlay"
     class="create-dialog dialog-form-safe"
     @closed="handleClosed"
   >
-    <div class="dialog-desc">{{ $t('drama.createDesc') }}</div>
-
     <el-form
       ref="formRef"
       :model="form"
@@ -31,7 +30,11 @@
         />
       </el-form-item>
 
-      <el-form-item :label="$t('drama.projectDesc')" prop="description" required>
+      <el-form-item
+        :label="$t('drama.projectDesc')"
+        prop="description"
+        required
+      >
         <el-input
           v-model="form.description"
           type="textarea"
@@ -43,7 +46,11 @@
         />
       </el-form-item>
 
-      <el-form-item :label="$t('drama.targetCountry')" prop="target_country" required>
+      <el-form-item
+        :label="$t('drama.targetCountry')"
+        prop="target_country"
+        required
+      >
         <el-select
           v-model="form.target_country"
           size="large"
@@ -54,7 +61,10 @@
           @change="handleCountryChange"
           @visible-change="handleCountryVisibleChange"
           :placeholder="$t('drama.targetCountryPlaceholder')"
-          :class="['country-select', { 'has-value': (form.target_country?.length || 0) > 0 }]"
+          :class="[
+            'country-select',
+            { 'has-value': (form.target_country?.length || 0) > 0 },
+          ]"
         >
           <el-option
             v-for="country in filteredCountries"
@@ -65,7 +75,10 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item :label="$t('drama.materialComposition')" prop="material_composition">
+      <el-form-item
+        :label="$t('drama.materialComposition')"
+        prop="material_composition"
+      >
         <el-input
           v-model="form.material_composition"
           type="textarea"
@@ -77,7 +90,10 @@
         />
       </el-form-item>
 
-      <el-form-item :label="$t('drama.marketingSellingPoints')" prop="marketing_selling_points">
+      <el-form-item
+        :label="$t('drama.marketingSellingPoints')"
+        prop="marketing_selling_points"
+      >
         <el-input
           v-model="form.marketing_selling_points"
           type="textarea"
@@ -93,7 +109,7 @@
     <template #footer>
       <div class="dialog-footer">
         <el-button size="large" @click="handleClose">
-          {{ $t('common.cancel') }}
+          {{ $t("common.cancel") }}
         </el-button>
         <el-button
           type="primary"
@@ -102,7 +118,7 @@
           @click="handleSubmit"
         >
           <el-icon v-if="!loading"><ArrowRight /></el-icon>
-          {{ $t('common.next') }}
+          {{ $t("common.next") }}
         </el-button>
       </div>
     </template>
@@ -110,7 +126,7 @@
 
   <el-dialog
     v-model="complianceDialogVisible"
-    title="合规校验详情"
+    :title="t('compliance.dialogTitle')"
     width="1240px"
     top="0"
     append-to-body
@@ -120,11 +136,15 @@
   >
     <div class="compliance-meta-row">
       <div class="compliance-meta-left">
-        <span>校验时间：{{ complianceCheckedAt }}</span>
+        <span>{{ t('compliance.checkedAt') }}: {{ complianceCheckedAt }}</span>
       </div>
-      <button class="pdf-export-btn" type="button" @click="handleExportCompliancePdf">
+      <button
+        class="pdf-export-btn"
+        type="button"
+        @click="handleExportCompliancePdf"
+      >
         <el-icon><Download /></el-icon>
-        导出PDF报告
+        {{ t('compliance.exportPdf') }}
       </button>
     </div>
 
@@ -133,7 +153,7 @@
       type="error"
       :closable="false"
       show-icon
-      title="当前评分 >= 80，禁止进入下一步，请先按整改建议完善信息。"
+      :title="t('compliance.blockedTitle')"
       class="compliance-alert"
     />
     <el-alert
@@ -141,17 +161,20 @@
       type="warning"
       :closable="false"
       show-icon
-      title="当前评分为橙色风险（60-79），可继续下一步，但建议先处理高风险项。"
+      :title="t('compliance.orangeTitle')"
       class="compliance-alert"
     />
 
     <div class="compliance-main-grid">
       <section class="risk-score-card">
-        <h3 class="section-title">综合风险评分</h3>
+        <h3 class="section-title">{{ t('compliance.score') }}</h3>
         <div class="risk-ring" :style="scoreRingStyle">
           <div class="risk-ring-inner">
             <div class="risk-score-value">{{ currentCompliance.score }}</div>
-            <div class="risk-score-level" :style="{ color: complianceRiskMeta.color }">
+            <div
+              class="risk-score-level"
+              :style="{ color: complianceRiskMeta.color }"
+            >
               {{ complianceRiskMeta.badge }}
             </div>
           </div>
@@ -161,8 +184,8 @@
 
       <section class="risk-details-card">
         <header class="risk-details-header">
-          <h3 class="section-title">不合规明细</h3>
-          <span class="pending-count">{{ complianceIssueItems.length }} 项待处理</span>
+          <h3 class="section-title">{{ t('compliance.details') }}</h3>
+          <span class="pending-count">{{ t('compliance.itemsPending', { count: complianceIssueItems.length }) }}</span>
         </header>
         <div
           ref="riskItemListRef"
@@ -175,11 +198,17 @@
             :key="`${item.title}-${index}`"
             class="risk-item"
           >
-            <span class="risk-item-dot" :class="`risk-item-dot--${item.level}`" />
+            <span
+              class="risk-item-dot"
+              :class="`risk-item-dot--${item.level}`"
+            />
             <div class="risk-item-body">
               <div class="risk-item-title-row">
                 <p class="risk-item-title">{{ item.title }}</p>
-                <span class="risk-level-chip" :class="`risk-level-chip--${item.level}`">
+                <span
+                  class="risk-level-chip"
+                  :class="`risk-level-chip--${item.level}`"
+                >
                   {{ getRiskLevelLabel(item.level) }}
                 </span>
               </div>
@@ -191,7 +220,7 @@
     </div>
 
     <section class="rectification-card">
-      <h3 class="section-title">整改建议</h3>
+      <h3 class="section-title">{{ t('compliance.rectification') }}</h3>
       <ul class="rectification-list">
         <li
           v-for="(item, index) in rectificationList"
@@ -201,7 +230,7 @@
         </li>
       </ul>
       <div v-if="complianceCategories.length" class="category-row">
-        <span class="category-label">建议类目：</span>
+        <span class="category-label">{{ t('compliance.suggestedCategories') }}:</span>
         <div class="category-tags">
           <span
             v-for="(item, index) in complianceCategories"
@@ -222,7 +251,7 @@
           :disabled="complianceSubmitting"
           @click="handleComplianceCancel"
         >
-          {{ $t('common.cancel') }}
+          {{ $t("common.cancel") }}
         </el-button>
         <el-button
           type="primary"
@@ -231,7 +260,7 @@
           :loading="complianceSubmitting"
           @click="handleCompliancePrimaryAction"
         >
-          {{ complianceCanProceed ? $t('common.next') : '去修改' }}
+          {{ complianceCanProceed ? $t("common.next") : t("compliance.editAction") }}
         </el-button>
       </div>
     </template>
@@ -239,161 +268,193 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowRight, Download } from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
-import { dramaAPI } from '@/api/drama'
-import { ALL_COUNTRIES } from '@/constants/countries'
-import type { ComplianceResult, ComplianceRiskLevel, CreateDramaRequest } from '@/types/drama'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { ElMessage, type FormInstance, type FormRules } from "element-plus";
+import { ArrowRight, Download } from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
+import { dramaAPI } from "@/api/drama";
+import { ALL_COUNTRIES } from "@/constants/countries";
+import type {
+  ComplianceResult,
+  ComplianceRiskLevel,
+  CreateDramaRequest,
+} from "@/types/drama";
 import {
   buildCreateDramaPayload,
   getComplianceRiskMeta,
-  normalizeComplianceResult
-} from '@/utils/compliance'
-import { handleFormEnterNavigation } from '@/utils/formFocus'
+  normalizeComplianceResult,
+} from "@/utils/compliance";
+import { saveCreateDramaDraft } from "@/utils/createDramaDraft";
+import { handleFormEnterNavigation } from "@/utils/formFocus";
 
 interface ComplianceIssueItem {
-  level: ComplianceRiskLevel
-  title: string
-  suggestion: string
+  level: ComplianceRiskLevel;
+  title: string;
+  suggestion: string;
 }
 
 const props = defineProps<{
-  modelValue: boolean
-}>()
+  modelValue: boolean;
+}>();
 
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean]
-  'created': [id: string]
-}>()
+  "update:modelValue": [value: boolean];
+  created: [id: string];
+}>();
 
-const { t } = useI18n()
-const router = useRouter()
-const formRef = ref<FormInstance>()
-const loading = ref(false)
-const complianceSubmitting = ref(false)
-const countryKeyword = ref('')
-const complianceDialogVisible = ref(false)
-const complianceData = ref<ComplianceResult | null>(null)
-const complianceDramaId = ref('')
-const complianceCheckedAt = ref('')
-const riskItemListRef = ref<HTMLDivElement>()
-const riskItemListMaxHeight = ref('')
-const pendingCreatePayload = ref<CreateDramaRequest | null>(null)
+const { t, locale } = useI18n();
+const router = useRouter();
+const formRef = ref<FormInstance>();
+const loading = ref(false);
+const complianceSubmitting = ref(false);
+const countryKeyword = ref("");
+const complianceDialogVisible = ref(false);
+const complianceData = ref<ComplianceResult | null>(null);
+const complianceDramaId = ref("");
+const complianceCheckedAt = ref("");
+const riskItemListRef = ref<HTMLDivElement>();
+const riskItemListMaxHeight = ref("");
+const pendingCreatePayload = ref<CreateDramaRequest | null>(null);
+const pendingComplianceToken = ref("");
 
-const visible = ref(props.modelValue)
-watch(() => props.modelValue, (val) => {
-  visible.value = val
-})
+const visible = ref(props.modelValue);
+watch(
+  () => props.modelValue,
+  (val) => {
+    visible.value = val;
+  },
+);
 watch(visible, (val) => {
-  emit('update:modelValue', val)
-})
+  emit("update:modelValue", val);
+});
 
 watch(
   () => complianceDialogVisible.value,
   (open) => {
     if (open) {
-      void updateRiskItemListHeight()
+      void updateRiskItemListHeight();
     }
-  }
-)
+  },
+);
 
 const form = reactive<CreateDramaRequest>({
-  title: '',
-  description: '',
+  title: "",
+  description: "",
   target_country: [],
-  material_composition: '',
-  marketing_selling_points: ''
-})
+  material_composition: "",
+  marketing_selling_points: "",
+});
 
 const filteredCountries = computed(() => {
-  const keyword = countryKeyword.value.trim().toLowerCase()
+  const keyword = countryKeyword.value.trim().toLowerCase();
   if (!keyword) {
-    return ALL_COUNTRIES
+    return ALL_COUNTRIES;
   }
-  return ALL_COUNTRIES.filter((country) => country.searchText.includes(keyword))
-})
+  return ALL_COUNTRIES.filter((country) =>
+    country.searchText.includes(keyword),
+  );
+});
 
 const currentCompliance = computed<ComplianceResult>(() => {
   if (complianceData.value) {
-    return complianceData.value
+    return complianceData.value;
   }
   return {
     score: 0,
-    level: 'green',
-    level_label: '低',
-    summary: '暂无合规评估结果',
+    level: "green",
+    level_label: t("compliance.riskLevel.green"),
+    summary: t("compliance.noResult"),
     non_compliance_points: [],
     rectification_suggestions: [],
-    suggested_categories: []
-  }
-})
+    suggested_categories: [],
+  };
+});
 
-const complianceRiskMeta = computed(() => getComplianceRiskMeta(currentCompliance.value))
+const complianceRiskMeta = computed(() =>
+  getComplianceRiskMeta(currentCompliance.value, locale.value),
+);
 
 const isComplianceBlocked = computed(() => {
-  return currentCompliance.value.level === 'red' || currentCompliance.value.score >= 80
-})
+  return (
+    currentCompliance.value.level === "red" ||
+    currentCompliance.value.score >= 80
+  );
+});
 
-const isOrangeRisk = computed(() => currentCompliance.value.level === 'orange')
+const isOrangeRisk = computed(() => currentCompliance.value.level === "orange");
 
 const complianceCanProceed = computed(() => {
-  return !isComplianceBlocked.value && !!pendingCreatePayload.value
-})
+  return (
+    !isComplianceBlocked.value &&
+    !!pendingCreatePayload.value &&
+    !!pendingComplianceToken.value
+  );
+});
 
 const scoreRingStyle = computed(() => {
-  const score = Math.max(0, Math.min(currentCompliance.value.score, 100))
+  const score = Math.max(0, Math.min(currentCompliance.value.score, 100));
   return {
-    '--risk-angle': `${(score / 100) * 360}deg`,
-    '--risk-color': complianceRiskMeta.value.color
-  }
-})
+    "--risk-angle": `${(score / 100) * 360}deg`,
+    "--risk-color": complianceRiskMeta.value.color,
+  };
+});
 
 const rectificationList = computed(() => {
-  const list = currentCompliance.value.rectification_suggestions || []
+  const list = currentCompliance.value.rectification_suggestions || [];
   if (list.length > 0) {
-    return list
+    return list;
   }
-  return ['请补充完整商品信息并重新进行合规校验。']
-})
+  return [t("compliance.completeProductInfo")];
+});
 
-const complianceCategories = computed(() => currentCompliance.value.suggested_categories || [])
+const complianceCategories = computed(
+  () => currentCompliance.value.suggested_categories || [],
+);
+const complianceCategorySeparator = computed(() =>
+  locale.value.startsWith("zh") ? "、" : ", "
+);
 
-const normalizeText = (value: string) => value.toLowerCase().replace(/\s+/g, '')
+const normalizeText = (value: string) =>
+  value.toLowerCase().replace(/\s+/g, "");
 
 const inferIssueLevel = (text: string): ComplianceRiskLevel => {
-  const raw = normalizeText(text)
-  if (/(禁售|违法|武器|毒|侵权|走私|伪造|医疗|药品|处方|高危|禁止)/.test(raw)) {
-    return 'red'
+  const raw = normalizeText(text);
+  if (/(禁售|违法|武器|毒|侵权|走私|伪造|医疗|药品|处方|高危|禁止|banned|illegal|weapon|toxic|infring|smuggl|counterfeit|medical|drug|prescription|highrisk|blocked|prohibited)/.test(raw)) {
+    return "red";
   }
-  if (/(缺少|未提供|认证|隐私|数据|gdpr|appi|ukca|ce|pse|违规|不符合|不合规|高风险)/.test(raw)) {
-    return 'orange'
+  if (
+    /(缺少|未提供|认证|隐私|数据|gdpr|appi|ukca|ce|pse|违规|不符合|不合规|高风险|missing|notprovided|certif|privacy|data|violation|noncompliant|highrisk)/.test(
+      raw,
+    )
+  ) {
+    return "orange";
   }
-  if (/(敏感|绝对化|夸大|中风险|建议|优化|提示)/.test(raw)) {
-    return 'yellow'
+  if (/(敏感|绝对化|夸大|中风险|建议|优化|提示|sensitive|absolute|exaggerat|mediumrisk|suggest|optimi|notice|warning)/.test(raw)) {
+    return "yellow";
   }
-  return currentCompliance.value.level
-}
+  return currentCompliance.value.level;
+};
 
 const ISSUE_LEVEL_PRIORITY: Record<ComplianceRiskLevel, number> = {
   red: 0,
   orange: 1,
   yellow: 2,
-  green: 3
-}
+  green: 3,
+};
 
 const complianceIssueItems = computed<ComplianceIssueItem[]>(() => {
-  const points = currentCompliance.value.non_compliance_points || []
-  const suggestions = currentCompliance.value.rectification_suggestions || []
+  const points = currentCompliance.value.non_compliance_points || [];
+  const suggestions = currentCompliance.value.rectification_suggestions || [];
 
   if (points.length === 0) {
-    return [{
-      level: currentCompliance.value.level,
-      title: currentCompliance.value.summary || '暂无明确不合规项，请人工复核。',
-      suggestion: suggestions[0] || '请结合目标国家法规继续完善商品信息。'
-    }]
+    return [
+      {
+        level: currentCompliance.value.level,
+        title: currentCompliance.value.summary || t("compliance.noIssue"),
+        suggestion: suggestions[0] || t("compliance.manualReviewSuggestion"),
+      },
+    ];
   }
 
   return points
@@ -401,539 +462,678 @@ const complianceIssueItems = computed<ComplianceIssueItem[]>(() => {
       order: index,
       level: inferIssueLevel(title),
       title,
-      suggestion: suggestions[index] || suggestions[0] || '请补充相关资质文件并重新校验。'
+      suggestion:
+        suggestions[index] ||
+        suggestions[0] ||
+        t("compliance.completeQualifications"),
     }))
     .sort((a, b) => {
-      const priorityDiff = ISSUE_LEVEL_PRIORITY[a.level] - ISSUE_LEVEL_PRIORITY[b.level]
-      if (priorityDiff !== 0) return priorityDiff
-      return a.order - b.order
+      const priorityDiff =
+        ISSUE_LEVEL_PRIORITY[a.level] - ISSUE_LEVEL_PRIORITY[b.level];
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.order - b.order;
     })
-    .map(({ order, ...item }) => item)
-})
+    .map(({ order, ...item }) => item);
+});
 
-const riskItemListScrollable = computed(() => complianceIssueItems.value.length > 3)
+const riskItemListScrollable = computed(
+  () => complianceIssueItems.value.length > 3,
+);
 
 const riskItemListStyle = computed(() => {
   if (!riskItemListScrollable.value || !riskItemListMaxHeight.value) {
-    return undefined
+    return undefined;
   }
 
   return {
-    maxHeight: riskItemListMaxHeight.value
-  }
-})
+    maxHeight: riskItemListMaxHeight.value,
+  };
+});
 
 const getRiskItemListMaxAllowedHeight = () => {
-  if (typeof window === 'undefined') {
-    return 360
+  if (typeof window === "undefined") {
+    return 360;
   }
 
-  return Math.max(210, Math.round(window.innerHeight * 0.34))
-}
+  return Math.max(210, Math.round(window.innerHeight * 0.34));
+};
 
 const updateRiskItemListHeight = async () => {
-  await nextTick()
+  await nextTick();
 
-  const listEl = riskItemListRef.value
+  const listEl = riskItemListRef.value;
   if (!listEl || !riskItemListScrollable.value) {
-    riskItemListMaxHeight.value = ''
-    return
+    riskItemListMaxHeight.value = "";
+    return;
   }
 
-  const items = Array.from(listEl.querySelectorAll<HTMLElement>('.risk-item'))
+  const items = Array.from(listEl.querySelectorAll<HTMLElement>(".risk-item"));
   if (items.length === 0) {
-    riskItemListMaxHeight.value = ''
-    return
+    riskItemListMaxHeight.value = "";
+    return;
   }
 
   const twoItemHeight = items
     .slice(0, 2)
-    .reduce((total, item) => total + item.offsetHeight, 0)
-  const halfThirdItemHeight = items[2] ? Math.round(items[2].offsetHeight * 0.5) : 0
+    .reduce((total, item) => total + item.offsetHeight, 0);
+  const halfThirdItemHeight = items[2]
+    ? Math.round(items[2].offsetHeight * 0.5)
+    : 0;
 
-  const maxAllowedHeight = getRiskItemListMaxAllowedHeight()
-  const compressedHeight = Math.max(196, twoItemHeight + halfThirdItemHeight - 12)
-  riskItemListMaxHeight.value = `${Math.min(compressedHeight, maxAllowedHeight)}px`
-}
+  const maxAllowedHeight = getRiskItemListMaxAllowedHeight();
+  const compressedHeight = Math.max(
+    196,
+    twoItemHeight + halfThirdItemHeight - 12,
+  );
+  riskItemListMaxHeight.value = `${Math.min(compressedHeight, maxAllowedHeight)}px`;
+};
 
 watch(
-  () => complianceIssueItems.value.map((item) => `${item.level}:${item.title}:${item.suggestion}`).join('|'),
+  () =>
+    complianceIssueItems.value
+      .map((item) => `${item.level}:${item.title}:${item.suggestion}`)
+      .join("|"),
   () => {
     if (complianceDialogVisible.value) {
-      void updateRiskItemListHeight()
+      void updateRiskItemListHeight();
     }
-  }
-)
+  },
+);
 
 const handleComplianceResize = () => {
   if (complianceDialogVisible.value) {
-    void updateRiskItemListHeight()
+    void updateRiskItemListHeight();
   }
-}
+};
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('resize', handleComplianceResize)
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", handleComplianceResize);
 }
 
 onBeforeUnmount(() => {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('resize', handleComplianceResize)
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", handleComplianceResize);
   }
-})
+});
 
 const getRiskLevelLabel = (level: ComplianceRiskLevel) => {
-  if (level === 'red') return '禁止'
-  if (level === 'orange') return '高风险'
-  if (level === 'yellow') return '中风险'
-  return '低风险'
-}
+  if (level === "red") return t("compliance.riskLevel.red");
+  if (level === "orange") return t("compliance.riskLevel.orange");
+  if (level === "yellow") return t("compliance.riskLevel.yellow");
+  return t("compliance.riskLevel.green");
+};
 
 const handleCountryFilter = (keyword: string) => {
-  countryKeyword.value = keyword
-}
+  countryKeyword.value = keyword;
+};
 
 const handleCountryVisibleChange = (open: boolean) => {
   if (!open) {
-    countryKeyword.value = ''
+    countryKeyword.value = "";
   }
-}
+};
 
 const handleCountryChange = () => {
-  countryKeyword.value = ''
-}
+  countryKeyword.value = "";
+};
 
 const rules: FormRules = {
   title: [
-    { required: true, message: '请输入项目标题', trigger: 'blur' },
-    { min: 1, max: 50, message: '标题长度在 1 到 50 个字符', trigger: 'blur' }
+    { required: true, message: t("validation.projectNameRequired"), trigger: "blur" },
+    { min: 1, max: 50, message: t("validation.projectNameLength"), trigger: "blur" },
   ],
   description: [
-    { required: true, message: '请输入项目描述', trigger: 'blur' },
-    { min: 1, max: 500, message: '描述长度在 1 到 500 个字符', trigger: 'blur' }
+    { required: true, message: t("validation.projectDescRequired"), trigger: "blur" },
+    {
+      min: 1,
+      max: 500,
+      message: t("validation.projectDescLength"),
+      trigger: "blur",
+    },
   ],
   target_country: [
-    { type: 'array', required: true, min: 1, message: '请选择目标国家', trigger: 'change' }
+    {
+      type: "array",
+      required: true,
+      min: 1,
+      message: t("validation.targetCountryRequired"),
+      trigger: "change",
+    },
   ],
   material_composition: [
-    { max: 200, message: '材质/成分长度不能超过 200 个字符', trigger: 'blur' }
+    { max: 200, message: t("validation.materialLength"), trigger: "blur" },
   ],
   marketing_selling_points: [
-    { max: 200, message: '宣传卖点长度不能超过 200 个字符', trigger: 'blur' }
-  ]
-}
+    { max: 200, message: t("validation.marketingLength"), trigger: "blur" },
+  ],
+};
 
 const splitWrappedLines = (
   ctx: CanvasRenderingContext2D,
   text: string,
-  maxWidth: number
+  maxWidth: number,
 ): string[] => {
-  const blocks = String(text ?? '').replace(/\r\n/g, '\n').split('\n')
-  const lines: string[] = []
+  const blocks = String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
+  const lines: string[] = [];
 
   for (const block of blocks) {
     if (!block) {
-      lines.push('')
-      continue
+      lines.push("");
+      continue;
     }
 
-    let line = ''
+    let line = "";
     for (const char of block) {
-      const candidate = line + char
+      const candidate = line + char;
       if (!line || ctx.measureText(candidate).width <= maxWidth) {
-        line = candidate
+        line = candidate;
       } else {
-        lines.push(line)
-        line = char
+        lines.push(line);
+        line = char;
       }
     }
     if (line) {
-      lines.push(line)
+      lines.push(line);
     }
   }
 
-  return lines.length ? lines : ['']
-}
+  return lines.length ? lines : [""];
+};
 
 const textToUint8 = (value: string): Uint8Array => {
-  return new TextEncoder().encode(value)
-}
+  return new TextEncoder().encode(value);
+};
 
 const concatUint8Arrays = (parts: Uint8Array[]): Uint8Array => {
-  const totalLength = parts.reduce((sum, item) => sum + item.length, 0)
-  const merged = new Uint8Array(totalLength)
-  let offset = 0
+  const totalLength = parts.reduce((sum, item) => sum + item.length, 0);
+  const merged = new Uint8Array(totalLength);
+  let offset = 0;
   for (const item of parts) {
-    merged.set(item, offset)
-    offset += item.length
+    merged.set(item, offset);
+    offset += item.length;
   }
-  return merged
-}
+  return merged;
+};
 
-const buildPdfBlobFromJpegDataUrl = (jpegDataUrl: string, imageWidth: number, imageHeight: number): Blob => {
-  const base64 = jpegDataUrl.split(',')[1] || ''
-  const binary = atob(base64)
-  const jpegBytes = new Uint8Array(binary.length)
+const buildPdfBlobFromJpegDataUrl = (
+  jpegDataUrl: string,
+  imageWidth: number,
+  imageHeight: number,
+): Blob => {
+  const base64 = jpegDataUrl.split(",")[1] || "";
+  const binary = atob(base64);
+  const jpegBytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
-    jpegBytes[i] = binary.charCodeAt(i)
+    jpegBytes[i] = binary.charCodeAt(i);
   }
 
-  const pageWidth = 595.28
-  const pageHeight = Number(((pageWidth * imageHeight) / imageWidth).toFixed(2))
-  const contentStream = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im0 Do\nQ\n`
+  const pageWidth = 595.28;
+  const pageHeight = Number(
+    ((pageWidth * imageHeight) / imageWidth).toFixed(2),
+  );
+  const contentStream = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im0 Do\nQ\n`;
 
-  const objects: Uint8Array[] = []
-  objects.push(textToUint8('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'))
-  objects.push(textToUint8('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'))
-  objects.push(textToUint8(
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`
-  ))
-  objects.push(concatUint8Arrays([
+  const objects: Uint8Array[] = [];
+  objects.push(
+    textToUint8("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"),
+  );
+  objects.push(
+    textToUint8("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"),
+  );
+  objects.push(
     textToUint8(
-      `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${Math.round(imageWidth)} /Height ${Math.round(imageHeight)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`
+      `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
     ),
-    jpegBytes,
-    textToUint8('\nendstream\nendobj\n')
-  ]))
-  objects.push(textToUint8(
-    `5 0 obj\n<< /Length ${textToUint8(contentStream).length} >>\nstream\n${contentStream}endstream\nendobj\n`
-  ))
+  );
+  objects.push(
+    concatUint8Arrays([
+      textToUint8(
+        `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${Math.round(imageWidth)} /Height ${Math.round(imageHeight)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`,
+      ),
+      jpegBytes,
+      textToUint8("\nendstream\nendobj\n"),
+    ]),
+  );
+  objects.push(
+    textToUint8(
+      `5 0 obj\n<< /Length ${textToUint8(contentStream).length} >>\nstream\n${contentStream}endstream\nendobj\n`,
+    ),
+  );
 
-  const header = textToUint8('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n')
-  const offsets: number[] = [0]
-  let currentOffset = header.length
+  const header = textToUint8("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+  const offsets: number[] = [0];
+  let currentOffset = header.length;
   for (const objectBytes of objects) {
-    offsets.push(currentOffset)
-    currentOffset += objectBytes.length
+    offsets.push(currentOffset);
+    currentOffset += objectBytes.length;
   }
 
-  let xref = 'xref\n0 6\n0000000000 65535 f \n'
+  let xref = "xref\n0 6\n0000000000 65535 f \n";
   for (let index = 1; index <= 5; index += 1) {
-    xref += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`
+    xref += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
   }
 
-  const xrefBytes = textToUint8(xref)
-  const trailer = textToUint8(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${currentOffset}\n%%EOF`)
+  const xrefBytes = textToUint8(xref);
+  const trailer = textToUint8(
+    `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${currentOffset}\n%%EOF`,
+  );
 
-  const pdfBytes = concatUint8Arrays([header, ...objects, xrefBytes, trailer])
-  const blobBytes = new Uint8Array(pdfBytes.byteLength)
-  blobBytes.set(pdfBytes)
-  return new Blob([blobBytes], { type: 'application/pdf' })
-}
+  const pdfBytes = concatUint8Arrays([header, ...objects, xrefBytes, trailer]);
+  const blobBytes = new Uint8Array(pdfBytes.byteLength);
+  blobBytes.set(pdfBytes);
+  return new Blob([blobBytes], { type: "application/pdf" });
+};
 
 const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.style.display = 'none'
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
-}
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+};
 
 const formatDateTime = (date: Date) => {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  const hour = `${date.getHours()}`.padStart(2, '0')
-  const minute = `${date.getMinutes()}`.padStart(2, '0')
-  const second = `${date.getSeconds()}`.padStart(2, '0')
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hour = `${date.getHours()}`.padStart(2, "0");
+  const minute = `${date.getMinutes()}`.padStart(2, "0");
+  const second = `${date.getSeconds()}`.padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
 
 const openComplianceDialog = (rawCompliance: unknown) => {
-  const normalized = normalizeComplianceResult(rawCompliance)
+  const normalized = normalizeComplianceResult(rawCompliance, locale.value);
   if (!normalized) {
-    return false
+    return false;
   }
 
-  complianceData.value = normalized
-  complianceDramaId.value = ''
-  complianceCheckedAt.value = formatDateTime(new Date())
-  complianceDialogVisible.value = true
-  return true
-}
+  complianceData.value = normalized;
+  complianceDramaId.value = "";
+  complianceCheckedAt.value = formatDateTime(new Date());
+  complianceDialogVisible.value = true;
+  return true;
+};
 
 const handleComplianceCancel = () => {
-  complianceDialogVisible.value = false
-}
+  complianceDialogVisible.value = false;
+};
 
-const handleCompliancePrimaryAction = () => {
+const handleComplianceEdit = async () => {
+  const draft = pendingCreatePayload.value || buildCreateDramaPayload(form);
+  saveCreateDramaDraft(draft);
+  complianceDialogVisible.value = false;
+  visible.value = false;
+  await router.push("/dramas/create");
+  ElMessage.info(t("compliance.editHint"));
+};
+
+const handleCompliancePrimaryAction = async () => {
   if (complianceCanProceed.value) {
-    handleComplianceConfirm()
-    return
+    await handleComplianceConfirm();
+    return;
   }
-  ElMessage.info('请根据不合规明细和整改建议修改后，再继续下一步。')
-}
+  await handleComplianceEdit();
+};
 
 const handleComplianceConfirm = async () => {
   if (!complianceCanProceed.value || !pendingCreatePayload.value) {
-    ElMessage.warning('风险评级为红色（>=80），请先根据整改建议完善后再提交。')
-    return
+    ElMessage.warning(t("compliance.blockedRetry"));
+    return;
   }
 
-  complianceSubmitting.value = true
+  complianceSubmitting.value = true;
   try {
-    const result = await dramaAPI.create(pendingCreatePayload.value)
-    const dramaId = String(result.drama.id)
-    complianceDramaId.value = dramaId
-    complianceDialogVisible.value = false
-    visible.value = false
-    pendingCreatePayload.value = null
-    emit('created', dramaId)
+    const result = await dramaAPI.create({
+      ...pendingCreatePayload.value,
+      compliance_token: pendingComplianceToken.value,
+    });
+    const dramaId = String(result.drama.id);
+    complianceDramaId.value = dramaId;
+    complianceDialogVisible.value = false;
+    visible.value = false;
+    pendingCreatePayload.value = null;
+    pendingComplianceToken.value = "";
+    emit("created", dramaId);
 
     if (isOrangeRisk.value) {
-      ElMessage.warning('当前项目为橙色高风险，已进入下一步，请优先处理不合规项。')
+      ElMessage.warning(t("compliance.orangeContinue"));
     } else {
-      ElMessage.success('创建成功')
+      ElMessage.success(t("compliance.created"));
     }
-    router.push(`/dramas/${dramaId}`)
+    router.push(`/dramas/${dramaId}`);
   } catch (error: any) {
-    const opened = openComplianceDialog(error?.details?.compliance)
-    if (opened) {
-      ElMessage.warning(error.message || '风险评级发生变化，请根据最新整改建议处理后再继续。')
-      return
+    if (error?.code === "COMPLIANCE_PRECHECK_REQUIRED") {
+      pendingComplianceToken.value = "";
+      complianceDialogVisible.value = false;
+      ElMessage.warning(error.message || t("compliance.precheckExpired"));
+      return;
     }
-    ElMessage.error(error.message || '创建失败')
+    const opened = openComplianceDialog(error?.details?.compliance);
+    if (opened) {
+      ElMessage.warning(error.message || t("compliance.riskChanged"));
+      return;
+    }
+    ElMessage.error(error.message || t("compliance.createFailed"));
   } finally {
-    complianceSubmitting.value = false
+    complianceSubmitting.value = false;
   }
-}
+};
 
 const handleExportCompliancePdf = () => {
-  const report = currentCompliance.value
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
+  const report = currentCompliance.value;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
   if (!ctx) {
-    ElMessage.error('导出失败，请重试')
-    return
+    ElMessage.error(t("compliance.exportFailed"));
+    return;
   }
 
-  const fontFamily = '"PingFang SC", "Microsoft YaHei", "Segoe UI", Arial, sans-serif'
-  const canvasWidth = 1240
-  const marginX = 72
-  const contentWidth = canvasWidth - marginX * 2
-  const lineHeight = 34
+  const fontFamily = locale.value.startsWith("zh")
+    ? '"PingFang SC", "Microsoft YaHei", "Segoe UI", Arial, sans-serif'
+    : '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif';
+  const canvasWidth = 1240;
+  const marginX = 72;
+  const contentWidth = canvasWidth - marginX * 2;
+  const lineHeight = 34;
 
-  const titleFont = `700 48px ${fontFamily}`
-  const headingFont = `700 30px ${fontFamily}`
-  const bodyFont = `500 24px ${fontFamily}`
-  const metaFont = `500 22px ${fontFamily}`
+  const titleFont = `700 48px ${fontFamily}`;
+  const headingFont = `700 30px ${fontFamily}`;
+  const bodyFont = `500 24px ${fontFamily}`;
+  const metaFont = `500 22px ${fontFamily}`;
 
-  ctx.font = bodyFont
-  const summaryLines = splitWrappedLines(ctx, report.summary || '无', contentWidth)
-  const issueGroups = (complianceIssueItems.value.length ? complianceIssueItems.value : [{
-    level: report.level,
-    title: '暂无明显不合规项',
-    suggestion: '建议继续人工复核目标国家法规要求。'
-  }]).map((item) => {
-    ctx.font = headingFont
-    const titleLines = splitWrappedLines(ctx, item.title, contentWidth - 52)
-    ctx.font = bodyFont
-    const suggestionLines = splitWrappedLines(ctx, item.suggestion, contentWidth - 52)
-    return { ...item, titleLines, suggestionLines }
-  })
+  ctx.font = bodyFont;
+  const summaryLines = splitWrappedLines(
+    ctx,
+    report.summary || t("compliance.noCategory"),
+    contentWidth,
+  );
+  const issueGroups = (
+    complianceIssueItems.value.length
+      ? complianceIssueItems.value
+      : [
+          {
+            level: report.level,
+            title: t("compliance.noIssue"),
+            suggestion: t("compliance.manualReviewSuggestion"),
+          },
+        ]
+  ).map((item) => {
+    ctx.font = headingFont;
+    const titleLines = splitWrappedLines(ctx, item.title, contentWidth - 52);
+    ctx.font = bodyFont;
+    const suggestionLines = splitWrappedLines(
+      ctx,
+      item.suggestion,
+      contentWidth - 52,
+    );
+    return { ...item, titleLines, suggestionLines };
+  });
 
-  ctx.font = bodyFont
-  const rectificationGroups = rectificationList.value.map((item) => splitWrappedLines(ctx, item, contentWidth - 32))
-  const categoryText = complianceCategories.value.length ? complianceCategories.value.join('、') : '无'
-  const categoryLines = splitWrappedLines(ctx, categoryText, contentWidth - 120)
+  ctx.font = bodyFont;
+  const rectificationGroups = rectificationList.value.map((item) =>
+    splitWrappedLines(ctx, item, contentWidth - 32),
+  );
+  const categoryText = complianceCategories.value.length
+    ? complianceCategories.value.join(complianceCategorySeparator.value)
+    : t("compliance.noCategory");
+  const categoryLines = splitWrappedLines(
+    ctx,
+    categoryText,
+    contentWidth - 120,
+  );
 
-  let totalHeight = 72
-  totalHeight += 76
-  totalHeight += 44 * 3
-  totalHeight += 20
-  totalHeight += 46 + summaryLines.length * lineHeight + 14
-  totalHeight += 46
-  totalHeight += issueGroups.reduce((sum, item) => sum + item.titleLines.length * lineHeight + item.suggestionLines.length * lineHeight + 26, 0)
-  totalHeight += 24
-  totalHeight += 46
-  totalHeight += rectificationGroups.reduce((sum, lines) => sum + lines.length * lineHeight + 12, 0)
-  totalHeight += Math.max(1, categoryLines.length) * lineHeight + 46
-  totalHeight += 72
+  let totalHeight = 72;
+  totalHeight += 76;
+  totalHeight += 44 * 3;
+  totalHeight += 20;
+  totalHeight += 46 + summaryLines.length * lineHeight + 14;
+  totalHeight += 46;
+  totalHeight += issueGroups.reduce(
+    (sum, item) =>
+      sum +
+      item.titleLines.length * lineHeight +
+      item.suggestionLines.length * lineHeight +
+      26,
+    0,
+  );
+  totalHeight += 24;
+  totalHeight += 46;
+  totalHeight += rectificationGroups.reduce(
+    (sum, lines) => sum + lines.length * lineHeight + 12,
+    0,
+  );
+  totalHeight += Math.max(1, categoryLines.length) * lineHeight + 46;
+  totalHeight += 72;
 
-  canvas.width = canvasWidth
-  canvas.height = Math.max(1180, Math.ceil(totalHeight))
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  canvas.width = canvasWidth;
+  canvas.height = Math.max(1180, Math.ceil(totalHeight));
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  let y = 84
-  ctx.fillStyle = '#1f2937'
-  ctx.font = titleFont
-  ctx.fillText('合规校验报告', marginX, y)
+  let y = 84;
+  ctx.fillStyle = "#1f2937";
+  ctx.font = titleFont;
+  ctx.fillText(t("compliance.reportTitle"), marginX, y);
 
-  y += 62
-  ctx.fillStyle = '#5b6b80'
-  ctx.font = metaFont
-  ctx.fillText(`校验时间：${complianceCheckedAt.value}`, marginX, y)
-  y += 36
-  ctx.fillText(`风险评分：${report.score}`, marginX, y)
-  y += 36
-  ctx.fillText(`风险等级：${getRiskLevelLabel(report.level)}`, marginX, y)
+  y += 62;
+  ctx.fillStyle = "#5b6b80";
+  ctx.font = metaFont;
+  ctx.fillText(`${t("compliance.checkedAt")}: ${complianceCheckedAt.value}`, marginX, y);
+  y += 36;
+  ctx.fillText(`${t("compliance.labels.score")}: ${report.score}`, marginX, y);
+  y += 36;
+  ctx.fillText(`${t("compliance.labels.level")}: ${getRiskLevelLabel(report.level)}`, marginX, y);
 
-  y += 30
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('评估结论', marginX, y)
-  y += 42
-  ctx.fillStyle = '#374151'
-  ctx.font = bodyFont
+  y += 30;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText(t("compliance.resultTitle"), marginX, y);
+  y += 42;
+  ctx.fillStyle = "#374151";
+  ctx.font = bodyFont;
   for (const line of summaryLines) {
-    ctx.fillText(line, marginX, y)
-    y += lineHeight
+    ctx.fillText(line, marginX, y);
+    y += lineHeight;
   }
 
-  y += 10
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('不合规明细', marginX, y)
-  y += 42
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText(t("compliance.details"), marginX, y);
+  y += 42;
 
   for (const item of issueGroups) {
-    ctx.fillStyle = '#ef4444'
-    ctx.beginPath()
-    ctx.arc(marginX + 10, y - 8, 6, 0, Math.PI * 2)
-    ctx.fill()
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(marginX + 10, y - 8, 6, 0, Math.PI * 2);
+    ctx.fill();
 
-    ctx.fillStyle = '#111827'
-    ctx.font = headingFont
+    ctx.fillStyle = "#111827";
+    ctx.font = headingFont;
     for (const line of item.titleLines) {
-      ctx.fillText(line, marginX + 30, y)
-      y += lineHeight
+      ctx.fillText(line, marginX + 30, y);
+      y += lineHeight;
     }
 
-    ctx.fillStyle = '#4b5563'
-    ctx.font = bodyFont
+    ctx.fillStyle = "#4b5563";
+    ctx.font = bodyFont;
     for (const line of item.suggestionLines) {
-      ctx.fillText(line, marginX + 30, y)
-      y += lineHeight
+      ctx.fillText(line, marginX + 30, y);
+      y += lineHeight;
     }
-    y += 10
+    y += 10;
   }
 
-  y += 10
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('整改建议', marginX, y)
-  y += 42
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText(t("compliance.rectification"), marginX, y);
+  y += 42;
 
-  ctx.fillStyle = '#374151'
-  ctx.font = bodyFont
+  ctx.fillStyle = "#374151";
+  ctx.font = bodyFont;
   for (const lines of rectificationGroups) {
-    ctx.fillText('•', marginX, y)
+    ctx.fillText("•", marginX, y);
     for (const line of lines) {
-      ctx.fillText(line, marginX + 22, y)
-      y += lineHeight
+      ctx.fillText(line, marginX + 22, y);
+      y += lineHeight;
     }
-    y += 8
+    y += 8;
   }
 
-  y += 10
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('建议类目', marginX, y)
-  y += 42
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText(t("compliance.suggestedCategories"), marginX, y);
+  y += 42;
 
-  ctx.fillStyle = '#1d4ed8'
-  ctx.font = bodyFont
+  ctx.fillStyle = "#1d4ed8";
+  ctx.font = bodyFont;
   for (const line of categoryLines) {
-    ctx.fillText(line, marginX, y)
-    y += lineHeight
+    ctx.fillText(line, marginX, y);
+    y += lineHeight;
   }
 
-  const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92)
-  const pdfBlob = buildPdfBlobFromJpegDataUrl(jpegDataUrl, canvas.width, canvas.height)
-  const fallbackTime = formatDateTime(new Date()).replace(/[: ]/g, '-')
-  const fileTime = (complianceCheckedAt.value || fallbackTime).replace(/[: ]/g, '-')
-  downloadBlob(pdfBlob, `合规校验报告_${fileTime}.pdf`)
-  ElMessage.success('PDF报告已下载')
-}
+  const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  const pdfBlob = buildPdfBlobFromJpegDataUrl(
+    jpegDataUrl,
+    canvas.width,
+    canvas.height,
+  );
+  const fallbackTime = formatDateTime(new Date()).replace(/[: ]/g, "-");
+  const fileTime = (complianceCheckedAt.value || fallbackTime).replace(
+    /[: ]/g,
+    "-",
+  );
+  downloadBlob(pdfBlob, `${t("compliance.defaultFileName")}_${fileTime}.pdf`);
+  ElMessage.success(t("compliance.pdfDownloaded"));
+};
 
 const resetForm = () => {
-  form.title = ''
-  form.description = ''
-  form.target_country = []
-  form.material_composition = ''
-  form.marketing_selling_points = ''
-  pendingCreatePayload.value = null
-  complianceData.value = null
-  complianceDramaId.value = ''
-  complianceCheckedAt.value = ''
-  riskItemListMaxHeight.value = ''
-  complianceSubmitting.value = false
-}
+  form.title = "";
+  form.description = "";
+  form.target_country = [];
+  form.material_composition = "";
+  form.marketing_selling_points = "";
+  pendingCreatePayload.value = null;
+  pendingComplianceToken.value = "";
+  complianceData.value = null;
+  complianceDramaId.value = "";
+  complianceCheckedAt.value = "";
+  riskItemListMaxHeight.value = "";
+  complianceSubmitting.value = false;
+};
 
 const handleClosed = () => {
-  resetForm()
-  countryKeyword.value = ''
-  formRef.value?.clearValidate()
-}
+  resetForm();
+  countryKeyword.value = "";
+  formRef.value?.clearValidate();
+};
 
 const handleClose = () => {
-  visible.value = false
-}
+  visible.value = false;
+};
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
+  if (!formRef.value) return;
 
-  const valid = await formRef.value.validate().then(() => true).catch(() => false)
-  if (!valid) return
+  const valid = await formRef.value
+    .validate()
+    .then(() => true)
+    .catch(() => false);
+  if (!valid) return;
 
-  loading.value = true
+  loading.value = true;
   try {
-    const payload = buildCreateDramaPayload(form)
-    pendingCreatePayload.value = payload
-    const result = await dramaAPI.checkCompliance(payload)
-    const opened = openComplianceDialog(result.compliance)
+    const payload = buildCreateDramaPayload(form);
+    pendingCreatePayload.value = payload;
+    const result = await dramaAPI.checkCompliance(payload);
+    pendingComplianceToken.value = result.compliance_token || "";
+    const opened = openComplianceDialog(result.compliance);
 
     if (!opened) {
-      pendingCreatePayload.value = null
-      ElMessage.error('未获取到合规校验结果，请重试')
-      return
+      pendingCreatePayload.value = null;
+      pendingComplianceToken.value = "";
+      ElMessage.error(t("compliance.missingResult"));
+      return;
+    }
+
+    if (!isComplianceBlocked.value && !pendingComplianceToken.value) {
+      pendingCreatePayload.value = null;
+      complianceDialogVisible.value = false;
+      ElMessage.error(t("compliance.missingToken"));
+      return;
     }
 
     if (isComplianceBlocked.value) {
-      ElMessage.warning('风险评级为红色（>=80），禁止进入下一步，请先整改后重试。')
-      return
+      ElMessage.warning(t("compliance.blockedRetry"));
+      return;
     }
 
     if (isOrangeRisk.value) {
-      ElMessage.warning('当前风险为橙色，可继续下一步，但建议先优先处理高风险项。')
+      ElMessage.warning(t("compliance.orangeContinue"));
     }
   } catch (error: any) {
-    pendingCreatePayload.value = null
-    const opened = openComplianceDialog(error?.details?.compliance)
+    pendingCreatePayload.value = null;
+    pendingComplianceToken.value = "";
+    const opened = openComplianceDialog(error?.details?.compliance);
     if (opened) {
-      ElMessage.warning(error.message || '风险评级为红色（>=80），请先整改后再提交。')
-      return
+      ElMessage.warning(error.message || t("compliance.blockedRetry"));
+      return;
     }
-    ElMessage.error(error.message || '创建失败')
+    ElMessage.error(error.message || t("compliance.createFailed"));
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 </script>
 
 <style scoped>
 :global(.create-dialog-overlay) {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 16px 16px;
+  padding: 24px 16px 16px;
   overflow: hidden;
   overscroll-behavior: contain;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(78, 180, 255, 0.12), transparent 24%),
+    radial-gradient(circle at 88% 14%, rgba(255, 156, 84, 0.1), transparent 22%),
+    radial-gradient(circle at 50% 100%, rgba(135, 102, 255, 0.08), transparent 28%),
+    rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px) saturate(1.04);
 }
 
 :global(.compliance-dialog-overlay) {
+  position: fixed;
+  inset: 0;
+  z-index: 2001;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   overscroll-behavior: contain;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(78, 180, 255, 0.12), transparent 24%),
+    radial-gradient(circle at 86% 14%, rgba(255, 156, 84, 0.1), transparent 22%),
+    radial-gradient(circle at 50% 100%, rgba(135, 102, 255, 0.09), transparent 28%),
+    rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px) saturate(1.04);
 }
 
 :global(.create-dialog-overlay .el-overlay-dialog) {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -943,6 +1143,8 @@ const handleSubmit = async () => {
 }
 
 :global(.compliance-dialog-overlay .el-overlay-dialog) {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -960,95 +1162,140 @@ const handleSubmit = async () => {
   margin: 0 !important;
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-xl);
+  border: 1px solid rgba(208, 220, 242, 0.78);
+  border-radius: 32px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.93)),
+    linear-gradient(135deg, rgba(109, 170, 255, 0.06), rgba(255, 147, 92, 0.05));
+  box-shadow:
+    0 34px 80px -44px rgba(26, 57, 106, 0.45),
+    0 22px 42px -30px rgba(60, 117, 204, 0.24);
+  backdrop-filter: blur(26px);
   overflow: hidden;
 }
 
 .create-dialog :deep(.el-dialog__header) {
   flex-shrink: 0;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-primary);
+  padding: 1.5rem 1.75rem 1.125rem;
+  border-bottom: 1px solid rgba(220, 229, 245, 0.86);
   margin-right: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.2));
 }
 
 .create-dialog :deep(.el-dialog__title) {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #1e3978;
+}
+
+.create-dialog :deep(.el-dialog__headerbtn) {
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #6a7faa;
+  box-shadow: 0 14px 28px -24px rgba(31, 67, 123, 0.45);
+  transition: all 0.2s ease;
+}
+
+.create-dialog :deep(.el-dialog__headerbtn:hover) {
+  background: rgba(255, 255, 255, 0.96);
+  color: #1f4f9a;
+  transform: translateY(-1px);
 }
 
 .create-dialog :deep(.el-dialog__body) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 1.5rem;
+  padding: 1.5rem 1.75rem 1.25rem;
 }
 
 .create-dialog :deep(.el-dialog__footer) {
   flex-shrink: 0;
-  padding: 1rem 1.5rem 1.5rem;
-  border-top: 1px solid var(--border-primary);
-  background: var(--bg-card);
+  padding: 1rem 1.75rem 1.75rem;
+  border-top: 1px solid rgba(220, 229, 245, 0.86);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(248, 250, 255, 0.74));
 }
 
 .dialog-desc {
   margin-bottom: 1.5rem;
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: #6f84ad;
 }
 
 .create-form :deep(.el-form-item) {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.35rem;
 }
 
 .create-form :deep(.el-form-item__label) {
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #2d4a84;
   margin-bottom: 0.5rem;
 }
 
 .create-form :deep(.el-input__wrapper),
 .create-form :deep(.el-textarea__inner),
 .create-form :deep(.el-select__wrapper) {
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px var(--border-primary) inset;
-  transition: all var(--transition-fast);
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 1px rgba(212, 224, 244, 0.96) inset,
+    0 18px 32px -30px rgba(65, 111, 192, 0.28);
+  transition: all 0.2s ease;
 }
 
 .create-form :deep(.el-input__wrapper:hover),
 .create-form :deep(.el-textarea__inner:hover),
 .create-form :deep(.el-select__wrapper:hover) {
-  box-shadow: 0 0 0 1px var(--border-secondary) inset;
+  box-shadow:
+    0 0 0 1px rgba(120, 173, 255, 0.9) inset,
+    0 24px 40px -34px rgba(65, 111, 192, 0.34);
 }
 
 .create-form :deep(.el-input__wrapper.is-focus),
 .create-form :deep(.el-textarea__inner:focus),
 .create-form :deep(.el-select__wrapper.is-focused) {
-  box-shadow: 0 0 0 2px var(--accent) inset;
+  box-shadow:
+    0 0 0 2px rgba(82, 147, 255, 0.72) inset,
+    0 26px 44px -36px rgba(72, 118, 214, 0.4);
 }
 
 .create-form :deep(.el-input__inner),
 .create-form :deep(.el-textarea__inner),
 .create-form :deep(.el-select__selected-item) {
-  color: var(--text-primary);
+  color: #274176;
+}
+
+.create-form :deep(.el-input__wrapper),
+.create-form :deep(.el-select__wrapper) {
+  min-height: 52px;
+}
+
+.create-form :deep(.el-textarea__inner) {
+  padding: 14px 16px;
+  line-height: 1.6;
 }
 
 .country-select :deep(.el-select__placeholder) {
-  color: #a8b5c6;
+  color: #9eaec8;
 }
 
 .country-select.has-value :deep(.el-select__placeholder) {
-  color: var(--text-primary);
+  color: #274176;
 }
 
 .create-form :deep(.el-input__inner::placeholder),
 .create-form :deep(.el-textarea__inner::placeholder) {
-  color: var(--text-muted);
+  color: #9eaec8;
 }
 
 .create-form :deep(.el-input__count) {
-  color: var(--text-muted);
+  color: #95a6c3;
   background: transparent;
 }
 
@@ -1075,123 +1322,272 @@ const handleSubmit = async () => {
 }
 
 .dialog-footer .el-button {
-  min-width: 100px;
+  min-width: 116px;
+  min-height: 50px;
+  border-radius: 18px;
+  font-weight: 700;
+  box-shadow: 0 18px 34px -30px rgba(34, 62, 109, 0.32);
+}
+
+.dialog-footer .el-button:not(.el-button--primary) {
+  border-color: rgba(214, 224, 242, 0.9);
+  background: rgba(255, 255, 255, 0.8);
+  color: #38588f;
+}
+
+.dialog-footer .el-button:not(.el-button--primary):hover {
+  border-color: rgba(140, 183, 255, 0.86);
+  background: rgba(255, 255, 255, 0.96);
+  color: #234f97;
+}
+
+.dialog-footer .el-button--primary {
+  border: none;
+  background: linear-gradient(135deg, #ff7a1a, #ff9a3d);
+  color: #fff;
+}
+
+.dialog-footer .el-button--primary:hover {
+  background: linear-gradient(135deg, #ff8a2c, #ffad55);
+}
+
+.dialog-footer .el-button .el-icon {
+  margin-right: 2px;
+}
+
+:global(.dark) :global(.create-dialog-overlay) {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(78, 180, 255, 0.12), transparent 24%),
+    radial-gradient(circle at 88% 14%, rgba(255, 156, 84, 0.1), transparent 22%),
+    radial-gradient(circle at 50% 100%, rgba(135, 102, 255, 0.09), transparent 28%),
+    rgba(6, 12, 24, 0.18);
+}
+
+:global(.dark) :deep(.el-dialog.create-dialog) {
+  border-color: rgba(73, 96, 136, 0.72);
+  background:
+    linear-gradient(180deg, rgba(14, 25, 46, 0.96), rgba(18, 31, 57, 0.92)),
+    linear-gradient(135deg, rgba(109, 170, 255, 0.06), rgba(255, 147, 92, 0.05));
+  box-shadow:
+    0 34px 80px -44px rgba(0, 0, 0, 0.75),
+    0 22px 42px -30px rgba(40, 79, 141, 0.34);
+}
+
+:global(.dark) .create-dialog :deep(.el-dialog__header),
+:global(.dark) .create-dialog :deep(.el-dialog__footer) {
+  border-color: rgba(66, 89, 128, 0.72);
+}
+
+:global(.dark) .create-dialog :deep(.el-dialog__title),
+:global(.dark) .create-form :deep(.el-form-item__label),
+:global(.dark) .create-form :deep(.el-input__inner),
+:global(.dark) .create-form :deep(.el-textarea__inner),
+:global(.dark) .create-form :deep(.el-select__selected-item) {
+  color: #e8efff;
+}
+
+:global(.dark) .create-dialog :deep(.el-dialog__headerbtn) {
+  background: rgba(18, 31, 57, 0.8);
+  color: #a9bce3;
+}
+
+:global(.dark) .create-form :deep(.el-input__wrapper),
+:global(.dark) .create-form :deep(.el-textarea__inner),
+:global(.dark) .create-form :deep(.el-select__wrapper) {
+  background: rgba(16, 28, 50, 0.86);
+  box-shadow:
+    0 0 0 1px rgba(66, 89, 128, 0.88) inset,
+    0 18px 32px -30px rgba(0, 0, 0, 0.48);
+}
+
+:global(.dark) .create-form :deep(.el-input__inner::placeholder),
+:global(.dark) .create-form :deep(.el-textarea__inner::placeholder),
+:global(.dark) .country-select :deep(.el-select__placeholder),
+:global(.dark) .create-form :deep(.el-input__count) {
+  color: #8195b9;
 }
 
 :deep(.el-dialog.compliance-dialog) {
-  width: min(1650px, calc(100vw - 16px)) !important;
-  max-width: calc(100vw - 16px);
+  width: min(1480px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
   height: auto;
   max-height: calc(100vh - 60px);
   margin: 0 !important;
   display: flex;
   flex-direction: column;
-  border-radius: 22px;
+  border: 1px solid rgba(208, 220, 242, 0.82);
+  border-radius: 32px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.93)),
+    linear-gradient(135deg, rgba(109, 170, 255, 0.06), rgba(255, 147, 92, 0.05));
+  box-shadow:
+    0 34px 80px -44px rgba(26, 57, 106, 0.45),
+    0 22px 42px -30px rgba(60, 117, 204, 0.24);
+  backdrop-filter: blur(26px);
   overflow: hidden;
 }
 
 .compliance-dialog :deep(.el-dialog__header) {
   flex-shrink: 0;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-primary);
+  padding: 1.5rem 1.75rem 1.125rem;
+  border-bottom: 1px solid rgba(220, 229, 245, 0.86);
   margin-right: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.2));
 }
 
 .compliance-dialog :deep(.el-dialog__title) {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #1e3978;
+}
+
+.compliance-dialog :deep(.el-dialog__headerbtn) {
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #6a7faa;
+  box-shadow: 0 14px 28px -24px rgba(31, 67, 123, 0.45);
+  transition: all 0.2s ease;
+}
+
+.compliance-dialog :deep(.el-dialog__headerbtn:hover) {
+  background: rgba(255, 255, 255, 0.96);
+  color: #1f4f9a;
+  transform: translateY(-1px);
 }
 
 .compliance-dialog :deep(.el-dialog__body) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 20px;
-  background: var(--bg-primary);
+  padding: 1.25rem 1.75rem 1.5rem;
+  background: transparent;
 }
 
 .compliance-dialog :deep(.el-dialog__footer) {
   flex-shrink: 0;
-  padding: 10px 20px 14px;
-  border-top: 1px solid var(--border-primary);
-  background: var(--bg-card);
+  padding: 1rem 1.75rem 1.75rem;
+  border-top: 1px solid rgba(220, 229, 245, 0.86);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(248, 250, 255, 0.74));
 }
 
 .compliance-meta-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
-  color: var(--text-secondary);
-  font-size: 14px;
+  margin-bottom: 14px;
+  color: #6f84ad;
+  font-size: 0.96rem;
 }
 
 .compliance-meta-left {
   display: flex;
   align-items: center;
   gap: 10px;
+  font-weight: 600;
 }
 
 .pdf-export-btn {
-  border: none;
-  background: transparent;
-  color: #0ea5e9;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 11px 16px;
+  border: 1px solid rgba(214, 224, 242, 0.9);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #355e9f;
+  font-size: 0.95rem;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  box-shadow: 0 18px 34px -30px rgba(34, 62, 109, 0.26);
+  transition: all 0.2s ease;
   cursor: pointer;
 }
 
+.pdf-export-btn:hover {
+  border-color: rgba(140, 183, 255, 0.86);
+  background: rgba(255, 255, 255, 0.94);
+  color: #1f4f9a;
+  transform: translateY(-1px);
+}
+
 .compliance-alert {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.compliance-alert :deep(.el-alert) {
+  border-radius: 20px;
+  border: 1px solid rgba(214, 224, 242, 0.82);
+  box-shadow: 0 20px 36px -30px rgba(34, 62, 109, 0.22);
+}
+
+.compliance-alert :deep(.el-alert--error.is-light) {
+  background: linear-gradient(135deg, rgba(255, 240, 242, 0.92), rgba(255, 247, 248, 0.88));
+}
+
+.compliance-alert :deep(.el-alert--warning.is-light) {
+  background: linear-gradient(135deg, rgba(255, 246, 234, 0.92), rgba(255, 250, 242, 0.88));
 }
 
 .compliance-main-grid {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
 }
 
 .risk-score-card,
 .risk-details-card,
 .rectification-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-primary);
-  border-radius: 16px;
+  border: 1px solid rgba(214, 224, 242, 0.88);
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(247, 250, 255, 0.78)),
+    radial-gradient(circle at top right, rgba(85, 104, 239, 0.08), transparent 28%);
+  box-shadow: 0 28px 50px -40px rgba(34, 62, 109, 0.26);
+  backdrop-filter: blur(16px);
 }
 
 .risk-score-card {
-  padding: 16px;
+  padding: 24px 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .section-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 1.34rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #1f3d7a;
 }
 
 .risk-ring {
   width: 136px;
   height: 136px;
-  margin-top: 12px;
+  margin-top: 18px;
   border-radius: 50%;
-  background: conic-gradient(var(--risk-color) var(--risk-angle), var(--bg-soft) var(--risk-angle));
+  background: conic-gradient(
+    var(--risk-color) var(--risk-angle),
+    rgba(224, 233, 247, 0.9) var(--risk-angle)
+  );
   display: grid;
   place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(214, 224, 242, 0.8);
 }
 
 .risk-ring-inner {
   width: 102px;
   height: 102px;
   border-radius: 50%;
-  background: var(--bg-card);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(220, 229, 245, 0.84);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1201,21 +1597,21 @@ const handleSubmit = async () => {
 .risk-score-value {
   font-size: 34px;
   line-height: 1;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: #18366d;
 }
 
 .risk-score-level {
   margin-top: 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .risk-summary-text {
-  margin: 10px 0 0;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.55;
+  margin: 16px 0 0;
+  color: #5d79a3;
+  font-size: 0.98rem;
+  line-height: 1.8;
   text-align: center;
 }
 
@@ -1230,17 +1626,18 @@ const handleSubmit = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-primary);
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(220, 229, 245, 0.82);
 }
 
 .pending-count {
-  color: var(--error);
-  background: var(--error-light);
-  border-radius: 12px;
-  padding: 6px 12px;
+  color: #ef6d1f;
+  background: rgba(255, 150, 82, 0.16);
+  border-radius: 999px;
+  padding: 7px 14px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 150, 82, 0.18);
 }
 
 .risk-item-list {
@@ -1257,9 +1654,9 @@ const handleSubmit = async () => {
 .risk-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-primary);
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(220, 229, 245, 0.78);
 }
 
 .risk-item:last-child {
@@ -1267,27 +1664,28 @@ const handleSubmit = async () => {
 }
 
 .risk-item-dot {
-  margin-top: 6px;
-  width: 10px;
-  height: 10px;
+  margin-top: 8px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   flex: 0 0 auto;
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.72);
 }
 
 .risk-item-dot--red {
-  background: #ef4444;
+  background: #e85d54;
 }
 
 .risk-item-dot--orange {
-  background: #f97316;
+  background: #f08a32;
 }
 
 .risk-item-dot--yellow {
-  background: #f59e0b;
+  background: #e7ad27;
 }
 
 .risk-item-dot--green {
-  background: #22c55e;
+  background: #26b96a;
 }
 
 .risk-item-body {
@@ -1304,17 +1702,17 @@ const handleSubmit = async () => {
 
 .risk-item-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.45;
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: #1f3d7a;
+  line-height: 1.6;
 }
 
 .risk-item-desc {
-  margin: 6px 0 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.55;
+  margin: 8px 0 0;
+  color: #5d79a3;
+  font-size: 0.96rem;
+  line-height: 1.75;
 }
 
 .risk-level-chip {
@@ -1322,77 +1720,81 @@ const handleSubmit = async () => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 7px 14px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
 }
 
 .risk-level-chip--red {
-  color: var(--error);
-  background: var(--error-light);
+  color: #c84646;
+  background: rgba(232, 93, 84, 0.14);
 }
 
 .risk-level-chip--orange {
-  color: #f97316;
-  background: rgba(249, 115, 22, 0.12);
+  color: #ef6d1f;
+  background: rgba(255, 150, 82, 0.16);
 }
 
 .risk-level-chip--yellow {
-  color: #d97706;
-  background: var(--warning-light);
+  color: #cc8c06;
+  background: rgba(231, 173, 39, 0.16);
 }
 
 .risk-level-chip--green {
-  color: #16a34a;
-  background: var(--success-light);
+  color: #179b53;
+  background: rgba(38, 185, 106, 0.15);
 }
 
 .rectification-card {
-  margin-top: 12px;
-  padding: 14px 16px;
+  margin-top: 18px;
+  padding: 20px 22px;
 }
 
 .rectification-list {
-  margin: 10px 0 0;
+  margin: 14px 0 0;
   padding-left: 20px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  color: #5d79a3;
+  font-size: 0.95rem;
+  line-height: 1.8;
   columns: 2;
-  column-gap: 24px;
+  column-gap: 30px;
 }
 
 .rectification-list li {
   break-inside: avoid;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .category-row {
-  margin-top: 10px;
+  margin-top: 18px;
   display: flex;
   align-items: flex-start;
   gap: 10px;
 }
 
 .category-label {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 0.94rem;
+  color: #6f84ad;
+  font-weight: 700;
   flex: 0 0 auto;
 }
 
 .category-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .category-tag {
-  padding: 5px 10px;
+  padding: 8px 14px;
   border-radius: 999px;
-  background: var(--accent-light);
-  color: var(--accent);
-  font-size: 12px;
+  background: linear-gradient(135deg, rgba(52, 183, 232, 0.12), rgba(139, 92, 246, 0.1));
+  color: #485ce4;
+  font-size: 0.9rem;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(140, 183, 255, 0.26);
 }
 
 .compliance-footer {
@@ -1402,33 +1804,100 @@ const handleSubmit = async () => {
 }
 
 .compliance-footer .el-button {
-  min-width: 116px;
-  min-height: 44px;
-  border-radius: 12px;
+  min-width: 120px;
+  min-height: 52px;
+  border-radius: 18px;
+  font-weight: 700;
+  box-shadow: 0 18px 34px -30px rgba(34, 62, 109, 0.32);
 }
 
 .footer-secondary-btn {
-  border-color: var(--border-primary);
-  color: var(--text-secondary);
-  background: var(--bg-card);
+  border-color: rgba(214, 224, 242, 0.9);
+  color: #38588f;
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .footer-secondary-btn:hover {
-  border-color: var(--border-secondary);
-  color: var(--text-primary);
-  background: var(--bg-card-hover);
+  border-color: rgba(140, 183, 255, 0.86);
+  color: #234f97;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .footer-primary-btn {
   border: none;
-  background: linear-gradient(135deg, var(--accent) 0%, #0284c7 100%);
-  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.28);
+  background: linear-gradient(135deg, #ff7a1a, #ff9a3d);
+  box-shadow: 0 24px 40px -28px rgba(255, 108, 30, 0.46);
 }
 
 .footer-primary-btn:hover {
-  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
-  box-shadow: 0 10px 22px rgba(14, 165, 233, 0.34);
+  background: linear-gradient(135deg, #ff8a2c, #ffad55);
+  box-shadow: 0 26px 44px -30px rgba(255, 108, 30, 0.52);
   color: #fff;
+}
+
+:global(.dark) :global(.compliance-dialog-overlay) {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(78, 180, 255, 0.12), transparent 24%),
+    radial-gradient(circle at 86% 14%, rgba(255, 156, 84, 0.1), transparent 22%),
+    radial-gradient(circle at 50% 100%, rgba(135, 102, 255, 0.09), transparent 28%),
+    rgba(6, 12, 24, 0.18);
+}
+
+:global(.dark) :deep(.el-dialog.compliance-dialog) {
+  border-color: rgba(73, 96, 136, 0.72);
+  background:
+    linear-gradient(180deg, rgba(14, 25, 46, 0.96), rgba(18, 31, 57, 0.92)),
+    linear-gradient(135deg, rgba(109, 170, 255, 0.06), rgba(255, 147, 92, 0.05));
+  box-shadow:
+    0 34px 80px -44px rgba(0, 0, 0, 0.75),
+    0 22px 42px -30px rgba(40, 79, 141, 0.34);
+}
+
+:global(.dark) .compliance-dialog :deep(.el-dialog__header),
+:global(.dark) .compliance-dialog :deep(.el-dialog__footer),
+:global(.dark) .risk-details-header {
+  border-color: rgba(66, 89, 128, 0.72);
+}
+
+:global(.dark) .compliance-dialog :deep(.el-dialog__title),
+:global(.dark) .section-title,
+:global(.dark) .risk-score-value,
+:global(.dark) .risk-item-title {
+  color: #e8efff;
+}
+
+:global(.dark) .compliance-dialog :deep(.el-dialog__headerbtn) {
+  background: rgba(18, 31, 57, 0.8);
+  color: #a9bce3;
+}
+
+:global(.dark) .compliance-meta-row,
+:global(.dark) .category-label,
+:global(.dark) .risk-summary-text,
+:global(.dark) .risk-item-desc,
+:global(.dark) .rectification-list {
+  color: #98acd2;
+}
+
+:global(.dark) .pdf-export-btn,
+:global(.dark) .footer-secondary-btn {
+  border-color: rgba(66, 89, 128, 0.82);
+  background: rgba(16, 28, 50, 0.82);
+  color: #d7e4ff;
+}
+
+:global(.dark) .risk-score-card,
+:global(.dark) .risk-details-card,
+:global(.dark) .rectification-card,
+:global(.dark) .risk-ring-inner {
+  border-color: rgba(66, 89, 128, 0.82);
+  background:
+    linear-gradient(180deg, rgba(16, 28, 50, 0.9), rgba(13, 22, 40, 0.84)),
+    radial-gradient(circle at top right, rgba(85, 104, 239, 0.14), transparent 28%);
+}
+
+:global(.dark) .risk-item {
+  border-color: rgba(66, 89, 128, 0.58);
 }
 
 @media (max-width: 1200px) {
@@ -1465,7 +1934,7 @@ const handleSubmit = async () => {
   }
 
   .compliance-dialog :deep(.el-dialog__footer) {
-    padding: 9px 16px 11px;
+    padding: 12px 16px;
   }
 
   .section-title {
@@ -1559,8 +2028,7 @@ const handleSubmit = async () => {
   .compliance-dialog :deep(.el-dialog__header),
   .compliance-dialog :deep(.el-dialog__body),
   .compliance-dialog :deep(.el-dialog__footer) {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding: 14px;
   }
 
   .compliance-meta-row {

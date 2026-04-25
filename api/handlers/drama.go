@@ -45,6 +45,10 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 			response.BadRequest(c, "请选择目标国家")
 			return
 		}
+		if errors.Is(err, services.ErrCompliancePrecheckInvalid) {
+			response.Error(c, 400, "COMPLIANCE_PRECHECK_REQUIRED", "合规预检已失效或内容已变化，请重新校验后再继续")
+			return
+		}
 		if errors.Is(err, services.ErrComplianceRiskForbidden) {
 			response.ErrorWithDetails(
 				c,
@@ -66,13 +70,15 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 }
 
 func (h *DramaHandler) CheckCompliance(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
+
 	var req services.CreateDramaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	compliance, err := h.dramaService.EvaluateCompliance(&req)
+	compliance, complianceToken, err := h.dramaService.EvaluateCompliance(&req, deviceID)
 	if err != nil {
 		if errors.Is(err, services.ErrTargetCountryRequired) {
 			response.BadRequest(c, "请选择目标国家")
@@ -83,7 +89,8 @@ func (h *DramaHandler) CheckCompliance(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"compliance": compliance,
+		"compliance":       compliance,
+		"compliance_token": complianceToken,
 	})
 }
 

@@ -60,7 +60,10 @@
               @change="handleCountryChange"
               @visible-change="handleCountryVisibleChange"
               placeholder="请选择目标国家"
-              :class="['country-select', { 'has-value': (form.target_country?.length || 0) > 0 }]"
+              :class="[
+                'country-select',
+                { 'has-value': (form.target_country?.length || 0) > 0 },
+              ]"
             >
               <el-option
                 v-for="country in filteredCountries"
@@ -114,105 +117,144 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
-import { dramaAPI } from '@/api/drama'
-import { ALL_COUNTRIES } from '@/constants/countries'
-import type { ComplianceResult, CreateDramaRequest } from '@/types/drama'
-import { handleFormEnterNavigation } from '@/utils/formFocus'
+import { computed, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
+import {
+  ElMessage,
+  ElMessageBox,
+  type FormInstance,
+  type FormRules,
+} from "element-plus";
+import { ArrowLeft, ArrowRight } from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
+import { dramaAPI } from "@/api/drama";
+import { ALL_COUNTRIES } from "@/constants/countries";
+import type { ComplianceResult, CreateDramaRequest } from "@/types/drama";
+import {
+  clearCreateDramaDraft,
+  consumeCreateDramaDraft,
+} from "@/utils/createDramaDraft";
+import { handleFormEnterNavigation } from "@/utils/formFocus";
 import {
   buildCreateDramaPayload,
   getComplianceRiskMeta,
   localizeSuggestedCategories,
-  normalizeComplianceResult
-} from '@/utils/compliance'
-import { AppHeader } from '@/components/common'
+  normalizeComplianceResult,
+} from "@/utils/compliance";
+import { AppHeader } from "@/components/common";
 
-const router = useRouter()
-const { t } = useI18n()
-const formRef = ref<FormInstance>()
-const loading = ref(false)
-const countryKeyword = ref('')
+const router = useRouter();
+const { t } = useI18n();
+const formRef = ref<FormInstance>();
+const loading = ref(false);
+const countryKeyword = ref("");
 
 const form = reactive<CreateDramaRequest>({
-  title: '',
-  description: '',
+  title: "",
+  description: "",
   target_country: [],
-  material_composition: '',
-  marketing_selling_points: ''
-})
+  material_composition: "",
+  marketing_selling_points: "",
+});
+
+onMounted(() => {
+  const draft = consumeCreateDramaDraft();
+  if (!draft) {
+    return;
+  }
+
+  form.title = draft.title;
+  form.description = draft.description;
+  form.target_country = draft.target_country;
+  form.material_composition = draft.material_composition || "";
+  form.marketing_selling_points = draft.marketing_selling_points || "";
+  form.genre = draft.genre;
+  form.tags = draft.tags;
+});
 
 const filteredCountries = computed(() => {
-  const keyword = countryKeyword.value.trim().toLowerCase()
+  const keyword = countryKeyword.value.trim().toLowerCase();
   if (!keyword) {
-    return ALL_COUNTRIES
+    return ALL_COUNTRIES;
   }
-  return ALL_COUNTRIES.filter((country) => country.searchText.includes(keyword))
-})
+  return ALL_COUNTRIES.filter((country) =>
+    country.searchText.includes(keyword),
+  );
+});
 
 const handleCountryFilter = (keyword: string) => {
-  countryKeyword.value = keyword
-}
+  countryKeyword.value = keyword;
+};
 
 const handleCountryVisibleChange = (visible: boolean) => {
   if (!visible) {
-    countryKeyword.value = ''
+    countryKeyword.value = "";
   }
-}
+};
 
 const handleCountryChange = () => {
-  countryKeyword.value = ''
-}
+  countryKeyword.value = "";
+};
 
 const rules: FormRules = {
   title: [
-    { required: true, message: '请输入项目标题', trigger: 'blur' },
-    { min: 1, max: 50, message: '标题长度在 1 到 50 个字符', trigger: 'blur' }
+    { required: true, message: "请输入项目标题", trigger: "blur" },
+    { min: 1, max: 50, message: "标题长度在 1 到 50 个字符", trigger: "blur" },
   ],
   description: [
-    { required: true, message: '请输入项目描述', trigger: 'blur' },
-    { min: 1, max: 500, message: '描述长度在 1 到 500 个字符', trigger: 'blur' }
+    { required: true, message: "请输入项目描述", trigger: "blur" },
+    {
+      min: 1,
+      max: 500,
+      message: "描述长度在 1 到 500 个字符",
+      trigger: "blur",
+    },
   ],
   target_country: [
-    { type: 'array', required: true, min: 1, message: '请选择目标国家', trigger: 'change' }
+    {
+      type: "array",
+      required: true,
+      min: 1,
+      message: "请选择目标国家",
+      trigger: "change",
+    },
   ],
   material_composition: [
-    { max: 200, message: '材质/成分长度不能超过 200 个字符', trigger: 'blur' }
+    { max: 200, message: "材质/成分长度不能超过 200 个字符", trigger: "blur" },
   ],
   marketing_selling_points: [
-    { max: 200, message: '宣传卖点长度不能超过 200 个字符', trigger: 'blur' }
-  ]
-}
+    { max: 200, message: "宣传卖点长度不能超过 200 个字符", trigger: "blur" },
+  ],
+};
 
 const escapeHtml = (value: string) =>
   value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const renderList = (items: string[]) => {
   if (!items.length) {
-    return '<li>无</li>'
+    return "<li>无</li>";
   }
-  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
-}
+  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+};
 
 const showComplianceReport = async (compliance: ComplianceResult) => {
-  const riskMeta = getComplianceRiskMeta(compliance)
-  const levelLabel = compliance.level_label || riskMeta.text
-  const riskLabel = `${levelLabel}（${riskMeta.range}）`
-  const localizedCategories = localizeSuggestedCategories(compliance.suggested_categories || [])
+  const riskMeta = getComplianceRiskMeta(compliance);
+  const levelLabel = compliance.level_label || riskMeta.text;
+  const riskLabel = `${levelLabel}（${riskMeta.range}）`;
+  const localizedCategories = localizeSuggestedCategories(
+    compliance.suggested_categories || [],
+  );
 
   const html = `
     <div style="line-height: 1.6;">
       <p><strong>风险评分：</strong><span style="color:${riskMeta.color};font-weight:700;">${compliance.score}</span></p>
       <p><strong>风险等级：</strong><span style="color:${riskMeta.color};font-weight:700;">${riskLabel}</span></p>
-      <p><strong>评估结论：</strong>${escapeHtml(compliance.summary || '无')}</p>
+      <p><strong>评估结论：</strong>${escapeHtml(compliance.summary || "无")}</p>
       <p><strong>不合规点：</strong></p>
       <ul>${renderList(compliance.non_compliance_points || [])}</ul>
       <p><strong>整改建议：</strong></p>
@@ -220,56 +262,59 @@ const showComplianceReport = async (compliance: ComplianceResult) => {
       <p><strong>建议类目：</strong></p>
       <ul>${renderList(localizedCategories)}</ul>
     </div>
-  `
+  `;
 
-  await ElMessageBox.alert(html, t('drama.complianceReportTitle'), {
-    confirmButtonText: t('common.confirm'),
-    dangerouslyUseHTMLString: true
-  })
-}
+  await ElMessageBox.alert(html, t("drama.complianceReportTitle"), {
+    confirmButtonText: t("common.confirm"),
+    dangerouslyUseHTMLString: true,
+  });
+};
 
 const tryShowComplianceFromError = async (error: any): Promise<boolean> => {
-  const compliance = normalizeComplianceResult(error?.details?.compliance)
+  const compliance = normalizeComplianceResult(error?.details?.compliance);
   if (!compliance) {
-    return false
+    return false;
   }
-  await showComplianceReport(compliance)
-  return true
-}
+  await showComplianceReport(compliance);
+  return true;
+};
 
 // Submit form / 提交表单
 const handleSubmit = async () => {
-  if (!formRef.value) return
+  if (!formRef.value) return;
 
-  const valid = await formRef.value.validate().then(() => true).catch(() => false)
-  if (!valid) return
+  const valid = await formRef.value
+    .validate()
+    .then(() => true)
+    .catch(() => false);
+  if (!valid) return;
 
-  loading.value = true
+  loading.value = true;
   try {
-    const payload = buildCreateDramaPayload(form)
-    const result = await dramaAPI.create(payload)
-    const dramaId = String(result.drama.id)
-    await showComplianceReport(result.compliance)
+    const payload = buildCreateDramaPayload(form);
+    const result = await dramaAPI.create(payload);
+    const dramaId = String(result.drama.id);
+    clearCreateDramaDraft();
+    await showComplianceReport(result.compliance);
 
-    ElMessage.success('创建成功')
-    router.push(`/dramas/${dramaId}`)
+    ElMessage.success("创建成功");
+    router.push(`/dramas/${dramaId}`);
   } catch (error: any) {
-    const hasCompliance = await tryShowComplianceFromError(error)
+    const hasCompliance = await tryShowComplianceFromError(error);
     if (hasCompliance) {
-      ElMessage.warning(error.message || '风险过高，请先整改后再提交')
-      return
+      ElMessage.warning(error.message || "风险过高，请先整改后再提交");
+      return;
     }
-    ElMessage.error(error.message || '创建失败')
+    ElMessage.error(error.message || "创建失败");
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 // Go back / 返回上一页
 const goBack = () => {
-  router.back()
-}
-
+  router.back();
+};
 </script>
 
 <style scoped>

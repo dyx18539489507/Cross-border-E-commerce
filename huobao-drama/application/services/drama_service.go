@@ -1,11 +1,15 @@
 package services
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/drama-generator/backend/domain/models"
@@ -15,15 +19,34 @@ import (
 )
 
 type DramaService struct {
-	db                *gorm.DB
-	log               *logger.Logger
-	complianceService *ComplianceService
+	db                 *gorm.DB
+	log                *logger.Logger
+	complianceService  *ComplianceService
+	complianceCache    map[string]cachedComplianceResult
+	complianceCacheMu  sync.RWMutex
+	complianceTokens   map[string]issuedComplianceToken
+	complianceTokensMu sync.RWMutex
 }
 
 var (
-	ErrTargetCountryRequired   = errors.New("target_country is required")
-	ErrComplianceRiskForbidden = errors.New("compliance risk level red, creation forbidden")
+	ErrTargetCountryRequired     = errors.New("target_country is required")
+	ErrComplianceRiskForbidden   = errors.New("compliance risk level red, creation forbidden")
+	ErrCompliancePrecheckInvalid = errors.New("compliance precheck token invalid or expired")
 )
+
+const complianceCacheTTL = 10 * time.Minute
+
+type cachedComplianceResult struct {
+	result    *ComplianceResult
+	expiresAt time.Time
+}
+
+type issuedComplianceToken struct {
+	cacheKey  string
+	deviceID  string
+	result    *ComplianceResult
+	expiresAt time.Time
+}
 
 func normalizeStaticURL(raw *string) {
 	NormalizeImageURLPtr(raw)
@@ -52,11 +75,144 @@ func normalizeDramaImageURLs(drama *models.Drama) {
 	}
 }
 
+type imageGenerationStatusSnapshot struct {
+	Status   string
+	ErrorMsg *string
+}
+
+type imageGenerationStatusRow struct {
+	TargetID uint
+	Status   models.ImageGenerationStatus
+	ErrorMsg *string
+}
+
+func appendUniqueIDs(dst []uint, seen map[uint]struct{}, ids ...uint) []uint {
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		dst = append(dst, id)
+	}
+	return dst
+}
+
+func (s *DramaService) loadLatestImageStatuses(column string, ids []uint) (map[uint]imageGenerationStatusSnapshot, error) {
+	statuses := make(map[uint]imageGenerationStatusSnapshot, len(ids))
+	if len(ids) == 0 {
+		return statuses, nil
+	}
+
+	var rows []imageGenerationStatusRow
+	activeStatuses := []string{string(models.ImageStatusPending), string(models.ImageStatusProcessing)}
+	activeSelect := fmt.Sprintf("%s AS target_id, status, error_msg", column)
+
+	if err := s.db.Model(&models.ImageGeneration{}).
+		Select(activeSelect).
+		Where(fmt.Sprintf("%s IN ?", column), ids).
+		Where("status IN ?", activeStatuses).
+		Order(fmt.Sprintf("%s ASC, created_at DESC", column)).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		if _, exists := statuses[row.TargetID]; exists {
+			continue
+		}
+		statuses[row.TargetID] = imageGenerationStatusSnapshot{
+			Status:   string(row.Status),
+			ErrorMsg: row.ErrorMsg,
+		}
+	}
+
+	rows = nil
+	failedSelect := fmt.Sprintf("%s AS target_id, status, error_msg", column)
+	if err := s.db.Model(&models.ImageGeneration{}).
+		Select(failedSelect).
+		Where(fmt.Sprintf("%s IN ?", column), ids).
+		Where("status = ?", models.ImageStatusFailed).
+		Order(fmt.Sprintf("%s ASC, created_at DESC", column)).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		if _, exists := statuses[row.TargetID]; exists {
+			continue
+		}
+		statuses[row.TargetID] = imageGenerationStatusSnapshot{
+			Status:   string(row.Status),
+			ErrorMsg: row.ErrorMsg,
+		}
+	}
+
+	return statuses, nil
+}
+
+func (s *DramaService) applyEpisodeImageStatuses(drama *models.Drama) error {
+	characterSeen := make(map[uint]struct{})
+	sceneSeen := make(map[uint]struct{})
+	characterIDs := make([]uint, 0)
+	sceneIDs := make([]uint, 0)
+
+	for i := range drama.Episodes {
+		for _, character := range drama.Episodes[i].Characters {
+			characterIDs = appendUniqueIDs(characterIDs, characterSeen, character.ID)
+		}
+		for _, scene := range drama.Episodes[i].Scenes {
+			sceneIDs = appendUniqueIDs(sceneIDs, sceneSeen, scene.ID)
+		}
+	}
+
+	characterStatuses, err := s.loadLatestImageStatuses("character_id", characterIDs)
+	if err != nil {
+		return err
+	}
+	sceneStatuses, err := s.loadLatestImageStatuses("scene_id", sceneIDs)
+	if err != nil {
+		return err
+	}
+
+	for i := range drama.Episodes {
+		for j := range drama.Episodes[i].Characters {
+			status, exists := characterStatuses[drama.Episodes[i].Characters[j].ID]
+			if !exists {
+				drama.Episodes[i].Characters[j].ImageGenerationStatus = nil
+				drama.Episodes[i].Characters[j].ImageGenerationError = nil
+				continue
+			}
+			statusValue := status.Status
+			drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusValue
+			drama.Episodes[i].Characters[j].ImageGenerationError = status.ErrorMsg
+		}
+
+		for j := range drama.Episodes[i].Scenes {
+			status, exists := sceneStatuses[drama.Episodes[i].Scenes[j].ID]
+			if !exists {
+				drama.Episodes[i].Scenes[j].ImageGenerationStatus = nil
+				drama.Episodes[i].Scenes[j].ImageGenerationError = nil
+				continue
+			}
+			statusValue := status.Status
+			drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusValue
+			drama.Episodes[i].Scenes[j].ImageGenerationError = status.ErrorMsg
+		}
+	}
+
+	return nil
+}
+
 func NewDramaService(db *gorm.DB, log *logger.Logger, complianceService *ComplianceService) *DramaService {
 	return &DramaService{
 		db:                db,
 		log:               log,
 		complianceService: complianceService,
+		complianceCache:   make(map[string]cachedComplianceResult),
+		complianceTokens:  make(map[string]issuedComplianceToken),
 	}
 }
 
@@ -66,6 +222,7 @@ type CreateDramaRequest struct {
 	TargetCountry          []string `json:"target_country" binding:"required,min=1"`
 	MaterialComposition    string   `json:"material_composition" binding:"omitempty,max=200"`
 	MarketingSellingPoints string   `json:"marketing_selling_points" binding:"omitempty,max=200"`
+	ComplianceToken        string   `json:"compliance_token" binding:"omitempty,max=128"`
 	Genre                  string   `json:"genre"`
 	Tags                   string   `json:"tags"`
 }
@@ -116,7 +273,162 @@ func prepareCreateDramaInput(req *CreateDramaRequest) (*preparedCreateDramaInput
 	}, nil
 }
 
-func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput) *ComplianceResult {
+func cloneComplianceResult(result *ComplianceResult) *ComplianceResult {
+	if result == nil {
+		return nil
+	}
+
+	return &ComplianceResult{
+		Score:                    result.Score,
+		Level:                    result.Level,
+		LevelLabel:               result.LevelLabel,
+		Summary:                  result.Summary,
+		NonCompliancePoints:      append([]string{}, result.NonCompliancePoints...),
+		RectificationSuggestions: append([]string{}, result.RectificationSuggestions...),
+		SuggestedCategories:      append([]string{}, result.SuggestedCategories...),
+	}
+}
+
+func buildComplianceCacheKey(input *preparedCreateDramaInput, deviceID string) string {
+	payload := struct {
+		DeviceID               string   `json:"device_id"`
+		Title                  string   `json:"title"`
+		Description            string   `json:"description"`
+		TargetCountry          []string `json:"target_country"`
+		MaterialComposition    string   `json:"material_composition"`
+		MarketingSellingPoints string   `json:"marketing_selling_points"`
+	}{
+		DeviceID:               strings.TrimSpace(deviceID),
+		Title:                  input.title,
+		Description:            input.description,
+		TargetCountry:          append([]string{}, input.targetCountries...),
+		MaterialComposition:    input.materialComposition,
+		MarketingSellingPoints: input.marketingSellingPoints,
+	}
+
+	raw, _ := json.Marshal(payload)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func generateComplianceToken() string {
+	randomBytes := make([]byte, 18)
+	if _, err := rand.Read(randomBytes); err != nil {
+		fallback := sha256.Sum256([]byte(fmt.Sprintf("compliance-%d", time.Now().UnixNano())))
+		return hex.EncodeToString(fallback[:16])
+	}
+	return hex.EncodeToString(randomBytes)
+}
+
+func (s *DramaService) getCachedComplianceResult(cacheKey string) *ComplianceResult {
+	if cacheKey == "" {
+		return nil
+	}
+
+	now := time.Now()
+
+	s.complianceCacheMu.RLock()
+	entry, ok := s.complianceCache[cacheKey]
+	s.complianceCacheMu.RUnlock()
+	if !ok {
+		return nil
+	}
+
+	if now.After(entry.expiresAt) {
+		s.complianceCacheMu.Lock()
+		current, exists := s.complianceCache[cacheKey]
+		if exists && now.After(current.expiresAt) {
+			delete(s.complianceCache, cacheKey)
+		}
+		s.complianceCacheMu.Unlock()
+		return nil
+	}
+
+	return cloneComplianceResult(entry.result)
+}
+
+func (s *DramaService) setCachedComplianceResult(cacheKey string, result *ComplianceResult) {
+	if cacheKey == "" || result == nil {
+		return
+	}
+
+	s.complianceCacheMu.Lock()
+	s.complianceCache[cacheKey] = cachedComplianceResult{
+		result:    cloneComplianceResult(result),
+		expiresAt: time.Now().Add(complianceCacheTTL),
+	}
+	s.complianceCacheMu.Unlock()
+}
+
+func (s *DramaService) issueComplianceToken(cacheKey, deviceID string, result *ComplianceResult) string {
+	if cacheKey == "" || result == nil {
+		return ""
+	}
+
+	token := generateComplianceToken()
+	s.complianceTokensMu.Lock()
+	s.complianceTokens[token] = issuedComplianceToken{
+		cacheKey:  cacheKey,
+		deviceID:  strings.TrimSpace(deviceID),
+		result:    cloneComplianceResult(result),
+		expiresAt: time.Now().Add(complianceCacheTTL),
+	}
+	s.complianceTokensMu.Unlock()
+	return token
+}
+
+func (s *DramaService) getComplianceResultByToken(token string, input *preparedCreateDramaInput, deviceID string) (*ComplianceResult, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	now := time.Now()
+	s.complianceTokensMu.RLock()
+	entry, ok := s.complianceTokens[token]
+	s.complianceTokensMu.RUnlock()
+	if !ok {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	if now.After(entry.expiresAt) {
+		s.complianceTokensMu.Lock()
+		current, exists := s.complianceTokens[token]
+		if exists && now.After(current.expiresAt) {
+			delete(s.complianceTokens, token)
+		}
+		s.complianceTokensMu.Unlock()
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	normalizedDeviceID := strings.TrimSpace(deviceID)
+	if entry.deviceID != normalizedDeviceID {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	expectedCacheKey := buildComplianceCacheKey(input, normalizedDeviceID)
+	if entry.cacheKey != expectedCacheKey {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	if cached := s.getCachedComplianceResult(entry.cacheKey); cached != nil {
+		return cached, nil
+	}
+
+	if entry.result == nil {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	s.setCachedComplianceResult(entry.cacheKey, entry.result)
+	return cloneComplianceResult(entry.result), nil
+}
+
+func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput, deviceID string) *ComplianceResult {
+	cacheKey := buildComplianceCacheKey(input, deviceID)
+	if cached := s.getCachedComplianceResult(cacheKey); cached != nil {
+		return cached
+	}
+
 	complianceResult := &ComplianceResult{
 		Score:                    0,
 		Level:                    ComplianceRiskGreen,
@@ -140,15 +452,23 @@ func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput) *Comp
 		}
 	}
 
+	s.setCachedComplianceResult(cacheKey, complianceResult)
 	return complianceResult
 }
 
-func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest) (*ComplianceResult, error) {
+func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest, deviceIDs ...string) (*ComplianceResult, string, error) {
 	input, err := prepareCreateDramaInput(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return s.evaluateCompliance(input), nil
+	deviceID := ""
+	if len(deviceIDs) > 0 {
+		deviceID = strings.TrimSpace(deviceIDs[0])
+	}
+	complianceResult := s.evaluateCompliance(input, deviceID)
+	cacheKey := buildComplianceCacheKey(input, deviceID)
+	complianceToken := s.issueComplianceToken(cacheKey, deviceID, complianceResult)
+	return complianceResult, complianceToken, nil
 }
 
 func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceID string) (*models.Drama, *ComplianceResult, error) {
@@ -157,7 +477,15 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceID string) (*m
 		return nil, nil, err
 	}
 
-	complianceResult := s.evaluateCompliance(input)
+	var complianceResult *ComplianceResult
+	if strings.TrimSpace(req.ComplianceToken) != "" {
+		complianceResult, err = s.getComplianceResultByToken(req.ComplianceToken, input, deviceID)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		complianceResult = s.evaluateCompliance(input, deviceID)
+	}
 
 	if complianceResult.Level == ComplianceRiskRed {
 		s.log.Warnw(
@@ -208,7 +536,6 @@ func (s *DramaService) GetDrama(dramaID string, deviceID string) (*models.Drama,
 	var drama models.Drama
 	err := s.db.Where("id = ? AND device_id = ?", dramaID, deviceID).
 		Preload("Characters").          // 加载Drama级别的角色
-		Preload("Scenes").              // 加载Drama级别的场景
 		Preload("Episodes.Characters"). // 加载每个章节关联的角色
 		Preload("Episodes.Scenes").     // 加载每个章节关联的场景
 		Preload("Episodes.Storyboards", func(db *gorm.DB) *gorm.DB {
@@ -225,6 +552,10 @@ func (s *DramaService) GetDrama(dramaID string, deviceID string) (*models.Drama,
 	}
 
 	normalizeDramaImageURLs(&drama)
+	if err := s.applyEpisodeImageStatuses(&drama); err != nil {
+		s.log.Errorw("Failed to load episode image statuses", "error", err, "drama_id", dramaID)
+		return nil, err
+	}
 
 	// 统计每个剧集的时长（基于场景时长之和）
 	for i := range drama.Episodes {
@@ -234,75 +565,12 @@ func (s *DramaService) GetDrama(dramaID string, deviceID string) (*models.Drama,
 		}
 		// 更新剧集时长（秒转分钟，向上取整）
 		durationMinutes := (totalDuration + 59) / 60
+		originalDuration := drama.Episodes[i].Duration
 		drama.Episodes[i].Duration = durationMinutes
 
 		// 如果数据库中的时长与计算的不一致，更新数据库
-		if drama.Episodes[i].Duration != durationMinutes {
+		if originalDuration != durationMinutes {
 			s.db.Model(&models.Episode{}).Where("id = ?", drama.Episodes[i].ID).Update("duration", durationMinutes)
-		}
-
-		// 查询角色的图片生成状态
-		for j := range drama.Episodes[i].Characters {
-			var imageGen models.ImageGeneration
-			err := s.db.Where("character_id = ? AND (status = ? OR status = ?)",
-				drama.Episodes[i].Characters[j].ID, "pending", "processing").
-				Order("created_at DESC").
-				First(&imageGen).Error
-
-			if err == nil {
-				// 找到生成中的记录，设置状态
-				statusStr := string(imageGen.Status)
-				drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusStr
-				if imageGen.ErrorMsg != nil {
-					drama.Episodes[i].Characters[j].ImageGenerationError = imageGen.ErrorMsg
-				}
-			} else if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 检查是否有失败的记录
-				err := s.db.Where("character_id = ? AND status = ?",
-					drama.Episodes[i].Characters[j].ID, "failed").
-					Order("created_at DESC").
-					First(&imageGen).Error
-
-				if err == nil {
-					statusStr := string(imageGen.Status)
-					drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusStr
-					if imageGen.ErrorMsg != nil {
-						drama.Episodes[i].Characters[j].ImageGenerationError = imageGen.ErrorMsg
-					}
-				}
-			}
-		}
-
-		// 查询场景的图片生成状态
-		for j := range drama.Episodes[i].Scenes {
-			var imageGen models.ImageGeneration
-			err := s.db.Where("scene_id = ? AND (status = ? OR status = ?)",
-				drama.Episodes[i].Scenes[j].ID, "pending", "processing").
-				Order("created_at DESC").
-				First(&imageGen).Error
-
-			if err == nil {
-				// 找到生成中的记录，设置状态
-				statusStr := string(imageGen.Status)
-				drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusStr
-				if imageGen.ErrorMsg != nil {
-					drama.Episodes[i].Scenes[j].ImageGenerationError = imageGen.ErrorMsg
-				}
-			} else if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 检查是否有失败的记录
-				err := s.db.Where("scene_id = ? AND status = ?",
-					drama.Episodes[i].Scenes[j].ID, "failed").
-					Order("created_at DESC").
-					First(&imageGen).Error
-
-				if err == nil {
-					statusStr := string(imageGen.Status)
-					drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusStr
-					if imageGen.ErrorMsg != nil {
-						drama.Episodes[i].Scenes[j].ImageGenerationError = imageGen.ErrorMsg
-					}
-				}
-			}
 		}
 	}
 

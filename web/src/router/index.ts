@@ -4,13 +4,62 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
+    name: 'Home',
+    component: () => import('../views/home/HomeLanding.vue')
+  },
+  {
+    path: '/products',
+    name: 'Product',
+    component: () => import('../views/home/ProductLanding.vue')
+  },
+  {
+    path: '/pricing',
+    redirect: '/'
+  },
+  {
+    path: '/about',
+    name: 'About',
+    component: () => import('../views/home/AboutLanding.vue')
+  },
+  {
+    path: '/dramas',
     name: 'DramaList',
-    component: () => import('../views/drama/DramaList.vue')
+    component: () => import('../views/drama/WorkbenchDashboard.vue')
   },
   {
     path: '/dramas/create',
     name: 'DramaCreate',
     component: () => import('../views/drama/DramaCreate.vue')
+  },
+  {
+    path: '/compliance',
+    name: 'ComplianceAnalysis',
+    component: () => import('../views/drama/ComplianceAnalysis.vue')
+  },
+  {
+    path: '/analytics',
+    name: 'DataAnalysis',
+    component: () => import('../views/drama/DataAnalysis.vue')
+  },
+  {
+    path: '/workspace/script',
+    name: 'WorkspaceScript',
+    component: () => import('../views/script/ScriptEdit.vue')
+  },
+  {
+    path: '/workspace/content',
+    name: 'WorkspaceContent',
+    component: () => import('../views/generation/ImageGeneration.vue')
+  },
+  {
+    path: '/workspace/timeline',
+    name: 'WorkspaceTimeline',
+    component: () => import('../views/editor/TimelineEditor.vue')
+  },
+  {
+    path: '/dramas/:id/script',
+    name: 'DramaScriptStage',
+    component: () => import('../views/script/ScriptEdit.vue')
   },
   {
     path: '/dramas/:id',
@@ -66,7 +115,10 @@ const routes: RouteRecordRaw[] = [
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes
+  routes,
+  scrollBehavior() {
+    return { top: 0, left: 0 }
+  }
 })
 
 // 开源版本 - 无需认证

@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	services2 "github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/drama-generator/backend/pkg/response"
@@ -104,6 +105,7 @@ func (h *VideoMergeHandler) DeleteMerge(c *gin.Context) {
 }
 
 func (h *VideoMergeHandler) DistributeVideo(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
 	mergeIDStr := c.Param("merge_id")
 	mergeID, err := strconv.ParseUint(mergeIDStr, 10, 32)
 	if err != nil {
@@ -117,7 +119,7 @@ func (h *VideoMergeHandler) DistributeVideo(c *gin.Context) {
 		return
 	}
 
-	distributions, err := h.mergeService.DistributeVideo(uint(mergeID), &req)
+	distributions, err := h.mergeService.DistributeVideo(uint(mergeID), &req, deviceID)
 	if err != nil {
 		h.log.Errorw("Failed to distribute merged video", "error", err, "merge_id", mergeID)
 		response.BadRequest(c, err.Error())

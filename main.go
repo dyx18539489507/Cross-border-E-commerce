@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/drama-generator/backend/api/routes"
+	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/infrastructure/database"
+	scheduler2 "github.com/drama-generator/backend/infrastructure/scheduler"
 	"github.com/drama-generator/backend/infrastructure/storage"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -59,6 +61,14 @@ func main() {
 
 	router := routes.SetupRouter(cfg, db, logr, localStorage)
 
+	distributionService := services.NewDistributionService(db, cfg, logr)
+	distributionScheduler := scheduler2.NewDistributionScheduler(
+		distributionService,
+		time.Duration(cfg.Distribution.StatusPollIntervalSecond)*time.Second,
+		logr,
+	)
+	distributionScheduler.Start()
+
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      router,
@@ -91,6 +101,7 @@ func main() {
 	logr.Info("Shutting down server...")
 
 	// 清理资源
+	distributionScheduler.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

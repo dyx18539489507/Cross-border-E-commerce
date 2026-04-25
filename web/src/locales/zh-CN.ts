@@ -1,4 +1,7 @@
 export default {
+  app: {
+    name: '数字丝路'
+  },
   nav: {
     home: '首页',
     characters: '角色管理',
@@ -6,7 +9,8 @@ export default {
     videos: '视频管理',
     assets: '资源库',
     settings: '设置',
-    dramas: '短剧项目'
+    dramas: '短剧项目',
+    about: '关于'
   },
   dashboard: {
     title: '🎬 Drama Generator',
@@ -44,6 +48,9 @@ export default {
     selectAll: '全选',
     loading: '加载中...',
     success: '成功',
+    error: '错误',
+    warning: '警告',
+    info: '提示',
     failed: '失败',
     noData: '暂无数据',
     pleaseSelect: '请选择',
@@ -66,12 +73,17 @@ export default {
     deleteAsset: '删除素材',
     confirmDelete: '确认删除',
     tip: '提示',
+    actions: '操作',
     status: '状态',
     createdAt: '创建时间',
     updatedAt: '更新时间',
     perPage: '每页条数',
     name: '名称',
     description: '描述'
+  },
+  mobileAccessReminder: {
+    message: '当前网站暂未完成移动端适配，为了获得更好的使用体验，建议您使用电脑端登录。',
+    confirm: '我知道了'
   },
   settings: {
     title: '设置',
@@ -86,6 +98,34 @@ export default {
     languageSwitchItem3: '已生成的内容不会自动更新，需要重新生成',
     language: '语言',
     theme: '主题'
+  },
+  theme: {
+    switchToLight: '切换到浅色模式',
+    switchToDark: '切换到深色模式'
+  },
+  languageSwitcher: {
+    options: {
+      zh: '简体中文',
+      en: 'English'
+    },
+    current: {
+      zh: '中文',
+      en: 'English'
+    },
+    switching: '正在切换语言...',
+    confirm: {
+      title: '切换语言',
+      zh: '切换为中文后，后端生成的所有提示词、角色描述、场景描述等都将使用中文。是否继续？',
+      en: '切换为英文后，后端生成的所有提示词、角色描述、场景描述等都将使用英文。是否继续？'
+    },
+    messages: {
+      switchedToZh: '语言已切换为中文',
+      switchedToEn: 'Language switched to English',
+      unknownError: '未知错误',
+      loadFailed: '获取语言设置失败',
+      switchFailedZh: '切换语言失败: {error}',
+      switchFailedEn: 'Failed to switch language: {error}'
+    }
   },
   aiConfig: {
     title: 'AI 服务配置',
@@ -137,10 +177,43 @@ export default {
   },
   drama: {
     title: '项目管理',
+    overviewTitle: '项目概览',
+    currentFocusTitle: '当前项目',
+    projectListTitle: '项目列表',
+    emptyStateTitle: '暂无项目',
     create: '创建项目',
     totalProjects: '共 {count} 个项目',
     createNew: '创建新项目',
-    createDesc: '',
+    homeKicker: 'AI 驱动的跨境内容工作台',
+    homeHeadline: '智启全球市场',
+    homeDescription: '从合规判断到内容生成，从数字人视频到数据优化，为跨境卖家提供全链路 AI 解决方案。',
+    homePrimaryAction: '立即开始',
+    homeSecondaryAction: '了解更多',
+    homePillProjects: '项目总数',
+    homePillActive: '推进中',
+    homeStatEpisodes: '章节总数',
+    homeStatsLive: '进行中',
+    homeStatsLiveHint: '正在规划、生成或制作中的项目',
+    homeStatsDraft: '草稿',
+    homeStatsDraftHint: '等待继续完善的草案',
+    homeStatsCompleted: '已完成',
+    homeStatsCompletedHint: '已完成并可继续复用的项目',
+    homeSpotlightLabel: '当前焦点',
+    homeSpotlightEmpty: '还没有项目被点亮',
+    homeSpotlightDescription: '创建第一个项目后，这里会自动显示最近更新的项目，作为你回到首页后的第一焦点入口。',
+    homeShelfEyebrow: '项目清单',
+    homeShelfTitle: '按最近更新继续处理',
+    homeShelfSubtitle: '保留原有全部操作能力，但让信息层次更直接。',
+    homeLedgerDescription: '项目列表保留原有全部操作，默认按更新时间浏览，方便直接继续处理。',
+    homeListHint: '支持查看、编辑、删除',
+    homeEmptyDescription: '创建第一个项目后，这里会自动出现当前焦点和项目清单。',
+    homeEpisodeCount: '{count} 集',
+    homeCardFootnote: '进入项目继续推进内容生产',
+    homeNoRecentUpdate: '暂无最近更新',
+    homeAwaitingProject: '等待首个项目启动',
+    homeLatestUpdateLabel: '最近更新',
+    homeAboutTitle: '让首页先讲清楚，再让项目快速落地',
+    homeAboutDescription: '这次改造只重做视觉层级和首页排版，不改变已有接口、弹窗、项目编辑、删除、分页和跳转逻辑。',
     aiConfig: 'AI配置',
     aiConfigTip: '请先配置 AI 服务后再创建项目',
     empty: '暂无项目，点击按钮创建新项目',
@@ -169,6 +242,13 @@ export default {
       edit: '编辑',
       view: '查看',
       delete: '删除'
+    },
+    messages: {
+      loadFailed: '加载项目失败',
+      saved: '保存成功',
+      saveFailed: '保存失败',
+      deleted: '删除成功',
+      deleteFailed: '删除失败'
     },
     management: {
       overview: '项目概览',
@@ -200,7 +280,27 @@ export default {
       charactersTip: '角色将在剧本生成阶段自动创建',
       sceneList: '场景列表',
       noScenes: '还没有场景',
-      scenesTip: '场景将在分镜生成阶段自动创建'
+      scenesTip: '场景将在分镜生成阶段自动创建',
+      editDescriptionTitle: '修改项目描述',
+      episodeStatus: {
+        draft: '草稿',
+        created: '已创建',
+        split: '已拆分'
+      },
+      sceneUnnamed: '未命名场景',
+      sceneNoDescription: '暂无场景描述',
+      messages: {
+        loadFailed: '加载项目数据失败',
+        descriptionUpdated: '项目描述已更新',
+        updateFailed: '更新失败',
+        deleteEpisodeConfirm: '确定要删除第 {number} 章吗？此操作将同时删除该章节的所有相关数据（角色、场景、分镜等）。',
+        episodeDeleted: '第 {number} 章删除成功',
+        enterSceneName: '请输入场景名称',
+        sceneAdded: '场景添加成功',
+        missingSceneId: '场景 ID 不存在，无法删除',
+        deleteSceneConfirm: '确定要删除场景“{name}”吗？此操作不可恢复。',
+        sceneDeleted: '场景已删除'
+      }
     }
   },
   character: {
@@ -223,7 +323,96 @@ export default {
     empty: '角色已在剧本生成阶段创建，您可以在此查看和编辑',
     backToProject: '返回项目',
     saveChanges: '保存修改',
-    nextStep: '下一步：生成角色图片'
+    nextStep: '下一步：生成角色图片',
+    roles: {
+      main: '主角',
+      supporting: '配角',
+      minor: '次要'
+    },
+    messages: {
+      saveSuccess: '保存成功',
+      saveFailed: '保存失败',
+      enterName: '请输入角色名称',
+      added: '角色添加成功',
+      addFailed: '添加失败',
+      editInDevelopment: '编辑功能开发中',
+      libraryDeleteHint: '该角色来自角色库，请前往角色库进行删除',
+      missingId: '角色 ID 不存在，无法删除',
+      deleteConfirm: '确定要删除角色“{name}”吗？此操作不可恢复。',
+      deleted: '角色已删除'
+    },
+    imagesPageTitle: '角色形象生成'
+  },
+  characterImages: {
+    batchGenerate: '批量生成 ({count})',
+    manageCharacters: '管理角色',
+    selectedCount: '已选择 {selected} / {total} 个角色',
+    returnToProject: '完成并返回项目',
+    generateSuccess: '{name} 的形象生成成功',
+    generateFailed: '{name} 生成失败',
+    selectCharactersWarning: '请选择要生成的角色',
+    maxBatchWarning: '单次最多生成 10 个角色',
+    batchSubmitted: '批量生成任务已提交，正在后台生成 {count} 个角色形象',
+    batchFailed: '批量生成失败',
+    batchCompleted: '批量生成完成',
+    noCharacters: '未找到角色信息，请先完成剧本生成',
+    loadFailed: '加载角色失败'
+  },
+  validation: {
+    projectNameRequired: '请输入项目标题',
+    projectNameLength: '标题长度在 1 到 50 个字符',
+    projectDescRequired: '请输入项目描述',
+    projectDescLength: '描述长度在 1 到 500 个字符',
+    targetCountryRequired: '请选择目标国家',
+    materialLength: '材质/成分长度不能超过 200 个字符',
+    marketingLength: '宣传卖点长度不能超过 200 个字符'
+  },
+  compliance: {
+    dialogTitle: '合规校验详情',
+    checkedAt: '校验时间',
+    exportPdf: '导出 PDF 报告',
+    blockedTitle: '当前评分 >= 80，禁止进入下一步，请先按整改建议完善信息。',
+    orangeTitle: '当前评分为橙色风险（60-79），可继续下一步，但建议先处理高风险项。',
+    score: '综合风险评分',
+    details: '不合规明细',
+    itemsPending: '{count} 项待处理',
+    rectification: '整改建议',
+    suggestedCategories: '建议类目',
+    editAction: '去修改',
+    editHint: '已保留当前内容，请在“创建新项目”页面修改后再提交。',
+    noResult: '暂无合规评估结果',
+    noIssue: '暂无明确不合规项，请人工复核。',
+    manualReviewSuggestion: '请结合目标国家法规继续完善商品信息。',
+    completeProductInfo: '请补充完整商品信息并重新进行合规校验。',
+    completeQualifications: '请补充相关资质文件并重新校验。',
+    reportTitle: '合规校验报告',
+    resultTitle: '评估结论',
+    pdfDownloaded: 'PDF 报告已下载',
+    exportFailed: '导出失败，请重试',
+    missingResult: '未获取到合规校验结果，请重试',
+    missingToken: '未获取到合规预检凭证，请重试',
+    blockedRetry: '风险评级为红色（>=80），请先整改后重试。',
+    orangeContinue: '当前项目为橙色高风险，已进入下一步，请优先处理不合规项。',
+    riskChanged: '风险评级发生变化，请根据最新整改建议处理后再继续。',
+    precheckExpired: '合规预检已失效，请重新校验后再继续。',
+    createFailed: '创建失败',
+    created: '创建成功',
+    defaultFileName: '合规校验报告',
+    noCategory: '无',
+    labels: {
+      score: '风险评分',
+      level: '风险等级',
+      summary: '评估结论',
+      issues: '不合规点',
+      suggestions: '整改建议',
+      categories: '建议类目'
+    },
+    riskLevel: {
+      green: '低风险',
+      yellow: '中风险',
+      orange: '高风险',
+      red: '禁止'
+    }
   },
   script: {
     title: '剧本生成',
@@ -307,7 +496,35 @@ export default {
     generate: '生成图片',
     loadFailed: '加载失败',
     generating: '生成中...',
-    generateFailed: '生成失败'
+    generateFailed: '生成失败',
+    empty: '暂无图片，开始生成吧！',
+    deleteConfirm: '确定删除该图片吗？',
+    status: {
+      pending: '等待中',
+      processing: '生成中',
+      completed: '已完成',
+      failed: '失败'
+    },
+    detailTitle: '图片详情',
+    provider: 'AI 服务',
+    model: '模型',
+    size: '尺寸',
+    resolution: '分辨率',
+    quality: '质量',
+    style: '风格',
+    steps: '采样步数',
+    seed: '随机种子',
+    createdAt: '创建时间',
+    completedAt: '完成时间',
+    prompt: '提示词',
+    negativePrompt: '反向提示词',
+    close: '关闭',
+    distribute: '一键分发',
+    downloadImage: '下载图片',
+    regenerate: '重新生成',
+    defaultTitle: 'AI 图片',
+    noDistributableAsset: '当前图片还没有可分发的资源',
+    generatingWait: '生成中，请稍候...'
   },
   dramaWorkflow: {
     returnToList: '返回',
@@ -465,6 +682,7 @@ export default {
     soundEffectDescription: '音效描述',
     durationSeconds: '时长(秒)',
     emptyLibrary: '角色库为空，请先生成或上传角色图片',
+    uncategorized: '未分类',
     textModelTip: '用于生成章节内容、角色、场景等文本',
     uploadFormatTip: '支持 jpg/png 格式，文件大小不超过 10MB',
     aiModelConfig: 'AI模型配置',
@@ -481,6 +699,43 @@ export default {
     seconds: '秒',
     videoDuration: '视频时长',
     downloadVideo: '下载视频'
+  },
+  dramaSettings: {
+    title: '项目设置',
+    tabs: {
+      basic: '基本信息',
+      distribution: '分发账号',
+      danger: '危险操作'
+    },
+    fields: {
+      title: '项目标题',
+      description: '项目描述',
+      genre: '类型',
+      status: '状态'
+    },
+    actions: {
+      save: '保存设置',
+      delete: '删除项目'
+    },
+    warningTitle: '警告',
+    dangerDescription: '以下操作不可恢复，请谨慎操作',
+    status: {
+      draft: '草稿',
+      planning: '策划中',
+      production: '制作中',
+      completed: '已完成',
+      archived: '已归档'
+    },
+    messages: {
+      saved: '设置保存成功',
+      saveFailed: '保存失败',
+      deleteConfirmTitle: '警告',
+      deleteConfirmMessage: '确定要删除此项目吗？此操作不可恢复！',
+      deleteConfirmButton: '确定删除',
+      deleted: '项目已删除',
+      deleteFailed: '删除失败',
+      loadFailed: '加载失败'
+    }
   },
   storyboard: {
     title: '分镜制作',

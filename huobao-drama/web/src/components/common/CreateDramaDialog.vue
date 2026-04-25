@@ -10,7 +10,7 @@
     class="create-dialog dialog-form-safe"
     @closed="handleClosed"
   >
-    <div class="dialog-desc">{{ $t('drama.createDesc') }}</div>
+    <div class="dialog-desc">{{ $t("drama.createDesc") }}</div>
 
     <el-form
       ref="formRef"
@@ -31,7 +31,11 @@
         />
       </el-form-item>
 
-      <el-form-item :label="$t('drama.projectDesc')" prop="description" required>
+      <el-form-item
+        :label="$t('drama.projectDesc')"
+        prop="description"
+        required
+      >
         <el-input
           v-model="form.description"
           type="textarea"
@@ -43,7 +47,11 @@
         />
       </el-form-item>
 
-      <el-form-item :label="$t('drama.targetCountry')" prop="target_country" required>
+      <el-form-item
+        :label="$t('drama.targetCountry')"
+        prop="target_country"
+        required
+      >
         <el-select
           v-model="form.target_country"
           size="large"
@@ -54,7 +62,10 @@
           @change="handleCountryChange"
           @visible-change="handleCountryVisibleChange"
           :placeholder="$t('drama.targetCountryPlaceholder')"
-          :class="['country-select', { 'has-value': (form.target_country?.length || 0) > 0 }]"
+          :class="[
+            'country-select',
+            { 'has-value': (form.target_country?.length || 0) > 0 },
+          ]"
         >
           <el-option
             v-for="country in filteredCountries"
@@ -65,7 +76,10 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item :label="$t('drama.materialComposition')" prop="material_composition">
+      <el-form-item
+        :label="$t('drama.materialComposition')"
+        prop="material_composition"
+      >
         <el-input
           v-model="form.material_composition"
           type="textarea"
@@ -77,7 +91,10 @@
         />
       </el-form-item>
 
-      <el-form-item :label="$t('drama.marketingSellingPoints')" prop="marketing_selling_points">
+      <el-form-item
+        :label="$t('drama.marketingSellingPoints')"
+        prop="marketing_selling_points"
+      >
         <el-input
           v-model="form.marketing_selling_points"
           type="textarea"
@@ -93,7 +110,7 @@
     <template #footer>
       <div class="dialog-footer">
         <el-button size="large" @click="handleClose">
-          {{ $t('common.cancel') }}
+          {{ $t("common.cancel") }}
         </el-button>
         <el-button
           type="primary"
@@ -102,7 +119,7 @@
           @click="handleSubmit"
         >
           <el-icon v-if="!loading"><ArrowRight /></el-icon>
-          {{ $t('common.next') }}
+          {{ $t("common.next") }}
         </el-button>
       </div>
     </template>
@@ -122,7 +139,11 @@
       <div class="compliance-meta-left">
         <span>校验时间：{{ complianceCheckedAt }}</span>
       </div>
-      <button class="pdf-export-btn" type="button" @click="handleExportCompliancePdf">
+      <button
+        class="pdf-export-btn"
+        type="button"
+        @click="handleExportCompliancePdf"
+      >
         <el-icon><Download /></el-icon>
         导出PDF报告
       </button>
@@ -151,7 +172,10 @@
         <div class="risk-ring" :style="scoreRingStyle">
           <div class="risk-ring-inner">
             <div class="risk-score-value">{{ currentCompliance.score }}</div>
-            <div class="risk-score-level" :style="{ color: complianceRiskMeta.color }">
+            <div
+              class="risk-score-level"
+              :style="{ color: complianceRiskMeta.color }"
+            >
               {{ complianceRiskMeta.badge }}
             </div>
           </div>
@@ -162,7 +186,9 @@
       <section class="risk-details-card">
         <header class="risk-details-header">
           <h3 class="section-title">不合规明细</h3>
-          <span class="pending-count">{{ complianceIssueItems.length }} 项待处理</span>
+          <span class="pending-count"
+            >{{ complianceIssueItems.length }} 项待处理</span
+          >
         </header>
         <div
           ref="riskItemListRef"
@@ -175,11 +201,17 @@
             :key="`${item.title}-${index}`"
             class="risk-item"
           >
-            <span class="risk-item-dot" :class="`risk-item-dot--${item.level}`" />
+            <span
+              class="risk-item-dot"
+              :class="`risk-item-dot--${item.level}`"
+            />
             <div class="risk-item-body">
               <div class="risk-item-title-row">
                 <p class="risk-item-title">{{ item.title }}</p>
-                <span class="risk-level-chip" :class="`risk-level-chip--${item.level}`">
+                <span
+                  class="risk-level-chip"
+                  :class="`risk-level-chip--${item.level}`"
+                >
                   {{ getRiskLevelLabel(item.level) }}
                 </span>
               </div>
@@ -222,7 +254,7 @@
           :disabled="complianceSubmitting"
           @click="handleComplianceCancel"
         >
-          {{ $t('common.cancel') }}
+          {{ $t("common.cancel") }}
         </el-button>
         <el-button
           type="primary"
@@ -231,7 +263,7 @@
           :loading="complianceSubmitting"
           @click="handleCompliancePrimaryAction"
         >
-          {{ complianceCanProceed ? $t('common.next') : '去修改' }}
+          {{ complianceCanProceed ? $t("common.next") : "去修改" }}
         </el-button>
       </div>
     </template>
@@ -239,161 +271,191 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowRight, Download } from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
-import { dramaAPI } from '@/api/drama'
-import { ALL_COUNTRIES } from '@/constants/countries'
-import type { ComplianceResult, ComplianceRiskLevel, CreateDramaRequest } from '@/types/drama'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { ElMessage, type FormInstance, type FormRules } from "element-plus";
+import { ArrowRight, Download } from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
+import { dramaAPI } from "@/api/drama";
+import { ALL_COUNTRIES } from "@/constants/countries";
+import type {
+  ComplianceResult,
+  ComplianceRiskLevel,
+  CreateDramaRequest,
+} from "@/types/drama";
 import {
   buildCreateDramaPayload,
   getComplianceRiskMeta,
-  normalizeComplianceResult
-} from '@/utils/compliance'
-import { handleFormEnterNavigation } from '@/utils/formFocus'
+  normalizeComplianceResult,
+} from "@/utils/compliance";
+import { saveCreateDramaDraft } from "@/utils/createDramaDraft";
+import { handleFormEnterNavigation } from "@/utils/formFocus";
 
 interface ComplianceIssueItem {
-  level: ComplianceRiskLevel
-  title: string
-  suggestion: string
+  level: ComplianceRiskLevel;
+  title: string;
+  suggestion: string;
 }
 
 const props = defineProps<{
-  modelValue: boolean
-}>()
+  modelValue: boolean;
+}>();
 
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean]
-  'created': [id: string]
-}>()
+  "update:modelValue": [value: boolean];
+  created: [id: string];
+}>();
 
-const { t } = useI18n()
-const router = useRouter()
-const formRef = ref<FormInstance>()
-const loading = ref(false)
-const complianceSubmitting = ref(false)
-const countryKeyword = ref('')
-const complianceDialogVisible = ref(false)
-const complianceData = ref<ComplianceResult | null>(null)
-const complianceDramaId = ref('')
-const complianceCheckedAt = ref('')
-const riskItemListRef = ref<HTMLDivElement>()
-const riskItemListMaxHeight = ref('')
-const pendingCreatePayload = ref<CreateDramaRequest | null>(null)
+const { t } = useI18n();
+const router = useRouter();
+const formRef = ref<FormInstance>();
+const loading = ref(false);
+const complianceSubmitting = ref(false);
+const countryKeyword = ref("");
+const complianceDialogVisible = ref(false);
+const complianceData = ref<ComplianceResult | null>(null);
+const complianceDramaId = ref("");
+const complianceCheckedAt = ref("");
+const riskItemListRef = ref<HTMLDivElement>();
+const riskItemListMaxHeight = ref("");
+const pendingCreatePayload = ref<CreateDramaRequest | null>(null);
+const pendingComplianceToken = ref("");
 
-const visible = ref(props.modelValue)
-watch(() => props.modelValue, (val) => {
-  visible.value = val
-})
+const visible = ref(props.modelValue);
+watch(
+  () => props.modelValue,
+  (val) => {
+    visible.value = val;
+  },
+);
 watch(visible, (val) => {
-  emit('update:modelValue', val)
-})
+  emit("update:modelValue", val);
+});
 
 watch(
   () => complianceDialogVisible.value,
   (open) => {
     if (open) {
-      void updateRiskItemListHeight()
+      void updateRiskItemListHeight();
     }
-  }
-)
+  },
+);
 
 const form = reactive<CreateDramaRequest>({
-  title: '',
-  description: '',
+  title: "",
+  description: "",
   target_country: [],
-  material_composition: '',
-  marketing_selling_points: ''
-})
+  material_composition: "",
+  marketing_selling_points: "",
+});
 
 const filteredCountries = computed(() => {
-  const keyword = countryKeyword.value.trim().toLowerCase()
+  const keyword = countryKeyword.value.trim().toLowerCase();
   if (!keyword) {
-    return ALL_COUNTRIES
+    return ALL_COUNTRIES;
   }
-  return ALL_COUNTRIES.filter((country) => country.searchText.includes(keyword))
-})
+  return ALL_COUNTRIES.filter((country) =>
+    country.searchText.includes(keyword),
+  );
+});
 
 const currentCompliance = computed<ComplianceResult>(() => {
   if (complianceData.value) {
-    return complianceData.value
+    return complianceData.value;
   }
   return {
     score: 0,
-    level: 'green',
-    level_label: '低',
-    summary: '暂无合规评估结果',
+    level: "green",
+    level_label: "低",
+    summary: "暂无合规评估结果",
     non_compliance_points: [],
     rectification_suggestions: [],
-    suggested_categories: []
-  }
-})
+    suggested_categories: [],
+  };
+});
 
-const complianceRiskMeta = computed(() => getComplianceRiskMeta(currentCompliance.value))
+const complianceRiskMeta = computed(() =>
+  getComplianceRiskMeta(currentCompliance.value),
+);
 
 const isComplianceBlocked = computed(() => {
-  return currentCompliance.value.level === 'red' || currentCompliance.value.score >= 80
-})
+  return (
+    currentCompliance.value.level === "red" ||
+    currentCompliance.value.score >= 80
+  );
+});
 
-const isOrangeRisk = computed(() => currentCompliance.value.level === 'orange')
+const isOrangeRisk = computed(() => currentCompliance.value.level === "orange");
 
 const complianceCanProceed = computed(() => {
-  return !isComplianceBlocked.value && !!pendingCreatePayload.value
-})
+  return (
+    !isComplianceBlocked.value &&
+    !!pendingCreatePayload.value &&
+    !!pendingComplianceToken.value
+  );
+});
 
 const scoreRingStyle = computed(() => {
-  const score = Math.max(0, Math.min(currentCompliance.value.score, 100))
+  const score = Math.max(0, Math.min(currentCompliance.value.score, 100));
   return {
-    '--risk-angle': `${(score / 100) * 360}deg`,
-    '--risk-color': complianceRiskMeta.value.color
-  }
-})
+    "--risk-angle": `${(score / 100) * 360}deg`,
+    "--risk-color": complianceRiskMeta.value.color,
+  };
+});
 
 const rectificationList = computed(() => {
-  const list = currentCompliance.value.rectification_suggestions || []
+  const list = currentCompliance.value.rectification_suggestions || [];
   if (list.length > 0) {
-    return list
+    return list;
   }
-  return ['请补充完整商品信息并重新进行合规校验。']
-})
+  return ["请补充完整商品信息并重新进行合规校验。"];
+});
 
-const complianceCategories = computed(() => currentCompliance.value.suggested_categories || [])
+const complianceCategories = computed(
+  () => currentCompliance.value.suggested_categories || [],
+);
 
-const normalizeText = (value: string) => value.toLowerCase().replace(/\s+/g, '')
+const normalizeText = (value: string) =>
+  value.toLowerCase().replace(/\s+/g, "");
 
 const inferIssueLevel = (text: string): ComplianceRiskLevel => {
-  const raw = normalizeText(text)
+  const raw = normalizeText(text);
   if (/(禁售|违法|武器|毒|侵权|走私|伪造|医疗|药品|处方|高危|禁止)/.test(raw)) {
-    return 'red'
+    return "red";
   }
-  if (/(缺少|未提供|认证|隐私|数据|gdpr|appi|ukca|ce|pse|违规|不符合|不合规|高风险)/.test(raw)) {
-    return 'orange'
+  if (
+    /(缺少|未提供|认证|隐私|数据|gdpr|appi|ukca|ce|pse|违规|不符合|不合规|高风险)/.test(
+      raw,
+    )
+  ) {
+    return "orange";
   }
   if (/(敏感|绝对化|夸大|中风险|建议|优化|提示)/.test(raw)) {
-    return 'yellow'
+    return "yellow";
   }
-  return currentCompliance.value.level
-}
+  return currentCompliance.value.level;
+};
 
 const ISSUE_LEVEL_PRIORITY: Record<ComplianceRiskLevel, number> = {
   red: 0,
   orange: 1,
   yellow: 2,
-  green: 3
-}
+  green: 3,
+};
 
 const complianceIssueItems = computed<ComplianceIssueItem[]>(() => {
-  const points = currentCompliance.value.non_compliance_points || []
-  const suggestions = currentCompliance.value.rectification_suggestions || []
+  const points = currentCompliance.value.non_compliance_points || [];
+  const suggestions = currentCompliance.value.rectification_suggestions || [];
 
   if (points.length === 0) {
-    return [{
-      level: currentCompliance.value.level,
-      title: currentCompliance.value.summary || '暂无明确不合规项，请人工复核。',
-      suggestion: suggestions[0] || '请结合目标国家法规继续完善商品信息。'
-    }]
+    return [
+      {
+        level: currentCompliance.value.level,
+        title:
+          currentCompliance.value.summary || "暂无明确不合规项，请人工复核。",
+        suggestion: suggestions[0] || "请结合目标国家法规继续完善商品信息。",
+      },
+    ];
   }
 
   return points
@@ -401,518 +463,648 @@ const complianceIssueItems = computed<ComplianceIssueItem[]>(() => {
       order: index,
       level: inferIssueLevel(title),
       title,
-      suggestion: suggestions[index] || suggestions[0] || '请补充相关资质文件并重新校验。'
+      suggestion:
+        suggestions[index] ||
+        suggestions[0] ||
+        "请补充相关资质文件并重新校验。",
     }))
     .sort((a, b) => {
-      const priorityDiff = ISSUE_LEVEL_PRIORITY[a.level] - ISSUE_LEVEL_PRIORITY[b.level]
-      if (priorityDiff !== 0) return priorityDiff
-      return a.order - b.order
+      const priorityDiff =
+        ISSUE_LEVEL_PRIORITY[a.level] - ISSUE_LEVEL_PRIORITY[b.level];
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.order - b.order;
     })
-    .map(({ order, ...item }) => item)
-})
+    .map(({ order, ...item }) => item);
+});
 
-const riskItemListScrollable = computed(() => complianceIssueItems.value.length > 3)
+const riskItemListScrollable = computed(
+  () => complianceIssueItems.value.length > 3,
+);
 
 const riskItemListStyle = computed(() => {
   if (!riskItemListScrollable.value || !riskItemListMaxHeight.value) {
-    return undefined
+    return undefined;
   }
 
   return {
-    maxHeight: riskItemListMaxHeight.value
-  }
-})
+    maxHeight: riskItemListMaxHeight.value,
+  };
+});
 
 const getRiskItemListMaxAllowedHeight = () => {
-  if (typeof window === 'undefined') {
-    return 360
+  if (typeof window === "undefined") {
+    return 360;
   }
 
-  return Math.max(210, Math.round(window.innerHeight * 0.34))
-}
+  return Math.max(210, Math.round(window.innerHeight * 0.34));
+};
 
 const updateRiskItemListHeight = async () => {
-  await nextTick()
+  await nextTick();
 
-  const listEl = riskItemListRef.value
+  const listEl = riskItemListRef.value;
   if (!listEl || !riskItemListScrollable.value) {
-    riskItemListMaxHeight.value = ''
-    return
+    riskItemListMaxHeight.value = "";
+    return;
   }
 
-  const items = Array.from(listEl.querySelectorAll<HTMLElement>('.risk-item'))
+  const items = Array.from(listEl.querySelectorAll<HTMLElement>(".risk-item"));
   if (items.length === 0) {
-    riskItemListMaxHeight.value = ''
-    return
+    riskItemListMaxHeight.value = "";
+    return;
   }
 
   const twoItemHeight = items
     .slice(0, 2)
-    .reduce((total, item) => total + item.offsetHeight, 0)
-  const halfThirdItemHeight = items[2] ? Math.round(items[2].offsetHeight * 0.5) : 0
+    .reduce((total, item) => total + item.offsetHeight, 0);
+  const halfThirdItemHeight = items[2]
+    ? Math.round(items[2].offsetHeight * 0.5)
+    : 0;
 
-  const maxAllowedHeight = getRiskItemListMaxAllowedHeight()
-  const compressedHeight = Math.max(196, twoItemHeight + halfThirdItemHeight - 12)
-  riskItemListMaxHeight.value = `${Math.min(compressedHeight, maxAllowedHeight)}px`
-}
+  const maxAllowedHeight = getRiskItemListMaxAllowedHeight();
+  const compressedHeight = Math.max(
+    196,
+    twoItemHeight + halfThirdItemHeight - 12,
+  );
+  riskItemListMaxHeight.value = `${Math.min(compressedHeight, maxAllowedHeight)}px`;
+};
 
 watch(
-  () => complianceIssueItems.value.map((item) => `${item.level}:${item.title}:${item.suggestion}`).join('|'),
+  () =>
+    complianceIssueItems.value
+      .map((item) => `${item.level}:${item.title}:${item.suggestion}`)
+      .join("|"),
   () => {
     if (complianceDialogVisible.value) {
-      void updateRiskItemListHeight()
+      void updateRiskItemListHeight();
     }
-  }
-)
+  },
+);
 
 const handleComplianceResize = () => {
   if (complianceDialogVisible.value) {
-    void updateRiskItemListHeight()
+    void updateRiskItemListHeight();
   }
-}
+};
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('resize', handleComplianceResize)
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", handleComplianceResize);
 }
 
 onBeforeUnmount(() => {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('resize', handleComplianceResize)
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", handleComplianceResize);
   }
-})
+});
 
 const getRiskLevelLabel = (level: ComplianceRiskLevel) => {
-  if (level === 'red') return '禁止'
-  if (level === 'orange') return '高风险'
-  if (level === 'yellow') return '中风险'
-  return '低风险'
-}
+  if (level === "red") return "禁止";
+  if (level === "orange") return "高风险";
+  if (level === "yellow") return "中风险";
+  return "低风险";
+};
 
 const handleCountryFilter = (keyword: string) => {
-  countryKeyword.value = keyword
-}
+  countryKeyword.value = keyword;
+};
 
 const handleCountryVisibleChange = (open: boolean) => {
   if (!open) {
-    countryKeyword.value = ''
+    countryKeyword.value = "";
   }
-}
+};
 
 const handleCountryChange = () => {
-  countryKeyword.value = ''
-}
+  countryKeyword.value = "";
+};
 
 const rules: FormRules = {
   title: [
-    { required: true, message: '请输入项目标题', trigger: 'blur' },
-    { min: 1, max: 50, message: '标题长度在 1 到 50 个字符', trigger: 'blur' }
+    { required: true, message: "请输入项目标题", trigger: "blur" },
+    { min: 1, max: 50, message: "标题长度在 1 到 50 个字符", trigger: "blur" },
   ],
   description: [
-    { required: true, message: '请输入项目描述', trigger: 'blur' },
-    { min: 1, max: 500, message: '描述长度在 1 到 500 个字符', trigger: 'blur' }
+    { required: true, message: "请输入项目描述", trigger: "blur" },
+    {
+      min: 1,
+      max: 500,
+      message: "描述长度在 1 到 500 个字符",
+      trigger: "blur",
+    },
   ],
   target_country: [
-    { type: 'array', required: true, min: 1, message: '请选择目标国家', trigger: 'change' }
+    {
+      type: "array",
+      required: true,
+      min: 1,
+      message: "请选择目标国家",
+      trigger: "change",
+    },
   ],
   material_composition: [
-    { max: 200, message: '材质/成分长度不能超过 200 个字符', trigger: 'blur' }
+    { max: 200, message: "材质/成分长度不能超过 200 个字符", trigger: "blur" },
   ],
   marketing_selling_points: [
-    { max: 200, message: '宣传卖点长度不能超过 200 个字符', trigger: 'blur' }
-  ]
-}
+    { max: 200, message: "宣传卖点长度不能超过 200 个字符", trigger: "blur" },
+  ],
+};
 
 const splitWrappedLines = (
   ctx: CanvasRenderingContext2D,
   text: string,
-  maxWidth: number
+  maxWidth: number,
 ): string[] => {
-  const blocks = String(text ?? '').replace(/\r\n/g, '\n').split('\n')
-  const lines: string[] = []
+  const blocks = String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
+  const lines: string[] = [];
 
   for (const block of blocks) {
     if (!block) {
-      lines.push('')
-      continue
+      lines.push("");
+      continue;
     }
 
-    let line = ''
+    let line = "";
     for (const char of block) {
-      const candidate = line + char
+      const candidate = line + char;
       if (!line || ctx.measureText(candidate).width <= maxWidth) {
-        line = candidate
+        line = candidate;
       } else {
-        lines.push(line)
-        line = char
+        lines.push(line);
+        line = char;
       }
     }
     if (line) {
-      lines.push(line)
+      lines.push(line);
     }
   }
 
-  return lines.length ? lines : ['']
-}
+  return lines.length ? lines : [""];
+};
 
 const textToUint8 = (value: string): Uint8Array => {
-  return new TextEncoder().encode(value)
-}
+  return new TextEncoder().encode(value);
+};
 
 const concatUint8Arrays = (parts: Uint8Array[]): Uint8Array => {
-  const totalLength = parts.reduce((sum, item) => sum + item.length, 0)
-  const merged = new Uint8Array(totalLength)
-  let offset = 0
+  const totalLength = parts.reduce((sum, item) => sum + item.length, 0);
+  const merged = new Uint8Array(totalLength);
+  let offset = 0;
   for (const item of parts) {
-    merged.set(item, offset)
-    offset += item.length
+    merged.set(item, offset);
+    offset += item.length;
   }
-  return merged
-}
+  return merged;
+};
 
-const buildPdfBlobFromJpegDataUrl = (jpegDataUrl: string, imageWidth: number, imageHeight: number): Blob => {
-  const base64 = jpegDataUrl.split(',')[1] || ''
-  const binary = atob(base64)
-  const jpegBytes = new Uint8Array(binary.length)
+const buildPdfBlobFromJpegDataUrl = (
+  jpegDataUrl: string,
+  imageWidth: number,
+  imageHeight: number,
+): Blob => {
+  const base64 = jpegDataUrl.split(",")[1] || "";
+  const binary = atob(base64);
+  const jpegBytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
-    jpegBytes[i] = binary.charCodeAt(i)
+    jpegBytes[i] = binary.charCodeAt(i);
   }
 
-  const pageWidth = 595.28
-  const pageHeight = Number(((pageWidth * imageHeight) / imageWidth).toFixed(2))
-  const contentStream = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im0 Do\nQ\n`
+  const pageWidth = 595.28;
+  const pageHeight = Number(
+    ((pageWidth * imageHeight) / imageWidth).toFixed(2),
+  );
+  const contentStream = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im0 Do\nQ\n`;
 
-  const objects: Uint8Array[] = []
-  objects.push(textToUint8('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'))
-  objects.push(textToUint8('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'))
-  objects.push(textToUint8(
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`
-  ))
-  objects.push(concatUint8Arrays([
+  const objects: Uint8Array[] = [];
+  objects.push(
+    textToUint8("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"),
+  );
+  objects.push(
+    textToUint8("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"),
+  );
+  objects.push(
     textToUint8(
-      `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${Math.round(imageWidth)} /Height ${Math.round(imageHeight)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`
+      `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
     ),
-    jpegBytes,
-    textToUint8('\nendstream\nendobj\n')
-  ]))
-  objects.push(textToUint8(
-    `5 0 obj\n<< /Length ${textToUint8(contentStream).length} >>\nstream\n${contentStream}endstream\nendobj\n`
-  ))
+  );
+  objects.push(
+    concatUint8Arrays([
+      textToUint8(
+        `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${Math.round(imageWidth)} /Height ${Math.round(imageHeight)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`,
+      ),
+      jpegBytes,
+      textToUint8("\nendstream\nendobj\n"),
+    ]),
+  );
+  objects.push(
+    textToUint8(
+      `5 0 obj\n<< /Length ${textToUint8(contentStream).length} >>\nstream\n${contentStream}endstream\nendobj\n`,
+    ),
+  );
 
-  const header = textToUint8('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n')
-  const offsets: number[] = [0]
-  let currentOffset = header.length
+  const header = textToUint8("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+  const offsets: number[] = [0];
+  let currentOffset = header.length;
   for (const objectBytes of objects) {
-    offsets.push(currentOffset)
-    currentOffset += objectBytes.length
+    offsets.push(currentOffset);
+    currentOffset += objectBytes.length;
   }
 
-  let xref = 'xref\n0 6\n0000000000 65535 f \n'
+  let xref = "xref\n0 6\n0000000000 65535 f \n";
   for (let index = 1; index <= 5; index += 1) {
-    xref += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`
+    xref += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
   }
 
-  const xrefBytes = textToUint8(xref)
-  const trailer = textToUint8(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${currentOffset}\n%%EOF`)
+  const xrefBytes = textToUint8(xref);
+  const trailer = textToUint8(
+    `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${currentOffset}\n%%EOF`,
+  );
 
-  const pdfBytes = concatUint8Arrays([header, ...objects, xrefBytes, trailer])
-  const blobBytes = new Uint8Array(pdfBytes.byteLength)
-  blobBytes.set(pdfBytes)
-  return new Blob([blobBytes], { type: 'application/pdf' })
-}
+  const pdfBytes = concatUint8Arrays([header, ...objects, xrefBytes, trailer]);
+  const blobBytes = new Uint8Array(pdfBytes.byteLength);
+  blobBytes.set(pdfBytes);
+  return new Blob([blobBytes], { type: "application/pdf" });
+};
 
 const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.style.display = 'none'
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
-}
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+};
 
 const formatDateTime = (date: Date) => {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  const hour = `${date.getHours()}`.padStart(2, '0')
-  const minute = `${date.getMinutes()}`.padStart(2, '0')
-  const second = `${date.getSeconds()}`.padStart(2, '0')
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hour = `${date.getHours()}`.padStart(2, "0");
+  const minute = `${date.getMinutes()}`.padStart(2, "0");
+  const second = `${date.getSeconds()}`.padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
 
 const openComplianceDialog = (rawCompliance: unknown) => {
-  const normalized = normalizeComplianceResult(rawCompliance)
+  const normalized = normalizeComplianceResult(rawCompliance);
   if (!normalized) {
-    return false
+    return false;
   }
 
-  complianceData.value = normalized
-  complianceDramaId.value = ''
-  complianceCheckedAt.value = formatDateTime(new Date())
-  complianceDialogVisible.value = true
-  return true
-}
+  complianceData.value = normalized;
+  complianceDramaId.value = "";
+  complianceCheckedAt.value = formatDateTime(new Date());
+  complianceDialogVisible.value = true;
+  return true;
+};
 
 const handleComplianceCancel = () => {
-  complianceDialogVisible.value = false
-}
+  complianceDialogVisible.value = false;
+};
 
-const handleCompliancePrimaryAction = () => {
+const handleComplianceEdit = async () => {
+  const draft = pendingCreatePayload.value || buildCreateDramaPayload(form);
+  saveCreateDramaDraft(draft);
+  complianceDialogVisible.value = false;
+  visible.value = false;
+  await router.push("/dramas/create");
+  ElMessage.info("已保留当前内容，请在“创建新项目”页面修改后再提交。");
+};
+
+const handleCompliancePrimaryAction = async () => {
   if (complianceCanProceed.value) {
-    handleComplianceConfirm()
-    return
+    await handleComplianceConfirm();
+    return;
   }
-  ElMessage.info('请根据不合规明细和整改建议修改后，再继续下一步。')
-}
+  await handleComplianceEdit();
+};
 
 const handleComplianceConfirm = async () => {
   if (!complianceCanProceed.value || !pendingCreatePayload.value) {
-    ElMessage.warning('风险评级为红色（>=80），请先根据整改建议完善后再提交。')
-    return
+    ElMessage.warning("风险评级为红色（>=80），请先根据整改建议完善后再提交。");
+    return;
   }
 
-  complianceSubmitting.value = true
+  complianceSubmitting.value = true;
   try {
-    const result = await dramaAPI.create(pendingCreatePayload.value)
-    const dramaId = String(result.drama.id)
-    complianceDramaId.value = dramaId
-    complianceDialogVisible.value = false
-    visible.value = false
-    pendingCreatePayload.value = null
-    emit('created', dramaId)
+    const result = await dramaAPI.create({
+      ...pendingCreatePayload.value,
+      compliance_token: pendingComplianceToken.value,
+    });
+    const dramaId = String(result.drama.id);
+    complianceDramaId.value = dramaId;
+    complianceDialogVisible.value = false;
+    visible.value = false;
+    pendingCreatePayload.value = null;
+    pendingComplianceToken.value = "";
+    emit("created", dramaId);
 
     if (isOrangeRisk.value) {
-      ElMessage.warning('当前项目为橙色高风险，已进入下一步，请优先处理不合规项。')
+      ElMessage.warning(
+        "当前项目为橙色高风险，已进入下一步，请优先处理不合规项。",
+      );
     } else {
-      ElMessage.success('创建成功')
+      ElMessage.success("创建成功");
     }
-    router.push(`/dramas/${dramaId}`)
+    router.push(`/dramas/${dramaId}`);
   } catch (error: any) {
-    const opened = openComplianceDialog(error?.details?.compliance)
-    if (opened) {
-      ElMessage.warning(error.message || '风险评级发生变化，请根据最新整改建议处理后再继续。')
-      return
+    if (error?.code === "COMPLIANCE_PRECHECK_REQUIRED") {
+      pendingComplianceToken.value = "";
+      complianceDialogVisible.value = false;
+      ElMessage.warning(
+        error.message || "合规预检已失效，请重新校验后再继续。",
+      );
+      return;
     }
-    ElMessage.error(error.message || '创建失败')
+    const opened = openComplianceDialog(error?.details?.compliance);
+    if (opened) {
+      ElMessage.warning(
+        error.message || "风险评级发生变化，请根据最新整改建议处理后再继续。",
+      );
+      return;
+    }
+    ElMessage.error(error.message || "创建失败");
   } finally {
-    complianceSubmitting.value = false
+    complianceSubmitting.value = false;
   }
-}
+};
 
 const handleExportCompliancePdf = () => {
-  const report = currentCompliance.value
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
+  const report = currentCompliance.value;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
   if (!ctx) {
-    ElMessage.error('导出失败，请重试')
-    return
+    ElMessage.error("导出失败，请重试");
+    return;
   }
 
-  const fontFamily = '"PingFang SC", "Microsoft YaHei", "Segoe UI", Arial, sans-serif'
-  const canvasWidth = 1240
-  const marginX = 72
-  const contentWidth = canvasWidth - marginX * 2
-  const lineHeight = 34
+  const fontFamily =
+    '"PingFang SC", "Microsoft YaHei", "Segoe UI", Arial, sans-serif';
+  const canvasWidth = 1240;
+  const marginX = 72;
+  const contentWidth = canvasWidth - marginX * 2;
+  const lineHeight = 34;
 
-  const titleFont = `700 48px ${fontFamily}`
-  const headingFont = `700 30px ${fontFamily}`
-  const bodyFont = `500 24px ${fontFamily}`
-  const metaFont = `500 22px ${fontFamily}`
+  const titleFont = `700 48px ${fontFamily}`;
+  const headingFont = `700 30px ${fontFamily}`;
+  const bodyFont = `500 24px ${fontFamily}`;
+  const metaFont = `500 22px ${fontFamily}`;
 
-  ctx.font = bodyFont
-  const summaryLines = splitWrappedLines(ctx, report.summary || '无', contentWidth)
-  const issueGroups = (complianceIssueItems.value.length ? complianceIssueItems.value : [{
-    level: report.level,
-    title: '暂无明显不合规项',
-    suggestion: '建议继续人工复核目标国家法规要求。'
-  }]).map((item) => {
-    ctx.font = headingFont
-    const titleLines = splitWrappedLines(ctx, item.title, contentWidth - 52)
-    ctx.font = bodyFont
-    const suggestionLines = splitWrappedLines(ctx, item.suggestion, contentWidth - 52)
-    return { ...item, titleLines, suggestionLines }
-  })
+  ctx.font = bodyFont;
+  const summaryLines = splitWrappedLines(
+    ctx,
+    report.summary || "无",
+    contentWidth,
+  );
+  const issueGroups = (
+    complianceIssueItems.value.length
+      ? complianceIssueItems.value
+      : [
+          {
+            level: report.level,
+            title: "暂无明显不合规项",
+            suggestion: "建议继续人工复核目标国家法规要求。",
+          },
+        ]
+  ).map((item) => {
+    ctx.font = headingFont;
+    const titleLines = splitWrappedLines(ctx, item.title, contentWidth - 52);
+    ctx.font = bodyFont;
+    const suggestionLines = splitWrappedLines(
+      ctx,
+      item.suggestion,
+      contentWidth - 52,
+    );
+    return { ...item, titleLines, suggestionLines };
+  });
 
-  ctx.font = bodyFont
-  const rectificationGroups = rectificationList.value.map((item) => splitWrappedLines(ctx, item, contentWidth - 32))
-  const categoryText = complianceCategories.value.length ? complianceCategories.value.join('、') : '无'
-  const categoryLines = splitWrappedLines(ctx, categoryText, contentWidth - 120)
+  ctx.font = bodyFont;
+  const rectificationGroups = rectificationList.value.map((item) =>
+    splitWrappedLines(ctx, item, contentWidth - 32),
+  );
+  const categoryText = complianceCategories.value.length
+    ? complianceCategories.value.join("、")
+    : "无";
+  const categoryLines = splitWrappedLines(
+    ctx,
+    categoryText,
+    contentWidth - 120,
+  );
 
-  let totalHeight = 72
-  totalHeight += 76
-  totalHeight += 44 * 3
-  totalHeight += 20
-  totalHeight += 46 + summaryLines.length * lineHeight + 14
-  totalHeight += 46
-  totalHeight += issueGroups.reduce((sum, item) => sum + item.titleLines.length * lineHeight + item.suggestionLines.length * lineHeight + 26, 0)
-  totalHeight += 24
-  totalHeight += 46
-  totalHeight += rectificationGroups.reduce((sum, lines) => sum + lines.length * lineHeight + 12, 0)
-  totalHeight += Math.max(1, categoryLines.length) * lineHeight + 46
-  totalHeight += 72
+  let totalHeight = 72;
+  totalHeight += 76;
+  totalHeight += 44 * 3;
+  totalHeight += 20;
+  totalHeight += 46 + summaryLines.length * lineHeight + 14;
+  totalHeight += 46;
+  totalHeight += issueGroups.reduce(
+    (sum, item) =>
+      sum +
+      item.titleLines.length * lineHeight +
+      item.suggestionLines.length * lineHeight +
+      26,
+    0,
+  );
+  totalHeight += 24;
+  totalHeight += 46;
+  totalHeight += rectificationGroups.reduce(
+    (sum, lines) => sum + lines.length * lineHeight + 12,
+    0,
+  );
+  totalHeight += Math.max(1, categoryLines.length) * lineHeight + 46;
+  totalHeight += 72;
 
-  canvas.width = canvasWidth
-  canvas.height = Math.max(1180, Math.ceil(totalHeight))
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  canvas.width = canvasWidth;
+  canvas.height = Math.max(1180, Math.ceil(totalHeight));
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  let y = 84
-  ctx.fillStyle = '#1f2937'
-  ctx.font = titleFont
-  ctx.fillText('合规校验报告', marginX, y)
+  let y = 84;
+  ctx.fillStyle = "#1f2937";
+  ctx.font = titleFont;
+  ctx.fillText("合规校验报告", marginX, y);
 
-  y += 62
-  ctx.fillStyle = '#5b6b80'
-  ctx.font = metaFont
-  ctx.fillText(`校验时间：${complianceCheckedAt.value}`, marginX, y)
-  y += 36
-  ctx.fillText(`风险评分：${report.score}`, marginX, y)
-  y += 36
-  ctx.fillText(`风险等级：${getRiskLevelLabel(report.level)}`, marginX, y)
+  y += 62;
+  ctx.fillStyle = "#5b6b80";
+  ctx.font = metaFont;
+  ctx.fillText(`校验时间：${complianceCheckedAt.value}`, marginX, y);
+  y += 36;
+  ctx.fillText(`风险评分：${report.score}`, marginX, y);
+  y += 36;
+  ctx.fillText(`风险等级：${getRiskLevelLabel(report.level)}`, marginX, y);
 
-  y += 30
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('评估结论', marginX, y)
-  y += 42
-  ctx.fillStyle = '#374151'
-  ctx.font = bodyFont
+  y += 30;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText("评估结论", marginX, y);
+  y += 42;
+  ctx.fillStyle = "#374151";
+  ctx.font = bodyFont;
   for (const line of summaryLines) {
-    ctx.fillText(line, marginX, y)
-    y += lineHeight
+    ctx.fillText(line, marginX, y);
+    y += lineHeight;
   }
 
-  y += 10
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('不合规明细', marginX, y)
-  y += 42
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText("不合规明细", marginX, y);
+  y += 42;
 
   for (const item of issueGroups) {
-    ctx.fillStyle = '#ef4444'
-    ctx.beginPath()
-    ctx.arc(marginX + 10, y - 8, 6, 0, Math.PI * 2)
-    ctx.fill()
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(marginX + 10, y - 8, 6, 0, Math.PI * 2);
+    ctx.fill();
 
-    ctx.fillStyle = '#111827'
-    ctx.font = headingFont
+    ctx.fillStyle = "#111827";
+    ctx.font = headingFont;
     for (const line of item.titleLines) {
-      ctx.fillText(line, marginX + 30, y)
-      y += lineHeight
+      ctx.fillText(line, marginX + 30, y);
+      y += lineHeight;
     }
 
-    ctx.fillStyle = '#4b5563'
-    ctx.font = bodyFont
+    ctx.fillStyle = "#4b5563";
+    ctx.font = bodyFont;
     for (const line of item.suggestionLines) {
-      ctx.fillText(line, marginX + 30, y)
-      y += lineHeight
+      ctx.fillText(line, marginX + 30, y);
+      y += lineHeight;
     }
-    y += 10
+    y += 10;
   }
 
-  y += 10
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('整改建议', marginX, y)
-  y += 42
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText("整改建议", marginX, y);
+  y += 42;
 
-  ctx.fillStyle = '#374151'
-  ctx.font = bodyFont
+  ctx.fillStyle = "#374151";
+  ctx.font = bodyFont;
   for (const lines of rectificationGroups) {
-    ctx.fillText('•', marginX, y)
+    ctx.fillText("•", marginX, y);
     for (const line of lines) {
-      ctx.fillText(line, marginX + 22, y)
-      y += lineHeight
+      ctx.fillText(line, marginX + 22, y);
+      y += lineHeight;
     }
-    y += 8
+    y += 8;
   }
 
-  y += 10
-  ctx.fillStyle = '#111827'
-  ctx.font = headingFont
-  ctx.fillText('建议类目', marginX, y)
-  y += 42
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = headingFont;
+  ctx.fillText("建议类目", marginX, y);
+  y += 42;
 
-  ctx.fillStyle = '#1d4ed8'
-  ctx.font = bodyFont
+  ctx.fillStyle = "#1d4ed8";
+  ctx.font = bodyFont;
   for (const line of categoryLines) {
-    ctx.fillText(line, marginX, y)
-    y += lineHeight
+    ctx.fillText(line, marginX, y);
+    y += lineHeight;
   }
 
-  const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92)
-  const pdfBlob = buildPdfBlobFromJpegDataUrl(jpegDataUrl, canvas.width, canvas.height)
-  const fallbackTime = formatDateTime(new Date()).replace(/[: ]/g, '-')
-  const fileTime = (complianceCheckedAt.value || fallbackTime).replace(/[: ]/g, '-')
-  downloadBlob(pdfBlob, `合规校验报告_${fileTime}.pdf`)
-  ElMessage.success('PDF报告已下载')
-}
+  const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  const pdfBlob = buildPdfBlobFromJpegDataUrl(
+    jpegDataUrl,
+    canvas.width,
+    canvas.height,
+  );
+  const fallbackTime = formatDateTime(new Date()).replace(/[: ]/g, "-");
+  const fileTime = (complianceCheckedAt.value || fallbackTime).replace(
+    /[: ]/g,
+    "-",
+  );
+  downloadBlob(pdfBlob, `合规校验报告_${fileTime}.pdf`);
+  ElMessage.success("PDF报告已下载");
+};
 
 const resetForm = () => {
-  form.title = ''
-  form.description = ''
-  form.target_country = []
-  form.material_composition = ''
-  form.marketing_selling_points = ''
-  pendingCreatePayload.value = null
-  complianceData.value = null
-  complianceDramaId.value = ''
-  complianceCheckedAt.value = ''
-  riskItemListMaxHeight.value = ''
-  complianceSubmitting.value = false
-}
+  form.title = "";
+  form.description = "";
+  form.target_country = [];
+  form.material_composition = "";
+  form.marketing_selling_points = "";
+  pendingCreatePayload.value = null;
+  pendingComplianceToken.value = "";
+  complianceData.value = null;
+  complianceDramaId.value = "";
+  complianceCheckedAt.value = "";
+  riskItemListMaxHeight.value = "";
+  complianceSubmitting.value = false;
+};
 
 const handleClosed = () => {
-  resetForm()
-  countryKeyword.value = ''
-  formRef.value?.clearValidate()
-}
+  resetForm();
+  countryKeyword.value = "";
+  formRef.value?.clearValidate();
+};
 
 const handleClose = () => {
-  visible.value = false
-}
+  visible.value = false;
+};
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
+  if (!formRef.value) return;
 
-  const valid = await formRef.value.validate().then(() => true).catch(() => false)
-  if (!valid) return
+  const valid = await formRef.value
+    .validate()
+    .then(() => true)
+    .catch(() => false);
+  if (!valid) return;
 
-  loading.value = true
+  loading.value = true;
   try {
-    const payload = buildCreateDramaPayload(form)
-    pendingCreatePayload.value = payload
-    const result = await dramaAPI.checkCompliance(payload)
-    const opened = openComplianceDialog(result.compliance)
+    const payload = buildCreateDramaPayload(form);
+    pendingCreatePayload.value = payload;
+    const result = await dramaAPI.checkCompliance(payload);
+    pendingComplianceToken.value = result.compliance_token || "";
+    const opened = openComplianceDialog(result.compliance);
 
     if (!opened) {
-      pendingCreatePayload.value = null
-      ElMessage.error('未获取到合规校验结果，请重试')
-      return
+      pendingCreatePayload.value = null;
+      pendingComplianceToken.value = "";
+      ElMessage.error("未获取到合规校验结果，请重试");
+      return;
+    }
+
+    if (!isComplianceBlocked.value && !pendingComplianceToken.value) {
+      pendingCreatePayload.value = null;
+      complianceDialogVisible.value = false;
+      ElMessage.error("未获取到合规预检凭证，请重试");
+      return;
     }
 
     if (isComplianceBlocked.value) {
-      ElMessage.warning('风险评级为红色（>=80），禁止进入下一步，请先整改后重试。')
-      return
+      ElMessage.warning(
+        "风险评级为红色（>=80），禁止进入下一步，请先整改后重试。",
+      );
+      return;
     }
 
     if (isOrangeRisk.value) {
-      ElMessage.warning('当前风险为橙色，可继续下一步，但建议先优先处理高风险项。')
+      ElMessage.warning(
+        "当前风险为橙色，可继续下一步，但建议先优先处理高风险项。",
+      );
     }
   } catch (error: any) {
-    pendingCreatePayload.value = null
-    const opened = openComplianceDialog(error?.details?.compliance)
+    pendingCreatePayload.value = null;
+    pendingComplianceToken.value = "";
+    const opened = openComplianceDialog(error?.details?.compliance);
     if (opened) {
-      ElMessage.warning(error.message || '风险评级为红色（>=80），请先整改后再提交。')
-      return
+      ElMessage.warning(
+        error.message || "风险评级为红色（>=80），请先整改后再提交。",
+      );
+      return;
     }
-    ElMessage.error(error.message || '创建失败')
+    ElMessage.error(error.message || "创建失败");
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 </script>
 
 <style scoped>
@@ -1113,7 +1305,7 @@ const handleSubmit = async () => {
 
 .compliance-dialog :deep(.el-dialog__footer) {
   flex-shrink: 0;
-  padding: 10px 20px 14px;
+  padding: 16px 20px;
   border-top: 1px solid #e6ebf2;
   background: #fff;
 }
@@ -1182,7 +1374,10 @@ const handleSubmit = async () => {
   height: 136px;
   margin-top: 12px;
   border-radius: 50%;
-  background: conic-gradient(var(--risk-color) var(--risk-angle), #edf2f7 var(--risk-angle));
+  background: conic-gradient(
+    var(--risk-color) var(--risk-angle),
+    #edf2f7 var(--risk-angle)
+  );
   display: grid;
   place-items: center;
 }
@@ -1465,7 +1660,7 @@ const handleSubmit = async () => {
   }
 
   .compliance-dialog :deep(.el-dialog__footer) {
-    padding: 9px 16px 11px;
+    padding: 12px 16px;
   }
 
   .section-title {
@@ -1559,8 +1754,7 @@ const handleSubmit = async () => {
   .compliance-dialog :deep(.el-dialog__header),
   .compliance-dialog :deep(.el-dialog__body),
   .compliance-dialog :deep(.el-dialog__footer) {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding: 14px;
   }
 
   .compliance-meta-row {

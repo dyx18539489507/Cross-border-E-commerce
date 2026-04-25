@@ -58,18 +58,23 @@ defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(214, 224, 242, 0.88);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-secondary);
+  box-shadow: 0 18px 34px -30px rgba(34, 62, 109, 0.22);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .action-button:hover {
-  background: var(--bg-card-hover);
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(140, 183, 255, 0.86);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .action-button:focus-visible {
@@ -78,13 +83,13 @@ defineEmits<{
 }
 
 .action-button.primary:hover {
-  background: var(--accent-light);
-  color: var(--accent);
+  background: rgba(85, 104, 239, 0.12);
+  color: var(--theme-indigo);
 }
 
 .action-button.danger:hover {
-  background: #fef2f2;
-  color: #ef4444;
+  background: rgba(232, 93, 84, 0.12);
+  color: #e85d54;
 }
 
 .dark .action-button.danger:hover {
@@ -97,7 +102,7 @@ defineEmits<{
 }
 
 .action-button.disabled:hover {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.78);
   color: var(--text-muted);
 }
 </style>

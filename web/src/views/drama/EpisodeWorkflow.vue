@@ -31,7 +31,7 @@
       </AppHeader>
 
     <!-- 阶段 0: 章节内容 + 提取角色场景 -->
-    <el-card v-show="currentStep === 0" shadow="never" class="stage-card stage-card-fullscreen" v-loading="loadingDramaData">
+    <el-card v-show="currentStep === 0" shadow="never" class="stage-card stage-card-fullscreen" v-loading="stageLoadingMask">
       <div class="stage-body stage-body-fullscreen">
         <div class="overview-section">
           <div class="episode-info chapter-editor-header">
@@ -171,7 +171,7 @@
     </el-card>
 
     <!-- 阶段 1: 生成图片 -->
-    <el-card v-show="currentStep === 1" class="workflow-card" v-loading="loadingDramaData">
+    <el-card v-show="currentStep === 1" class="workflow-card" v-loading="stageLoadingMask">
       <div class="stage-body">
         <!-- 角色图片生成 -->
         <div class="image-gen-section">
@@ -448,7 +448,7 @@
     </el-card>
 
     <!-- 阶段 2: 拆分分镜 -->
-    <el-card v-show="currentStep === 2" shadow="never" class="stage-card" v-loading="loadingDramaData">
+    <el-card v-show="currentStep === 2" shadow="never" class="stage-card" v-loading="stageLoadingMask">
       <div class="stage-body">
         <!-- 分镜列表 -->
         <div v-if="currentEpisode?.storyboards && currentEpisode.storyboards.length > 0" class="shots-list">
@@ -1443,7 +1443,9 @@ const filteredVoiceLibrary = computed(() => {
   })
 })
 
-const pageLoading = computed(() => loadingDramaData.value || extractingCharactersAndBackgrounds.value)
+const hasLoadedDramaData = computed(() => !!drama.value?.id)
+const stageLoadingMask = computed(() => loadingDramaData.value && !hasLoadedDramaData.value)
+const pageLoading = computed(() => extractingCharactersAndBackgrounds.value || stageLoadingMask.value)
 
 const currentEpisode = computed(() => {
   if (!drama.value?.episodes) return null

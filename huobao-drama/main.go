@@ -135,16 +135,16 @@ func listenWithDevPortTakeover(cfg *config.Config, logr *logger.Logger, network,
 	pid, findErr := findListeningPID(cfg.Server.Port)
 	if findErr != nil {
 		logr.Warnw("Failed to inspect existing listener while retrying dev startup", "port", cfg.Server.Port, "error", findErr)
-		return nil, err
+		return retryBusyListen(network, listenAddr, 2*time.Second)
 	}
 
 	sameWorkspace, matchErr := isSameWorkspaceProcess(pid)
 	if matchErr != nil {
 		logr.Warnw("Failed to inspect existing listener while retrying dev startup", "pid", pid, "error", matchErr)
-		return nil, err
+		return retryBusyListen(network, listenAddr, 2*time.Second)
 	}
 	if !sameWorkspace {
-		return nil, err
+		return retryBusyListen(network, listenAddr, 2*time.Second)
 	}
 
 	logr.Warnw("Stopping previous dev server instance that is using the port", "port", cfg.Server.Port, "pid", pid)
@@ -168,6 +168,29 @@ func listenWithDevPortTakeover(cfg *config.Config, logr *logger.Logger, network,
 	}
 
 	return nil, err
+}
+
+func retryBusyListen(network, listenAddr string, timeout time.Duration) (net.Listener, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+
+	for time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+
+		listener, err := net.Listen(network, listenAddr)
+		if err == nil {
+			return listener, nil
+		}
+		lastErr = err
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			return nil, err
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = syscall.EADDRINUSE
+	}
+	return nil, lastErr
 }
 
 func findListeningPID(port int) (int, error) {

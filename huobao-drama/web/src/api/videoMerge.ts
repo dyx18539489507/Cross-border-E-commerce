@@ -48,7 +48,14 @@ export interface VideoMerge {
   completed_at?: string
 }
 
-export type DistributionPlatform = 'tiktok' | 'youtube' | 'instagram' | 'x'
+export type DistributionPlatform =
+  | 'discord'
+  | 'reddit'
+  | 'pinterest'
+  | 'tiktok'
+  | 'youtube'
+  | 'instagram'
+  | 'x'
 export type VideoDistributionStatus = 'pending' | 'processing' | 'published' | 'failed'
 
 export interface DistributeVideoRequest {

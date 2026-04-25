@@ -858,8 +858,12 @@
           <!-- 视频合成列表标签 -->
           <el-tab-pane :label="$t('video.videoMerge')" name="merges">
             <div class="tab-content">
-              <div class="merges-list" v-loading="loadingMerges">
-                <el-empty v-if="videoMerges.length === 0" :description="$t('video.noMergeRecords')" :image-size="120">
+              <div class="merges-list" v-loading="loadingMerges && mergeListInitialized && videoMerges.length > 0">
+                <div v-if="loadingMerges && !videoMerges.length" class="merge-loading-state">
+                  <el-icon class="rotating" :size="28"><Loading /></el-icon>
+                  <div class="merge-loading-text">正在加载合成视频...</div>
+                </div>
+                <el-empty v-else-if="videoMerges.length === 0" :description="$t('video.noMergeRecords')" :image-size="120">
                   <template #description>
                     <div style="color: var(--text-muted); font-size: 14px; margin-top: 12px;">
                       <p style="margin: 0;">{{ $t('video.noMergeYet') }}</p>
@@ -949,28 +953,33 @@
                         class="distribution-summary"
                       >
                         <span class="distribution-summary-label">分发状态：</span>
-                        <el-tag
-                          v-for="item in getMergeDistributionSummary(merge.id)"
-                          :key="`${merge.id}-${item.platform}`"
-                          :type="getDistributionStatusType(item.status)"
-                          size="small"
-                          effect="plain"
-                          class="distribution-tag"
-                          :class="{ 'is-link': !!item.published_url }"
-                          @click="openDistributionRecord(item)"
-                        >
-                          {{ getPlatformLabel(item.platform) }} · {{ getDistributionStatusText(item.status) }}
-                        </el-tag>
+                        <div class="distribution-summary-list">
+                          <el-tag
+                            v-for="item in getMergeDistributionSummary(merge.id)"
+                            :key="`${merge.id}-${item.platform}`"
+                            :type="getDistributionStatusType(item.status)"
+                            size="small"
+                            effect="plain"
+                            class="distribution-tag"
+                            :class="{ 'is-link': !!item.published_url }"
+                            @click="openDistributionRecord(item)"
+                          >
+                            {{ getPlatformLabel(item.platform) }} · {{ getDistributionStatusText(item.status) }}
+                          </el-tag>
+                        </div>
                       </div>
 
                       <!-- 操作按钮 -->
-                      <div class="merge-actions">
+                      <div
+                        class="merge-actions"
+                        :class="{ 'single-action': !(merge.status === 'completed' && merge.merged_url) }"
+                      >
                         <template v-if="merge.status === 'completed' && merge.merged_url">
                           <el-button type="primary" :icon="VideoCamera"
                             @click="downloadVideo(merge.merged_url, merge.title)" round>
                             下载视频
                           </el-button>
-                          <el-button :icon="View" @click="previewMergedVideo(merge.merged_url)" round>
+                          <el-button class="preview-button" :icon="View" @click="previewMergedVideo(merge.merged_url)" round>
                             在线预览
                           </el-button>
                           <el-button type="success" :icon="Connection" @click="openDistributionDialog(merge)" round>
@@ -1060,63 +1069,16 @@
       </div>
     </el-dialog>
 
-    <!-- 一键分发对话框 -->
-    <el-dialog
+    <DistributionDialog
+      v-if="distributionTargetMerge"
       v-model="distributionDialogVisible"
-      title="一键分发"
-      width="560px"
-      :close-on-click-modal="false"
-      class="distribution-dialog dialog-form-safe"
-    >
-      <el-form label-position="top" class="distribution-form">
-        <el-form-item label="分发平台">
-          <el-checkbox-group v-model="distributionForm.platforms">
-            <el-checkbox
-              v-for="platform in distributionPlatforms"
-              :key="platform.value"
-              :label="platform.value"
-            >
-              {{ platform.label }}
-            </el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
-        <el-form-item label="视频标题">
-          <el-input
-            v-model="distributionForm.title"
-            maxlength="120"
-            show-word-limit
-            placeholder="请输入发布标题"
-          />
-        </el-form-item>
-        <el-form-item label="发布文案">
-          <el-input
-            v-model="distributionForm.description"
-            type="textarea"
-            :rows="4"
-            maxlength="500"
-            show-word-limit
-            placeholder="请输入发布文案，可介绍商品卖点"
-          />
-        </el-form-item>
-        <el-form-item label="话题标签（空格/逗号分隔）">
-          <el-input
-            v-model="distributionForm.hashtagsText"
-            placeholder="#跨境电商 #短剧带货"
-          />
-        </el-form-item>
-        <div class="distribution-target">
-          当前视频：{{ distributionTargetMerge?.title || '-' }}
-        </div>
-      </el-form>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="distributionDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="submittingDistribution" @click="submitDistribution">
-            {{ submittingDistribution ? '分发中...' : '开始分发' }}
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
+      content-type="video"
+      source-type="video_merge"
+      :source-ref="distributionTargetMerge.id"
+      :media-url="distributionTargetMerge.merged_url"
+      :initial-title="getDefaultDistributionTitle(distributionTargetMerge)"
+      dialog-title="视频一键分发"
+    />
 
     <!-- 视频预览对话框 -->
     <el-dialog v-model="showVideoPreview" title="视频预览" width="800px" :close-on-click-modal="true" destroy-on-close>
@@ -1175,11 +1137,17 @@ import {
   type VideoDistributionStatus,
   type VideoMerge
 } from '@/api/videoMerge'
+import {
+  socialBindingAPI,
+  type SocialAccountBinding,
+  type SocialBindingPlatform
+} from '@/api/socialBinding'
 import type { ImageGeneration } from '@/types/image'
 import type { VideoGeneration } from '@/types/video'
 import type { AIServiceConfig } from '@/types/ai'
 import type { Asset } from '@/types/asset'
 import VideoTimelineEditor from '@/components/editor/VideoTimelineEditor.vue'
+import DistributionDialog from '@/components/distribution/DistributionDialog.vue'
 import type { Drama, Episode, Storyboard } from '@/types/drama'
 import { AppHeader } from '@/components/common'
 
@@ -1288,16 +1256,25 @@ const videoGenerationBottomRef = ref<HTMLElement | null>(null)
 // 视频合成列表
 const videoMerges = ref<VideoMerge[]>([])
 const loadingMerges = ref(false)
+const mergeListInitialized = ref(false)
 
-const distributionPlatforms: Array<{ value: DistributionPlatform; label: string }> = [
-  { value: 'tiktok', label: 'TikTok' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'x', label: 'X' }
+type ManagedDistributionPlatform = SocialBindingPlatform
+
+const distributionPlatforms: Array<{
+  value: ManagedDistributionPlatform
+  label: string
+  placeholder: string
+}> = [
+  { value: 'discord', label: 'Discord', placeholder: '请输入 Discord 用户名、频道号或 webhook 标识' },
+  { value: 'reddit', label: 'Reddit', placeholder: '请输入 Reddit 用户名或版块标识' },
+  { value: 'pinterest', label: 'Pinterest', placeholder: '请输入 Pinterest 用户名或画板标识' }
 ]
 const distributionDialogVisible = ref(false)
 const submittingDistribution = ref(false)
+const loadingSocialBindings = ref(false)
 const distributionTargetMerge = ref<VideoMerge | null>(null)
+const socialBindings = ref<Record<string, SocialAccountBinding>>({})
+const bindingPlatformLoading = ref<Record<string, boolean>>({})
 const distributionForm = ref<{
   mergeId: number
   platforms: DistributionPlatform[]
@@ -1306,7 +1283,7 @@ const distributionForm = ref<{
   hashtagsText: string
 }>({
   mergeId: 0,
-  platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+  platforms: [],
   title: '',
   description: '',
   hashtagsText: ''
@@ -1783,6 +1760,17 @@ const getApiBase = () => {
   return raw.replace(/\/$/, '')
 }
 
+const isTunnelStaticUrl = (url: URL) => {
+  return (
+    url.pathname.startsWith('/static/') &&
+    (
+      url.hostname.endsWith('.loca.lt') ||
+      url.hostname.includes('ngrok') ||
+      url.hostname.endsWith('.trycloudflare.com')
+    )
+  )
+}
+
 const toBackendMediaUrl = (url?: string | null) => {
   if (!url) return ''
   if (url.startsWith('blob:') || url.startsWith('data:')) return url
@@ -1802,6 +1790,9 @@ const resolveVideoUrl = (url?: string | null) => {
       const parsed = new URL(fixed)
       if (parsed.pathname === '/api/v1/media/proxy') {
         return `${parsed.pathname}${parsed.search}`
+      }
+      if (isTunnelStaticUrl(parsed)) {
+        return toBackendMediaUrl(`${parsed.pathname}${parsed.search}`)
       }
     } catch {
       // noop
@@ -4428,6 +4419,114 @@ const getPlatformLabel = (platform: string) => {
   return matched?.label || platform
 }
 
+const getDistributionBinding = (platform: DistributionPlatform) => {
+  return socialBindings.value[platform]
+}
+
+const isDistributionPlatformBound = (platform: DistributionPlatform) => {
+  return !!getDistributionBinding(platform)
+}
+
+const getDistributionBindingLabel = (platform: DistributionPlatform) => {
+  const binding = getDistributionBinding(platform)
+  if (!binding) {
+    return ''
+  }
+  return binding.display_name?.trim() || binding.account_identifier
+}
+
+const syncSelectedDistributionPlatforms = () => {
+  const boundPlatforms = distributionPlatforms
+    .map(item => item.value)
+    .filter(platform => isDistributionPlatformBound(platform))
+
+  if (!distributionForm.value.platforms.length) {
+    distributionForm.value.platforms = [...boundPlatforms]
+    return
+  }
+
+  distributionForm.value.platforms = distributionForm.value.platforms.filter(platform =>
+    boundPlatforms.includes(platform as ManagedDistributionPlatform)
+  )
+}
+
+const loadSocialBindings = async () => {
+  loadingSocialBindings.value = true
+  try {
+    const bindings = await socialBindingAPI.listBindings()
+    socialBindings.value = bindings.reduce<Record<string, SocialAccountBinding>>((acc, item) => {
+      acc[item.platform] = item
+      return acc
+    }, {})
+    syncSelectedDistributionPlatforms()
+  } catch (error) {
+    console.error('加载社交平台绑定失败:', error)
+    socialBindings.value = {}
+    syncSelectedDistributionPlatforms()
+  } finally {
+    loadingSocialBindings.value = false
+  }
+}
+
+const toggleDistributionPlatform = (platform: DistributionPlatform, checked: boolean) => {
+  if (!isDistributionPlatformBound(platform)) {
+    return
+  }
+
+  const current = new Set(distributionForm.value.platforms)
+  if (checked) {
+    current.add(platform)
+  } else {
+    current.delete(platform)
+  }
+  distributionForm.value.platforms = Array.from(current)
+}
+
+const openBindingPrompt = async (platform: { value: ManagedDistributionPlatform; label: string; placeholder: string }) => {
+  bindingPlatformLoading.value = {
+    ...bindingPlatformLoading.value,
+    [platform.value]: true
+  }
+
+  try {
+    const existingBinding = getDistributionBinding(platform.value)
+    const actionText = existingBinding ? '更新绑定' : '绑定账号'
+    const { value } = await ElMessageBox.prompt(
+      `请输入 ${platform.label} 的账号标识，绑定后仅当前身份可用于分发。`,
+      `${platform.label}${actionText}`,
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputValue: existingBinding?.account_identifier || '',
+        inputPlaceholder: platform.placeholder,
+        inputPattern: /\S+/,
+        inputErrorMessage: '请输入有效的账号标识'
+      }
+    )
+
+    const binding = await socialBindingAPI.upsertBinding(platform.value, {
+      account_identifier: value.trim()
+    })
+    socialBindings.value = {
+      ...socialBindings.value,
+      [platform.value]: binding
+    }
+    if (!distributionForm.value.platforms.includes(platform.value)) {
+      distributionForm.value.platforms = [...distributionForm.value.platforms, platform.value]
+    }
+    ElMessage.success(`${platform.label} 已绑定到当前身份`)
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error.message || '绑定失败')
+    }
+  } finally {
+    bindingPlatformLoading.value = {
+      ...bindingPlatformLoading.value,
+      [platform.value]: false
+    }
+  }
+}
+
 const getDistributionStatusText = (status: VideoDistributionStatus) => {
   switch (status) {
     case 'pending':
@@ -4470,7 +4569,7 @@ const getMergeDistributionSummary = (mergeId: number): VideoDistribution[] => {
     }
   })
 
-  const order: DistributionPlatform[] = ['tiktok', 'youtube', 'instagram', 'x']
+  const order: DistributionPlatform[] = ['discord', 'reddit', 'pinterest', 'tiktok', 'youtube', 'instagram', 'x']
   return Array.from(latestByPlatform.values()).sort(
     (a, b) => order.indexOf(a.platform) - order.indexOf(b.platform)
   )
@@ -4479,7 +4578,7 @@ const getMergeDistributionSummary = (mergeId: number): VideoDistribution[] => {
 const resetDistributionForm = () => {
   distributionForm.value = {
     mergeId: 0,
-    platforms: ['tiktok', 'youtube', 'instagram', 'x'],
+    platforms: [],
     title: '',
     description: '',
     hashtagsText: ''
@@ -4544,15 +4643,22 @@ const startDistributionPolling = () => {
   }, 3000)
 }
 
+const getDefaultDistributionTitle = (merge: VideoMerge) => {
+  const dramaTitle = drama.value?.title?.trim()
+  if (dramaTitle) {
+    return dramaTitle
+  }
+
+  const mergeTitle = (merge.title || '').trim()
+  if (!mergeTitle) {
+    return '短剧'
+  }
+
+  return mergeTitle.replace(/\s*[-·•|｜]\s*第[\d一二三四五六七八九十百千万]+集\s*$/u, '').trim() || mergeTitle
+}
+
 const openDistributionDialog = (merge: VideoMerge) => {
   distributionTargetMerge.value = merge
-  distributionForm.value = {
-    mergeId: merge.id,
-    platforms: ['tiktok', 'youtube', 'instagram', 'x'],
-    title: merge.title || `${drama.value?.title || '短剧'} 第${episodeNumber}集`,
-    description: '',
-    hashtagsText: ''
-  }
   distributionDialogVisible.value = true
 }
 
@@ -4603,7 +4709,10 @@ const openDistributionRecord = (distribution: VideoDistribution) => {
 
 // 加载视频合成列表
 const loadVideoMerges = async () => {
-  if (!episodeId.value) return
+  if (!episodeId.value) {
+    mergeListInitialized.value = true
+    return
+  }
 
   try {
     loadingMerges.value = true
@@ -4630,6 +4739,7 @@ const loadVideoMerges = async () => {
     ElMessage.error('加载视频合成列表失败')
   } finally {
     loadingMerges.value = false
+    mergeListInitialized.value = true
   }
 }
 
@@ -4683,14 +4793,22 @@ const handleMergeCompleted = async (mergeId: number) => {
 
 // 下载视频
 const downloadVideo = async (url: string, title: string) => {
+  let loadingMsg: { close: () => void } | null = null
+
   try {
-    const loadingMsg = ElMessage.info({
+    const resolvedUrl = resolveVideoUrl(url)
+    if (!resolvedUrl) {
+      ElMessage.warning('暂无可下载视频')
+      return
+    }
+
+    loadingMsg = ElMessage.info({
       message: '正在准备下载...',
       duration: 0
     })
 
     // 使用fetch获取视频blob
-    const response = await fetch(url)
+    const response = await fetch(resolvedUrl)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
@@ -4712,17 +4830,24 @@ const downloadVideo = async (url: string, title: string) => {
       window.URL.revokeObjectURL(blobUrl)
     }, 100)
 
-    loadingMsg.close()
     ElMessage.success('视频下载已开始')
   } catch (error) {
     console.error('下载视频失败:', error)
     ElMessage.error('视频下载失败，请稍后重试')
+  } finally {
+    loadingMsg?.close()
   }
 }
 
 // 预览合成视频
-const previewMergedVideo = (url: string) => {
-  window.open(url, '_blank')
+const previewMergedVideo = (url?: string | null) => {
+  const resolvedUrl = resolveVideoUrl(url)
+  if (!resolvedUrl) {
+    ElMessage.warning('暂无可预览视频')
+    return
+  }
+
+  window.open(resolvedUrl, '_blank', 'noopener,noreferrer')
 }
 
 // 删除视频合成记录
@@ -6775,6 +6900,21 @@ onBeforeUnmount(() => {
 .merges-list {
   min-height: 300px;
 
+  .merge-loading-state {
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-muted);
+
+    .merge-loading-text {
+      font-size: 14px;
+      font-weight: 500;
+    }
+  }
+
   .merge-items {
     display: flex;
     flex-direction: column;
@@ -6929,13 +7069,19 @@ onBeforeUnmount(() => {
     }
 
     .merge-actions {
-      display: flex;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
-      flex-wrap: wrap;
       padding-top: 16px;
       border-top: 1px solid var(--border-primary);
 
+      &.single-action {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
       :deep(.el-button) {
+        width: 100%;
+        margin: 0;
         font-weight: 500;
         transition: all 0.3s ease;
 
@@ -6948,6 +7094,20 @@ onBeforeUnmount(() => {
 
           &:hover {
             box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+          }
+        }
+
+        &.preview-button {
+          background: linear-gradient(135deg, #f2fbff 0%, #dff2ff 100%);
+          border-color: #b8def6;
+          color: #1d7eb8;
+          box-shadow: 0 2px 8px rgba(29, 126, 184, 0.14);
+
+          &:hover {
+            background: linear-gradient(135deg, #ebf9ff 0%, #cfeeff 100%);
+            border-color: #95cfee;
+            color: #136b9f;
+            box-shadow: 0 4px 12px rgba(29, 126, 184, 0.2);
           }
         }
       }
@@ -6986,16 +7146,31 @@ onBeforeUnmount(() => {
 }
 
 .distribution-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  column-gap: 12px;
+  row-gap: 8px;
   margin-bottom: 12px;
 }
 
 .distribution-summary-label {
   font-size: 12px;
   color: var(--text-muted);
+  line-height: 28px;
+}
+
+.distribution-summary-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+
+:deep(.distribution-tag.el-tag) {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  margin: 0;
 }
 
 .distribution-tag.is-link {
@@ -7003,21 +7178,162 @@ onBeforeUnmount(() => {
 }
 
 .distribution-form {
+  :deep(.el-form-item) {
+    margin-bottom: 16px;
+  }
+
+  .distribution-platform-list {
+    flex: 1 0 100%;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .distribution-platform-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 96px;
+    padding: 12px 12px 8px;
+    border-radius: 16px;
+    border: 1px solid var(--border-primary);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    transition: all 0.2s ease;
+
+    &.is-bound {
+      border-color: rgba(38, 181, 123, 0.28);
+      background: linear-gradient(135deg, rgba(38, 181, 123, 0.08) 0%, rgba(38, 181, 123, 0.02) 100%);
+    }
+  }
+
+  .distribution-platform-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 2px;
+  }
+
+  .distribution-platform-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    &.is-discord {
+      background: #5865f2;
+    }
+
+    &.is-reddit {
+      background: #ff4500;
+      box-shadow: none;
+
+      svg {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    &.is-pinterest {
+      background: #e60023;
+    }
+  }
+
+  .distribution-platform-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .distribution-platform-side {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+  }
+
+  :deep(.distribution-binding-tag.el-tag) {
+    width: 100%;
+    justify-content: center;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :deep(.binding-action-button.el-button) {
+    width: 100%;
+    margin: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(32, 157, 235, 0.18);
+    background: rgba(32, 157, 235, 0.12);
+    color: #1387d6;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: rgba(19, 135, 214, 0.28);
+      background: rgba(32, 157, 235, 0.18);
+      color: #0f6cae;
+    }
+  }
+
   .distribution-target {
-    margin-top: 4px;
+    margin-top: 0;
     font-size: 12px;
     color: var(--text-muted);
   }
 
-  :deep(.el-checkbox-group) {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
+  @media (max-width: 640px) {
+    .distribution-platform-list {
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
   }
+}
+
+.distribution-dialog {
+  margin: 0 auto !important;
+  max-width: calc(100vw - 32px);
+}
+
+.distribution-dialog :deep(.el-dialog__header) {
+  padding-bottom: 8px;
+}
+
+.distribution-dialog :deep(.el-dialog__body) {
+  max-height: none;
+  overflow: visible;
+  padding: 16px 24px 12px !important;
+}
+
+.distribution-dialog :deep(.el-dialog__footer) {
+  position: static;
+  padding-top: 12px;
 }
 </style>
 <style>
+.distribution-dialog-overlay {
+  overflow-y: hidden !important;
+}
+
 .video-prompt-box {
   margin-bottom: 10px;
   padding: 10px 12px;

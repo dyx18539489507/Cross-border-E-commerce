@@ -66,6 +66,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	musicHandler := handlers2.NewMusicHandler(log)
 	mediaHandler := handlers2.NewMediaHandler(log)
 	sfxHandler := handlers2.NewSFXHandler(cfg, log)
+	socialBindingHandler := handlers2.NewSocialBindingHandler(db, log)
+	distributionService := services2.NewDistributionService(db, cfg, log)
+	distributionHandler := handlers2.NewDistributionHandler(distributionService, log)
 
 	api := r.Group("/api/v1")
 	{
@@ -202,6 +205,31 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			videoMerges.GET("/:merge_id/distributions", videoMergeHandler.ListDistributions)
 			videoMerges.POST("/:merge_id/distribute", videoMergeHandler.DistributeVideo)
 			videoMerges.DELETE("/:merge_id", videoMergeHandler.DeleteMerge)
+		}
+
+		distributions := api.Group("/distributions")
+		{
+			distributions.GET("/targets", distributionHandler.ListTargets)
+			distributions.PUT("/targets/:id/default", distributionHandler.SetDefaultTarget)
+			distributions.PUT("/targets/reddit/default", distributionHandler.SaveRedditDefaultTarget)
+			distributions.POST("/targets/discord", distributionHandler.UpsertDiscordTarget)
+			distributions.DELETE("/targets/:id", distributionHandler.DeleteTarget)
+
+			distributions.POST("/upload-post/profile/ensure", distributionHandler.EnsureUploadPostProfile)
+			distributions.POST("/upload-post/connect-link", distributionHandler.GenerateUploadPostConnectLink)
+			distributions.POST("/upload-post/sync", distributionHandler.SyncUploadPostProfile)
+			distributions.GET("/pinterest/boards", distributionHandler.ListPinterestBoards)
+
+			distributions.GET("", distributionHandler.ListDistributionJobs)
+			distributions.POST("", distributionHandler.CreateDistribution)
+			distributions.GET("/:id", distributionHandler.GetDistributionJob)
+			distributions.POST("/:id/retry", distributionHandler.RetryDistribution)
+		}
+
+		socialBindings := api.Group("/social-bindings")
+		{
+			socialBindings.GET("", socialBindingHandler.ListBindings)
+			socialBindings.PUT("/:platform", socialBindingHandler.UpsertBinding)
 		}
 
 		assets := api.Group("/assets")

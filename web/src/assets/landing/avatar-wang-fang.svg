@@ -1,0 +1,33 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="avatar-wang-fang-clip">
+      <circle cx="48" cy="48" r="48" />
+    </clipPath>
+    <linearGradient id="avatar-wang-fang-bg" x1="10" y1="12" x2="86" y2="86" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0FDFA" />
+      <stop offset="1" stop-color="#DCFCE7" />
+    </linearGradient>
+    <radialGradient id="avatar-wang-fang-skin" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(45 41) rotate(80) scale(36 28)">
+      <stop stop-color="#F3D0B5" />
+      <stop offset="0.6" stop-color="#E5B089" />
+      <stop offset="1" stop-color="#D0936A" />
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#avatar-wang-fang-clip)">
+    <rect width="96" height="96" fill="url(#avatar-wang-fang-bg)" />
+    <path d="M18 96C22.7 79.3 34.1 69.8 48 69.8C61.9 69.8 73.3 79.3 78 96H18Z" fill="#B4532A" />
+    <path d="M33.4 96C35.8 84.5 41.3 77.5 48 77.5C54.7 77.5 60.2 84.5 62.6 96H33.4Z" fill="#FFF7ED" />
+    <path d="M40.7 69.2C42.7 72.6 45.1 74.3 48 74.3C50.9 74.3 53.3 72.6 55.3 69.2V62.3H40.7V69.2Z" fill="#D69B72" />
+    <path d="M29.6 39.1C29.6 24.4 36.7 15.5 48 15.5C59.3 15.5 66.4 24.4 66.4 39.1V47.5C66.4 61.2 58.3 69.4 48 69.4C37.7 69.4 29.6 61.2 29.6 47.5V39.1Z" fill="url(#avatar-wang-fang-skin)" />
+    <path d="M29.5 42.1C26.6 44.5 26.6 51.7 30.8 55C31.5 50.4 31.1 46.2 29.5 42.1Z" fill="#D0916D" />
+    <path d="M66.5 42.1C69.4 44.5 69.4 51.7 65.2 55C64.5 50.4 64.9 46.2 66.5 42.1Z" fill="#D0916D" />
+    <path d="M27.4 42.8C26.4 32.8 29.5 23.7 36.2 18.4C42.7 13.2 53.1 13.2 59.7 18.4C66.2 23.5 69.6 32.1 68.4 42.5C65.3 39.1 63.6 35.1 62.8 30.4C57.5 34.7 50.1 36.4 43.7 33.2C40.6 37.2 35.1 40.2 27.4 42.8Z" fill="#1F1B18" />
+    <path d="M34.7 39.9C38.2 38.5 41.9 38.7 44.7 40.6" stroke="#2B211D" stroke-width="2.1" stroke-linecap="round" />
+    <path d="M51.3 40.6C54.1 38.7 57.8 38.5 61.3 39.9" stroke="#2B211D" stroke-width="2.1" stroke-linecap="round" />
+    <path d="M38 45.4C40.5 43.8 43.3 43.9 45.7 45.4" stroke="#2D1B12" stroke-width="1.7" stroke-linecap="round" />
+    <path d="M50.3 45.4C52.7 43.9 55.5 43.8 58 45.4" stroke="#2D1B12" stroke-width="1.7" stroke-linecap="round" />
+    <path d="M48.1 46.6C47.5 50.9 46.5 53.8 45 55.8C47.1 56.7 49.5 56.6 51.2 55.7" stroke="#B37356" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M41.6 60.1C45 63 51 63 54.4 60.1" stroke="#9F4E42" stroke-width="2" stroke-linecap="round" />
+    <path d="M43.5 28.9C50 33.7 57 32.7 62.9 27.4C61.4 34.6 56.7 39.3 49.8 40C42.9 40.7 35.7 37.6 29.9 42.2C31.3 36.4 36.8 31.3 43.5 28.9Z" fill="#2E2520" opacity="0.55" />
+  </g>
+</svg>

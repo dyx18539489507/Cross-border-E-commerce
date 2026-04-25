@@ -1,175 +1,184 @@
 export interface Drama {
-  id: string
-  
-  title: string
-  description?: string
-  target_country?: string | string[]
-  material_composition?: string
-  marketing_selling_points?: string
-  compliance_score?: number
-  compliance_level?: ComplianceRiskLevel
-  compliance_report?: ComplianceResult
-  genre?: string
-  style?: string
-  total_episodes: number
-  total_duration: number
-  total_scenes?: number
-  duration?: number
-  status: DramaStatus
-  thumbnail?: string
-  tags?: any
-  metadata?: any
-  created_at: string
-  updated_at: string
-  characters?: Character[]
-  episodes?: Episode[]
-  scenes?: Scene[]
+  id: string;
+
+  title: string;
+  description?: string;
+  target_country?: string | string[];
+  material_composition?: string;
+  marketing_selling_points?: string;
+  compliance_score?: number;
+  compliance_level?: ComplianceRiskLevel;
+  compliance_report?: ComplianceResult;
+  genre?: string;
+  style?: string;
+  total_episodes: number;
+  total_duration: number;
+  total_scenes?: number;
+  duration?: number;
+  status: DramaStatus;
+  thumbnail?: string;
+  tags?: any;
+  metadata?: any;
+  created_at: string;
+  updated_at: string;
+  characters?: Character[];
+  episodes?: Episode[];
+  scenes?: Scene[];
 }
 
-export type DramaStatus = 'draft' | 'planning' | 'production' | 'completed' | 'archived' | 'generating' | 'error'
-export type ComplianceRiskLevel = 'green' | 'yellow' | 'orange' | 'red'
+export type DramaStatus =
+  | "draft"
+  | "planning"
+  | "production"
+  | "completed"
+  | "archived"
+  | "generating"
+  | "error";
+export type ComplianceRiskLevel = "green" | "yellow" | "orange" | "red";
 
 export interface ComplianceResult {
-  score: number
-  level: ComplianceRiskLevel
-  level_label: string
-  summary: string
-  non_compliance_points: string[]
-  rectification_suggestions: string[]
-  suggested_categories: string[]
+  score: number;
+  level: ComplianceRiskLevel;
+  level_label: string;
+  summary: string;
+  non_compliance_points: string[];
+  rectification_suggestions: string[];
+  suggested_categories: string[];
 }
 
 export interface Character {
-  id: number
-  drama_id: string
-  name: string
-  role?: string
-  description?: string
-  appearance?: string
-  personality?: string
-  voice_style?: string
-  background?: string
-  reference_images?: any
-  seed_value?: string
-  sort_order?: number
-  image_url?: string
-  image_generation_status?: string
-  image_generation_error?: string
-  created_at: string
-  updated_at: string
+  id: number;
+  drama_id: string;
+  name: string;
+  role?: string;
+  description?: string;
+  appearance?: string;
+  personality?: string;
+  voice_style?: string;
+  background?: string;
+  reference_images?: any;
+  seed_value?: string;
+  sort_order?: number;
+  image_url?: string;
+  image_generation_status?: string;
+  image_generation_error?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Episode {
-  id: string
-  drama_id: string
-  episode_number: number
-  title: string
-  content: string
-  description?: string
-  script_content?: string
-  duration?: number
-  status: string
-  video_url?: string
-  thumbnail?: string
-  storyboard_count?: number
-  scene_count?: number
-  composition_count?: number
-  video_count?: number
-  timeline_status?: string
-  storyboards?: Storyboard[]
-  scenes?: Scene[]
-  characters?: Character[]
-  shots?: any[]
-  created_at: string
-  updated_at: string
+  id: string;
+  drama_id: string;
+  episode_number: number;
+  title: string;
+  content: string;
+  description?: string;
+  script_content?: string;
+  duration?: number;
+  status: string;
+  video_url?: string;
+  thumbnail?: string;
+  storyboard_count?: number;
+  scene_count?: number;
+  composition_count?: number;
+  video_count?: number;
+  timeline_status?: string;
+  storyboards?: Storyboard[];
+  scenes?: Scene[];
+  characters?: Character[];
+  shots?: any[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Storyboard {
-  id: string
-  episode_id: string
-  storyboard_number: number
-  title?: string
-  description?: string
-  location?: string
-  time?: string
-  duration?: number
-  dialogue?: string
-  action?: string
-  atmosphere?: string
-  image_prompt?: string
-  video_prompt?: string
-  characters?: any
-  image_url?: string
-  video_url?: string
-  composed_image?: string
-  scene_id?: string
-  scene?: Scene
-  created_at: string
-  updated_at: string
-  [key: string]: any
+  id: string;
+  episode_id: string;
+  storyboard_number: number;
+  title?: string;
+  description?: string;
+  location?: string;
+  time?: string;
+  duration?: number;
+  dialogue?: string;
+  action?: string;
+  atmosphere?: string;
+  image_prompt?: string;
+  video_prompt?: string;
+  characters?: any;
+  image_url?: string;
+  video_url?: string;
+  composed_image?: string;
+  scene_id?: string;
+  scene?: Scene;
+  created_at: string;
+  updated_at: string;
+  [key: string]: any;
 }
 
 export interface Scene {
-  id: string
-  drama_id: string
-  location: string
-  time: string
-  prompt: string
-  description?: string
-  title?: string
-  storyboard_number?: number
-  storyboard_count?: number
-  image_url?: string
-  video_url?: string
-  status: string
-  image_generation_status?: string
-  image_generation_error?: string
-  created_at: string
-  updated_at: string
+  id: string;
+  drama_id: string;
+  location: string;
+  time: string;
+  prompt: string;
+  description?: string;
+  title?: string;
+  storyboard_number?: number;
+  storyboard_count?: number;
+  image_url?: string;
+  video_url?: string;
+  status: string;
+  image_generation_status?: string;
+  image_generation_error?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreateDramaRequest {
-  title: string
-  description: string
-  target_country: string[]
-  material_composition?: string
-  marketing_selling_points?: string
-  genre?: string
-  tags?: string
+  title: string;
+  description: string;
+  target_country: string[];
+  material_composition?: string;
+  marketing_selling_points?: string;
+  compliance_token?: string;
+  genre?: string;
+  tags?: string;
 }
 
 export interface CreateDramaResponse {
-  drama: Drama
-  compliance: ComplianceResult
+  drama: Drama;
+  compliance: ComplianceResult;
 }
 
 export interface CheckDramaComplianceResponse {
-  compliance: ComplianceResult
+  compliance: ComplianceResult;
+  compliance_token: string;
 }
 
 export interface UpdateDramaRequest {
-  title?: string
-  description?: string
-  target_country?: string[]
-  material_composition?: string
-  marketing_selling_points?: string
-  genre?: string
-  tags?: string
-  status?: DramaStatus
+  title?: string;
+  description?: string;
+  target_country?: string[];
+  material_composition?: string;
+  marketing_selling_points?: string;
+  genre?: string;
+  tags?: string;
+  status?: DramaStatus;
 }
 
 export interface DramaListQuery {
-  page?: number
-  page_size?: number
-  status?: DramaStatus
-  genre?: string
-  keyword?: string
+  page?: number;
+  page_size?: number;
+  status?: DramaStatus;
+  genre?: string;
+  keyword?: string;
 }
 
 export interface DramaStats {
-  total: number
+  total: number;
   by_status: Array<{
-    status: string
-    count: number
-  }>
+    status: string;
+    count: number;
+  }>;
 }

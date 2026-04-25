@@ -86,6 +86,12 @@ Experience AI short drama generation:
 - ✅ Asset import/export
 - ✅ Task progress tracking
 
+### 📣 Distribution
+
+- ✅ Bind each device identity to its own Pinterest / Reddit / Discord targets
+- ✅ Auto-create Upload-Post profiles, generate connect links, and sync Pinterest boards
+- ✅ Unified distribution jobs with per-platform status tracking and retry support
+
 ---
 
 ## 🚀 Quick Start
@@ -176,6 +182,25 @@ ai:
 - `storage.base_url`: Static resource access URL
 - `ai.default_*_provider`: AI service provider configuration (API keys configured in Web UI)
 
+### 🔐 Distribution Environment Variables
+
+No secret is hardcoded in the repository. Configure these variables in your runtime environment:
+
+```bash
+export UPLOAD_POST_API_KEY="your-upload-post-api-key"
+export DISTRIBUTION_SECRET_KEY="replace-with-a-long-random-string"
+export UPLOAD_POST_REDIRECT_URL="http://localhost:3012/dramas/1/settings"
+export UPLOAD_POST_BASE_URL="https://api.upload-post.com/api"
+export DISTRIBUTION_DISCORD_USERNAME="Drama Generator"
+export DISTRIBUTION_DISCORD_AVATAR_URL=""
+```
+
+Notes:
+
+- `UPLOAD_POST_API_KEY` is required for Upload-Post profile creation, connect links, Pinterest board sync, and Reddit / Pinterest publishing.
+- `DISTRIBUTION_SECRET_KEY` is required to encrypt user-owned Discord webhook URLs before storing them.
+- If you use local storage, make sure `storage.base_url` is publicly reachable so Upload-Post can fetch image/video assets.
+
 ### 📥 Installation
 
 ```bash
@@ -230,6 +255,15 @@ Access: `http://localhost:5678`
 ### 🗄️ Database Initialization
 
 Database tables are automatically created on first startup (using GORM AutoMigrate), no manual migration needed.
+
+### 📣 Distribution Setup
+
+1. Open `/dramas/:id/settings` and switch to the `分发账号` tab.
+2. Create or fetch the Upload-Post profile for the current device identity.
+3. Connect Pinterest and Reddit in the popup window, then sync the binding status.
+4. Pull Pinterest boards, save a default subreddit, and add one or more Discord webhook targets.
+5. Click `一键分发` from the professional editor or image details dialog, then choose platforms and overrides.
+6. Job progress is written to `distribution_jobs` and `distribution_results`, and the frontend polls per-platform status until completion.
 
 ---
 

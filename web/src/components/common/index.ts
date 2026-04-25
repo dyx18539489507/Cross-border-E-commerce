@@ -17,8 +17,10 @@ export { default as ActionButton } from './ActionButton.vue'
 // Dialog Components / 弹窗组件
 export { default as CreateDramaDialog } from './CreateDramaDialog.vue'
 export { default as AIConfigDialog } from './AIConfigDialog.vue'
+export { default as MobileAccessReminder } from './MobileAccessReminder.vue'
 
 // Layout Components / 布局组件
 export { default as AppLayout } from './AppLayout.vue'
 export { default as AppHeader } from './AppHeader.vue'
 export { default as BeianFooter } from './BeianFooter.vue'
+export { default as MarketingFooter } from './MarketingFooter.vue'

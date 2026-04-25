@@ -53,7 +53,11 @@ const iconSize = computed(() => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: var(--space-8) var(--space-4);
+  padding: var(--space-10) var(--space-6);
+  border: 1px dashed rgba(152, 173, 206, 0.34);
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(18px);
 }
 
 /* Size variants / 尺寸变体 */
@@ -85,8 +89,8 @@ const iconSize = computed(() => {
   width: 5rem;
   height: 5rem;
   margin-bottom: var(--space-4);
-  background: linear-gradient(135deg, var(--accent) 0%, #06b6d4 100%);
-  border-radius: 50%;
+  background: linear-gradient(135deg, var(--theme-blue) 0%, var(--theme-indigo) 60%, var(--theme-orange) 100%);
+  border-radius: 28px;
   color: white;
 }
 
@@ -106,19 +110,19 @@ const iconSize = computed(() => {
 /* Title / 标题 */
 .empty-title {
   margin: 0 0 var(--space-2) 0;
-  font-size: 1.0625rem;
-  font-weight: 600;
+  font-size: 1.2rem;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.03em;
 }
 
 /* Description / 描述 */
 .empty-description {
   margin: 0;
-  font-size: 0.875rem;
-  color: var(--text-muted);
+  font-size: 0.95rem;
+  color: var(--text-secondary);
   max-width: 320px;
-  line-height: 1.5;
+  line-height: 1.75;
 }
 
 /* Actions / 操作区 */

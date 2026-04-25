@@ -66,6 +66,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	musicHandler := handlers2.NewMusicHandler(log)
 	mediaHandler := handlers2.NewMediaHandler(log)
 	sfxHandler := handlers2.NewSfxHandler(cfg, log)
+	socialBindingHandler := handlers2.NewSocialBindingHandler(db, log)
 
 	api := r.Group("/api/v1")
 	{
@@ -200,6 +201,12 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			videoMerges.GET("/:merge_id/distributions", videoMergeHandler.ListDistributions)
 			videoMerges.POST("/:merge_id/distribute", videoMergeHandler.DistributeVideo)
 			videoMerges.DELETE("/:merge_id", videoMergeHandler.DeleteMerge)
+		}
+
+		socialBindings := api.Group("/social-bindings")
+		{
+			socialBindings.GET("", socialBindingHandler.ListBindings)
+			socialBindings.PUT("/:platform", socialBindingHandler.UpsertBinding)
 		}
 
 		assets := api.Group("/assets")

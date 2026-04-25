@@ -61,13 +61,19 @@ type DistributeVideoRequest struct {
 }
 
 var defaultDistributionPlatforms = []models.VideoDistributionPlatform{
-	models.VideoDistributionPlatformTikTok,
-	models.VideoDistributionPlatformYouTube,
-	models.VideoDistributionPlatformInstagram,
-	models.VideoDistributionPlatformX,
+	models.VideoDistributionPlatformDiscord,
+	models.VideoDistributionPlatformReddit,
+	models.VideoDistributionPlatformPinterest,
 }
 
 var distributionPlatformAlias = map[string]models.VideoDistributionPlatform{
+	"discord":          models.VideoDistributionPlatformDiscord,
+	"discord server":   models.VideoDistributionPlatformDiscord,
+	"reddit":           models.VideoDistributionPlatformReddit,
+	"reddit post":      models.VideoDistributionPlatformReddit,
+	"pinterest":        models.VideoDistributionPlatformPinterest,
+	"pinterest board":  models.VideoDistributionPlatformPinterest,
+	"pinterest pin":    models.VideoDistributionPlatformPinterest,
 	"tiktok":          models.VideoDistributionPlatformTikTok,
 	"tik tok":         models.VideoDistributionPlatformTikTok,
 	"douyin":          models.VideoDistributionPlatformTikTok,
@@ -82,6 +88,12 @@ var distributionPlatformAlias = map[string]models.VideoDistributionPlatform{
 	"x twitter":       models.VideoDistributionPlatformX,
 	"x com":           models.VideoDistributionPlatformX,
 	"x.com":           models.VideoDistributionPlatformX,
+}
+
+var bindingRequiredPlatforms = map[models.VideoDistributionPlatform]struct{}{
+	models.VideoDistributionPlatformDiscord:   {},
+	models.VideoDistributionPlatformReddit:    {},
+	models.VideoDistributionPlatformPinterest: {},
 }
 
 type distributionGatewayRequest struct {
@@ -586,8 +598,13 @@ func (s *VideoMergeService) DeleteMerge(mergeID uint) error {
 	return nil
 }
 
-func (s *VideoMergeService) DistributeVideo(mergeID uint, req *DistributeVideoRequest) ([]models.VideoDistribution, error) {
-	merge, err := s.GetMerge(mergeID)
+func (s *VideoMergeService) DistributeVideo(mergeID uint, req *DistributeVideoRequest, deviceIDs ...string) ([]models.VideoDistribution, error) {
+	deviceID := ""
+	if len(deviceIDs) > 0 {
+		deviceID = strings.TrimSpace(deviceIDs[0])
+	}
+
+	merge, err := s.getMergeForDistribution(mergeID, deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("merge not found")
 	}
@@ -608,6 +625,9 @@ func (s *VideoMergeService) DistributeVideo(mergeID uint, req *DistributeVideoRe
 
 	platforms, err := normalizeDistributionPlatforms(req.Platforms)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateDistributionBindings(deviceID, platforms); err != nil {
 		return nil, err
 	}
 
@@ -654,6 +674,69 @@ func (s *VideoMergeService) DistributeVideo(mergeID uint, req *DistributeVideoRe
 	}
 
 	return records, nil
+}
+
+func (s *VideoMergeService) getMergeForDistribution(mergeID uint, deviceID string) (*models.VideoMerge, error) {
+	var merge models.VideoMerge
+	query := s.db.Model(&models.VideoMerge{}).Where("video_merges.id = ?", mergeID)
+	if deviceID != "" {
+		query = query.Joins("JOIN dramas ON dramas.id = video_merges.drama_id").
+			Where("dramas.device_id = ?", deviceID)
+	}
+	if err := query.First(&merge).Error; err != nil {
+		return nil, err
+	}
+	return &merge, nil
+}
+
+func (s *VideoMergeService) validateDistributionBindings(deviceID string, platforms []models.VideoDistributionPlatform) error {
+	if deviceID == "" || len(platforms) == 0 {
+		return nil
+	}
+
+	requiredPlatforms := make([]string, 0, len(platforms))
+	missingPlatforms := make([]models.VideoDistributionPlatform, 0, len(platforms))
+	seen := make(map[models.VideoDistributionPlatform]struct{})
+	for _, platform := range platforms {
+		if _, ok := bindingRequiredPlatforms[platform]; !ok {
+			continue
+		}
+		if _, exists := seen[platform]; exists {
+			continue
+		}
+		seen[platform] = struct{}{}
+		requiredPlatforms = append(requiredPlatforms, string(platform))
+		missingPlatforms = append(missingPlatforms, platform)
+	}
+	if len(requiredPlatforms) == 0 {
+		return nil
+	}
+
+	var bindings []models.SocialAccountBinding
+	if err := s.db.
+		Where("device_id = ? AND platform IN ?", deviceID, requiredPlatforms).
+		Find(&bindings).Error; err != nil {
+		return fmt.Errorf("failed to verify social bindings: %w", err)
+	}
+
+	boundPlatforms := make(map[models.VideoDistributionPlatform]struct{}, len(bindings))
+	for _, binding := range bindings {
+		boundPlatforms[models.VideoDistributionPlatform(binding.Platform)] = struct{}{}
+	}
+
+	missingLabels := make([]string, 0, len(missingPlatforms))
+	for _, platform := range missingPlatforms {
+		if _, ok := boundPlatforms[platform]; ok {
+			continue
+		}
+		missingLabels = append(missingLabels, getDistributionPlatformLabel(string(platform)))
+	}
+
+	if len(missingLabels) > 0 {
+		return fmt.Errorf("请先绑定以下平台账号后再分发：%s", strings.Join(missingLabels, "、"))
+	}
+
+	return nil
 }
 
 func (s *VideoMergeService) ListDistributions(mergeID uint) ([]models.VideoDistribution, error) {
@@ -835,6 +918,27 @@ func parseDistributionHashtags(raw []byte) []string {
 	return normalizeDistributionHashtags(hashtags)
 }
 
+func getDistributionPlatformLabel(platform string) string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case string(models.VideoDistributionPlatformDiscord):
+		return "Discord"
+	case string(models.VideoDistributionPlatformReddit):
+		return "Reddit"
+	case string(models.VideoDistributionPlatformPinterest):
+		return "Pinterest"
+	case string(models.VideoDistributionPlatformTikTok):
+		return "TikTok"
+	case string(models.VideoDistributionPlatformYouTube):
+		return "YouTube"
+	case string(models.VideoDistributionPlatformInstagram):
+		return "Instagram"
+	case string(models.VideoDistributionPlatformX):
+		return "X"
+	default:
+		return platform
+	}
+}
+
 func tryDispatchWithGateway(distribution models.VideoDistribution, hashtags []string) (publishedURL string, message string, err error, handled bool) {
 	gatewayURL := strings.TrimSpace(os.Getenv("DISTRIBUTION_GATEWAY_URL"))
 	if gatewayURL == "" {
@@ -916,6 +1020,17 @@ func tryDispatchWithGateway(distribution models.VideoDistribution, hashtags []st
 func buildDistributionPublishedURL(platform string, sourceURL string, distributionID uint, title string, hashtags []string) string {
 	escapedSource := url.QueryEscape(sourceURL)
 	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case string(models.VideoDistributionPlatformDiscord):
+		return fmt.Sprintf("https://discord.com/channels/@me?source=%s&distribution_id=%d", escapedSource, distributionID)
+	case string(models.VideoDistributionPlatformReddit):
+		escapedTitle := url.QueryEscape(strings.TrimSpace(title))
+		return fmt.Sprintf("https://www.reddit.com/submit?url=%s&title=%s", escapedSource, escapedTitle)
+	case string(models.VideoDistributionPlatformPinterest):
+		description := strings.TrimSpace(title)
+		if description == "" {
+			description = "跨境短剧视频"
+		}
+		return fmt.Sprintf("https://www.pinterest.com/pin-builder/?url=%s&description=%s", escapedSource, url.QueryEscape(description))
 	case string(models.VideoDistributionPlatformTikTok):
 		return fmt.Sprintf("https://www.tiktok.com/upload?source=%s&distribution_id=%d", escapedSource, distributionID)
 	case string(models.VideoDistributionPlatformYouTube):

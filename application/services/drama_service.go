@@ -1,11 +1,15 @@
 package services
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/drama-generator/backend/domain/models"
@@ -15,15 +19,34 @@ import (
 )
 
 type DramaService struct {
-	db                *gorm.DB
-	log               *logger.Logger
-	complianceService *ComplianceService
+	db                 *gorm.DB
+	log                *logger.Logger
+	complianceService  *ComplianceService
+	complianceCache    map[string]cachedComplianceResult
+	complianceCacheMu  sync.RWMutex
+	complianceTokens   map[string]issuedComplianceToken
+	complianceTokensMu sync.RWMutex
 }
 
 var (
-	ErrTargetCountryRequired   = errors.New("target_country is required")
-	ErrComplianceRiskForbidden = errors.New("compliance risk level red, creation forbidden")
+	ErrTargetCountryRequired     = errors.New("target_country is required")
+	ErrComplianceRiskForbidden   = errors.New("compliance risk level red, creation forbidden")
+	ErrCompliancePrecheckInvalid = errors.New("compliance precheck token invalid or expired")
 )
+
+const complianceCacheTTL = 10 * time.Minute
+
+type cachedComplianceResult struct {
+	result    *ComplianceResult
+	expiresAt time.Time
+}
+
+type issuedComplianceToken struct {
+	cacheKey  string
+	deviceID  string
+	result    *ComplianceResult
+	expiresAt time.Time
+}
 
 func firstDramaDeviceID(deviceIDs []string) string {
 	if len(deviceIDs) == 0 {
@@ -61,6 +84,8 @@ func NewDramaService(db *gorm.DB, log *logger.Logger, complianceService *Complia
 		db:                db,
 		log:               log,
 		complianceService: complianceService,
+		complianceCache:   make(map[string]cachedComplianceResult),
+		complianceTokens:  make(map[string]issuedComplianceToken),
 	}
 }
 
@@ -70,6 +95,7 @@ type CreateDramaRequest struct {
 	TargetCountry          []string `json:"target_country" binding:"required,min=1"`
 	MaterialComposition    string   `json:"material_composition" binding:"omitempty,max=200"`
 	MarketingSellingPoints string   `json:"marketing_selling_points" binding:"omitempty,max=200"`
+	ComplianceToken        string   `json:"compliance_token" binding:"omitempty,max=128"`
 	Genre                  string   `json:"genre"`
 	Tags                   string   `json:"tags"`
 }
@@ -120,7 +146,162 @@ func prepareCreateDramaInput(req *CreateDramaRequest) (*preparedCreateDramaInput
 	}, nil
 }
 
-func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput) *ComplianceResult {
+func cloneComplianceResult(result *ComplianceResult) *ComplianceResult {
+	if result == nil {
+		return nil
+	}
+
+	return &ComplianceResult{
+		Score:                    result.Score,
+		Level:                    result.Level,
+		LevelLabel:               result.LevelLabel,
+		Summary:                  result.Summary,
+		NonCompliancePoints:      append([]string{}, result.NonCompliancePoints...),
+		RectificationSuggestions: append([]string{}, result.RectificationSuggestions...),
+		SuggestedCategories:      append([]string{}, result.SuggestedCategories...),
+	}
+}
+
+func buildComplianceCacheKey(input *preparedCreateDramaInput, deviceID string) string {
+	payload := struct {
+		DeviceID               string   `json:"device_id"`
+		Title                  string   `json:"title"`
+		Description            string   `json:"description"`
+		TargetCountry          []string `json:"target_country"`
+		MaterialComposition    string   `json:"material_composition"`
+		MarketingSellingPoints string   `json:"marketing_selling_points"`
+	}{
+		DeviceID:               strings.TrimSpace(deviceID),
+		Title:                  input.title,
+		Description:            input.description,
+		TargetCountry:          append([]string{}, input.targetCountries...),
+		MaterialComposition:    input.materialComposition,
+		MarketingSellingPoints: input.marketingSellingPoints,
+	}
+
+	raw, _ := json.Marshal(payload)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func generateComplianceToken() string {
+	randomBytes := make([]byte, 18)
+	if _, err := rand.Read(randomBytes); err != nil {
+		fallback := sha256.Sum256([]byte(fmt.Sprintf("compliance-%d", time.Now().UnixNano())))
+		return hex.EncodeToString(fallback[:16])
+	}
+	return hex.EncodeToString(randomBytes)
+}
+
+func (s *DramaService) getCachedComplianceResult(cacheKey string) *ComplianceResult {
+	if cacheKey == "" {
+		return nil
+	}
+
+	now := time.Now()
+
+	s.complianceCacheMu.RLock()
+	entry, ok := s.complianceCache[cacheKey]
+	s.complianceCacheMu.RUnlock()
+	if !ok {
+		return nil
+	}
+
+	if now.After(entry.expiresAt) {
+		s.complianceCacheMu.Lock()
+		current, exists := s.complianceCache[cacheKey]
+		if exists && now.After(current.expiresAt) {
+			delete(s.complianceCache, cacheKey)
+		}
+		s.complianceCacheMu.Unlock()
+		return nil
+	}
+
+	return cloneComplianceResult(entry.result)
+}
+
+func (s *DramaService) setCachedComplianceResult(cacheKey string, result *ComplianceResult) {
+	if cacheKey == "" || result == nil {
+		return
+	}
+
+	s.complianceCacheMu.Lock()
+	s.complianceCache[cacheKey] = cachedComplianceResult{
+		result:    cloneComplianceResult(result),
+		expiresAt: time.Now().Add(complianceCacheTTL),
+	}
+	s.complianceCacheMu.Unlock()
+}
+
+func (s *DramaService) issueComplianceToken(cacheKey, deviceID string, result *ComplianceResult) string {
+	if cacheKey == "" || result == nil {
+		return ""
+	}
+
+	token := generateComplianceToken()
+	s.complianceTokensMu.Lock()
+	s.complianceTokens[token] = issuedComplianceToken{
+		cacheKey:  cacheKey,
+		deviceID:  strings.TrimSpace(deviceID),
+		result:    cloneComplianceResult(result),
+		expiresAt: time.Now().Add(complianceCacheTTL),
+	}
+	s.complianceTokensMu.Unlock()
+	return token
+}
+
+func (s *DramaService) getComplianceResultByToken(token string, input *preparedCreateDramaInput, deviceID string) (*ComplianceResult, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	now := time.Now()
+	s.complianceTokensMu.RLock()
+	entry, ok := s.complianceTokens[token]
+	s.complianceTokensMu.RUnlock()
+	if !ok {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	if now.After(entry.expiresAt) {
+		s.complianceTokensMu.Lock()
+		current, exists := s.complianceTokens[token]
+		if exists && now.After(current.expiresAt) {
+			delete(s.complianceTokens, token)
+		}
+		s.complianceTokensMu.Unlock()
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	normalizedDeviceID := strings.TrimSpace(deviceID)
+	if entry.deviceID != normalizedDeviceID {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	expectedCacheKey := buildComplianceCacheKey(input, normalizedDeviceID)
+	if entry.cacheKey != expectedCacheKey {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	if cached := s.getCachedComplianceResult(entry.cacheKey); cached != nil {
+		return cached, nil
+	}
+
+	if entry.result == nil {
+		return nil, ErrCompliancePrecheckInvalid
+	}
+
+	s.setCachedComplianceResult(entry.cacheKey, entry.result)
+	return cloneComplianceResult(entry.result), nil
+}
+
+func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput, deviceID string) *ComplianceResult {
+	cacheKey := buildComplianceCacheKey(input, deviceID)
+	if cached := s.getCachedComplianceResult(cacheKey); cached != nil {
+		return cached
+	}
+
 	complianceResult := &ComplianceResult{
 		Score:                    0,
 		Level:                    ComplianceRiskGreen,
@@ -144,15 +325,21 @@ func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput) *Comp
 		}
 	}
 
+	s.setCachedComplianceResult(cacheKey, complianceResult)
 	return complianceResult
 }
 
-func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest) (*ComplianceResult, error) {
+func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest, deviceIDs ...string) (*ComplianceResult, string, error) {
 	input, err := prepareCreateDramaInput(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return s.evaluateCompliance(input), nil
+
+	deviceID := firstDramaDeviceID(deviceIDs)
+	complianceResult := s.evaluateCompliance(input, deviceID)
+	cacheKey := buildComplianceCacheKey(input, deviceID)
+	complianceToken := s.issueComplianceToken(cacheKey, deviceID, complianceResult)
+	return complianceResult, complianceToken, nil
 }
 
 func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string) (*models.Drama, *ComplianceResult, error) {
@@ -162,7 +349,15 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string)
 		return nil, nil, err
 	}
 
-	complianceResult := s.evaluateCompliance(input)
+	var complianceResult *ComplianceResult
+	if strings.TrimSpace(req.ComplianceToken) != "" {
+		complianceResult, err = s.getComplianceResultByToken(req.ComplianceToken, input, deviceID)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		complianceResult = s.evaluateCompliance(input, deviceID)
+	}
 
 	if complianceResult.Level == ComplianceRiskRed {
 		s.log.Warnw(

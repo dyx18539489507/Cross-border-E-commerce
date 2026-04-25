@@ -76,3 +76,63 @@ func TestDramaServiceClaimsLegacyDramasForFirstDevice(t *testing.T) {
 		t.Fatalf("expected claimed device_id, got %q", refreshed.DeviceID)
 	}
 }
+
+func TestDramaServiceCreatesWithPrecheckedComplianceToken(t *testing.T) {
+	db := newDramaServiceTestDB(t)
+	svc := NewDramaService(db, logger.NewLogger(false), nil)
+
+	req := &CreateDramaRequest{
+		Title:                  "磁吸充电宝",
+		Description:            "兼容磁吸协议的无线充",
+		TargetCountry:          []string{"US", "JP"},
+		MaterialComposition:    "ABS+锂电池",
+		MarketingSellingPoints: "磁吸快充",
+	}
+	input, err := prepareCreateDramaInput(req)
+	if err != nil {
+		t.Fatalf("prepare create drama input: %v", err)
+	}
+
+	deviceID := "dev_cache_browser_123456"
+	expected := &ComplianceResult{
+		Score:                    75,
+		Level:                    ComplianceRiskOrange,
+		LevelLabel:               "高",
+		Summary:                  "缓存命中的橙色风险结果",
+		NonCompliancePoints:      []string{"疑似侵权表述"},
+		RectificationSuggestions: []string{"修改营销文案"},
+		SuggestedCategories:      []string{"电子产品"},
+	}
+	cacheKey := buildComplianceCacheKey(input, deviceID)
+	svc.setCachedComplianceResult(cacheKey, expected)
+	token := svc.issueComplianceToken(cacheKey, deviceID, expected)
+	req.ComplianceToken = token
+
+	compliance, issuedToken, err := svc.EvaluateCompliance(&CreateDramaRequest{
+		Title:                  req.Title,
+		Description:            req.Description,
+		TargetCountry:          req.TargetCountry,
+		MaterialComposition:    req.MaterialComposition,
+		MarketingSellingPoints: req.MarketingSellingPoints,
+	}, deviceID)
+	if err != nil {
+		t.Fatalf("evaluate compliance: %v", err)
+	}
+	if compliance.Score != expected.Score || compliance.Level != expected.Level {
+		t.Fatalf("expected cached compliance %+v, got %+v", expected, compliance)
+	}
+	if issuedToken == "" {
+		t.Fatal("expected non-empty compliance token")
+	}
+
+	drama, complianceFromCreate, err := svc.CreateDrama(req, deviceID)
+	if err != nil {
+		t.Fatalf("create drama: %v", err)
+	}
+	if complianceFromCreate.Score != expected.Score || complianceFromCreate.Level != expected.Level {
+		t.Fatalf("expected create to reuse cached compliance %+v, got %+v", expected, complianceFromCreate)
+	}
+	if drama.ComplianceScore != expected.Score {
+		t.Fatalf("expected stored compliance score %d, got %d", expected.Score, drama.ComplianceScore)
+	}
+}

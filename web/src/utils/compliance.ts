@@ -8,17 +8,25 @@ export interface ComplianceRiskMeta {
   color: string
 }
 
-const DEFAULT_COMPLIANCE: ComplianceResult = {
-  score: 0,
-  level: 'green',
-  level_label: '低',
-  summary: '未获取到合规评估结果',
-  non_compliance_points: [],
-  rectification_suggestions: [],
-  suggested_categories: []
+type ComplianceLocale = 'zh-CN' | 'en-US'
+
+const normalizeComplianceLocale = (language?: string): ComplianceLocale =>
+  String(language || '').toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
+
+const getDefaultCompliance = (language?: string): ComplianceResult => {
+  const locale = normalizeComplianceLocale(language)
+  return {
+    score: 0,
+    level: 'green',
+    level_label: locale === 'en-US' ? 'Low' : '低',
+    summary: locale === 'en-US' ? 'No compliance assessment result was returned' : '未获取到合规评估结果',
+    non_compliance_points: [],
+    rectification_suggestions: [],
+    suggested_categories: []
+  }
 }
 
-const RISK_META_MAP: Record<ComplianceRiskLevel, ComplianceRiskMeta> = {
+const ZH_RISK_META_MAP: Record<ComplianceRiskLevel, ComplianceRiskMeta> = {
   green: {
     key: 'green',
     badge: '低风险',
@@ -48,6 +56,40 @@ const RISK_META_MAP: Record<ComplianceRiskLevel, ComplianceRiskMeta> = {
     color: '#ef4444'
   }
 }
+
+const EN_RISK_META_MAP: Record<ComplianceRiskLevel, ComplianceRiskMeta> = {
+  green: {
+    key: 'green',
+    badge: 'Low Risk',
+    text: 'Low',
+    range: '0-29',
+    color: '#22c55e'
+  },
+  yellow: {
+    key: 'yellow',
+    badge: 'Medium Risk',
+    text: 'Medium',
+    range: '30-59',
+    color: '#f59e0b'
+  },
+  orange: {
+    key: 'orange',
+    badge: 'High Risk',
+    text: 'High',
+    range: '60-79',
+    color: '#f97316'
+  },
+  red: {
+    key: 'red',
+    badge: 'Blocked',
+    text: 'Blocked',
+    range: '>=80',
+    color: '#ef4444'
+  }
+}
+
+const getRiskMetaMap = (language?: string) =>
+  normalizeComplianceLocale(language) === 'en-US' ? EN_RISK_META_MAP : ZH_RISK_META_MAP
 
 const clampScore = (score: number): number => {
   if (score < 0) return 0
@@ -365,9 +407,27 @@ const localizeCategorySegment = (value: string): string => {
   return '其他相关类目'
 }
 
-const localizeSuggestedCategory = (value: string): string => {
+const normalizeEnglishSuggestedCategory = (value: string): string => {
   const raw = value.trim()
   if (!raw) return raw
+  if (hasChinese(raw)) return raw
+
+  if (raw.includes('>')) {
+    return raw
+      .split(/\s*>\s*/)
+      .map((segment) => cleanCategorySegment(segment))
+      .filter((segment) => segment.length > 0)
+      .join(' > ')
+  }
+
+  return cleanCategorySegment(raw)
+}
+
+const localizeSuggestedCategory = (value: string, language?: string): string => {
+  const locale = normalizeComplianceLocale(language)
+  const raw = value.trim()
+  if (!raw) return raw
+  if (locale === 'en-US') return normalizeEnglishSuggestedCategory(raw)
   if (hasChinese(raw)) return raw
 
   const exact = EXACT_CATEGORY_MAP[normalizeCategoryKey(raw)]
@@ -406,12 +466,12 @@ const localizeSuggestedCategory = (value: string): string => {
   return localizeCategorySegment(raw)
 }
 
-export const localizeSuggestedCategories = (categories: string[]): string[] => {
+export const localizeSuggestedCategories = (categories: string[], language?: string): string[] => {
   const result: string[] = []
   const seen = new Set<string>()
 
   for (const item of categories) {
-    const localized = localizeSuggestedCategory(item)
+    const localized = localizeSuggestedCategory(item, language)
     const key = localized.toLowerCase()
     if (!localized || seen.has(key)) {
       continue
@@ -423,7 +483,7 @@ export const localizeSuggestedCategories = (categories: string[]): string[] => {
   return result
 }
 
-export const normalizeComplianceResult = (value: unknown): ComplianceResult | null => {
+export const normalizeComplianceResult = (value: unknown, language?: string): ComplianceResult | null => {
   if (!value) return null
 
   let raw: any = value
@@ -439,17 +499,19 @@ export const normalizeComplianceResult = (value: unknown): ComplianceResult | nu
     return null
   }
 
+  const defaults = getDefaultCompliance(language)
+  const riskMetaMap = getRiskMetaMap(language)
   const parsedScore = Number(raw.score)
-  const score = Number.isFinite(parsedScore) ? clampScore(Math.round(parsedScore)) : DEFAULT_COMPLIANCE.score
+  const score = Number.isFinite(parsedScore) ? clampScore(Math.round(parsedScore)) : defaults.score
   const level = isRiskLevel(raw.level) ? raw.level : getLevelByScore(score)
 
   const summary = typeof raw.summary === 'string' && raw.summary.trim()
     ? raw.summary.trim()
-    : DEFAULT_COMPLIANCE.summary
+    : defaults.summary
 
   const levelLabel = typeof raw.level_label === 'string' && raw.level_label.trim()
     ? raw.level_label.trim()
-    : RISK_META_MAP[level].text
+    : riskMetaMap[level].text
 
   return {
     score,
@@ -458,12 +520,13 @@ export const normalizeComplianceResult = (value: unknown): ComplianceResult | nu
     summary,
     non_compliance_points: toStringList(raw.non_compliance_points),
     rectification_suggestions: toStringList(raw.rectification_suggestions),
-    suggested_categories: localizeSuggestedCategories(toStringList(raw.suggested_categories))
+    suggested_categories: localizeSuggestedCategories(toStringList(raw.suggested_categories), language)
   }
 }
 
-export const getComplianceRiskMeta = (compliance: ComplianceResult): ComplianceRiskMeta => {
-  return RISK_META_MAP[compliance.level] || RISK_META_MAP.green
+export const getComplianceRiskMeta = (compliance: ComplianceResult, language?: string): ComplianceRiskMeta => {
+  const riskMetaMap = getRiskMetaMap(language)
+  return riskMetaMap[compliance.level] || riskMetaMap.green
 }
 
 export const buildCreateDramaPayload = (form: CreateDramaRequest): CreateDramaRequest => {

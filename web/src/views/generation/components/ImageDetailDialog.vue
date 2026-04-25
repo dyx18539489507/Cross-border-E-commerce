@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="图片详情"
+    :title="$t('image.detailTitle')"
     width="900px"
     @close="handleClose"
   >
@@ -19,19 +19,19 @@
               <template #error>
                 <div class="image-error">
                   <el-icon><PictureFilled /></el-icon>
-                  <span>加载失败</span>
+                  <span>{{ $t('image.loadFailed') }}</span>
                 </div>
               </template>
             </el-image>
 
             <div v-else-if="image.status === 'processing'" class="image-status">
               <el-icon class="loading-icon"><Loading /></el-icon>
-              <span>生成中，请稍候...</span>
+              <span>{{ $t('image.generatingWait') }}</span>
             </div>
 
             <div v-else-if="image.status === 'failed'" class="image-status error">
               <el-icon><CircleClose /></el-icon>
-              <span>生成失败</span>
+              <span>{{ $t('image.generateFailed') }}</span>
               <div class="error-message">{{ image.error_msg }}</div>
             </div>
           </div>
@@ -40,37 +40,37 @@
         <el-col :span="10">
           <div class="image-info">
             <el-descriptions :column="1" border>
-              <el-descriptions-item label="状态">
+              <el-descriptions-item :label="$t('common.status')">
                 <el-tag :type="getStatusType(image.status)">
                   {{ getStatusText(image.status) }}
                 </el-tag>
               </el-descriptions-item>
 
-              <el-descriptions-item label="AI 服务">
+              <el-descriptions-item :label="$t('image.provider')">
                 {{ image.provider }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="模型" v-if="image.model">
+              <el-descriptions-item :label="$t('image.model')" v-if="image.model">
                 {{ image.model }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="尺寸" v-if="image.size">
+              <el-descriptions-item :label="$t('image.size')" v-if="image.size">
                 {{ image.size }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="分辨率" v-if="image.width && image.height">
+              <el-descriptions-item :label="$t('image.resolution')" v-if="image.width && image.height">
                 {{ image.width }} × {{ image.height }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="质量" v-if="image.quality">
+              <el-descriptions-item :label="$t('image.quality')" v-if="image.quality">
                 {{ image.quality }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="风格" v-if="image.style">
+              <el-descriptions-item :label="$t('image.style')" v-if="image.style">
                 {{ image.style }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="采样步数" v-if="image.steps">
+              <el-descriptions-item :label="$t('image.steps')" v-if="image.steps">
                 {{ image.steps }}
               </el-descriptions-item>
 
@@ -78,15 +78,15 @@
                 {{ image.cfg_scale }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="随机种子" v-if="image.seed">
+              <el-descriptions-item :label="$t('image.seed')" v-if="image.seed">
                 {{ image.seed }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="创建时间">
+              <el-descriptions-item :label="$t('image.createdAt')">
                 {{ formatDateTime(image.created_at) }}
               </el-descriptions-item>
 
-              <el-descriptions-item label="完成时间" v-if="image.completed_at">
+              <el-descriptions-item :label="$t('image.completedAt')" v-if="image.completed_at">
                 {{ formatDateTime(image.completed_at) }}
               </el-descriptions-item>
             </el-descriptions>
@@ -94,12 +94,12 @@
             <el-divider />
 
             <div class="prompt-section">
-              <h4>提示词</h4>
+              <h4>{{ $t('image.prompt') }}</h4>
               <div class="prompt-text">{{ image.prompt }}</div>
             </div>
 
             <div v-if="image.negative_prompt" class="prompt-section">
-              <h4>反向提示词</h4>
+              <h4>{{ $t('image.negativePrompt') }}</h4>
               <div class="prompt-text">{{ image.negative_prompt }}</div>
             </div>
           </div>
@@ -108,14 +108,21 @@
     </div>
 
     <template #footer>
-      <el-button @click="handleClose">关闭</el-button>
+      <el-button @click="handleClose">{{ $t('image.close') }}</el-button>
+      <el-button
+        v-if="image?.status === 'completed' && image?.image_url"
+        type="warning"
+        @click="openDistributionDialog"
+      >
+        {{ $t('image.distribute') }}
+      </el-button>
       <el-button
         v-if="image?.status === 'completed' && image?.image_url"
         type="primary"
         @click="downloadImage"
       >
         <el-icon><Download /></el-icon>
-        下载图片
+        {{ $t('image.downloadImage') }}
       </el-button>
       <el-button
         v-if="image?.status === 'completed'"
@@ -123,21 +130,35 @@
         @click="regenerate"
       >
         <el-icon><Refresh /></el-icon>
-        重新生成
+        {{ $t('image.regenerate') }}
       </el-button>
     </template>
+
+    <DistributionDialog
+      v-if="image"
+      v-model="distributionDialogVisible"
+      content-type="image"
+      source-type="image_generation"
+      :source-ref="image.id"
+      :media-url="image.image_url"
+      :initial-title="distributionTitle"
+      :initial-body="image.prompt"
+      :dialog-title="$t('image.distribute')"
+    />
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import {
   PictureFilled, Loading, CircleClose,
   Download, Refresh
 } from '@element-plus/icons-vue'
 import { imageAPI } from '@/api/image'
 import type { ImageGeneration, ImageStatus } from '@/types/image'
+import DistributionDialog from '@/components/distribution/DistributionDialog.vue'
 
 interface Props {
   modelValue: boolean
@@ -149,10 +170,19 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   regenerate: [image: ImageGeneration]
 }>()
+const { t, locale } = useI18n()
 
 const visible = computed({
   get: () => props.modelValue,
   set: (val) => emit('update:modelValue', val)
+})
+const distributionDialogVisible = ref(false)
+const distributionTitle = computed(() => {
+  const prompt = props.image?.prompt?.trim() || ''
+  if (!prompt) {
+    return t('image.defaultTitle')
+  }
+  return prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt
 })
 
 const getStatusType = (status: ImageStatus) => {
@@ -166,22 +196,24 @@ const getStatusType = (status: ImageStatus) => {
 }
 
 const getStatusText = (status: ImageStatus) => {
-  const texts: Record<ImageStatus, string> = {
-    pending: '等待中',
-    processing: '生成中',
-    completed: '已完成',
-    failed: '失败'
-  }
-  return texts[status]
+  return t(`image.status.${status}`)
 }
 
 const formatDateTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString('zh-CN')
+  return new Date(dateString).toLocaleString(locale.value.startsWith('zh') ? 'zh-CN' : 'en-US')
 }
 
 const downloadImage = () => {
   if (!props.image?.image_url) return
   window.open(props.image.image_url, '_blank')
+}
+
+const openDistributionDialog = () => {
+  if (!props.image?.image_url) {
+    ElMessage.warning(t('image.noDistributableAsset'))
+    return
+  }
+  distributionDialogVisible.value = true
 }
 
 const regenerate = () => {

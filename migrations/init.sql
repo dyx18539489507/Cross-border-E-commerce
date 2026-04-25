@@ -517,7 +517,118 @@ CREATE INDEX IF NOT EXISTS idx_ai_service_providers_service_type ON ai_service_p
 CREATE INDEX IF NOT EXISTS idx_ai_service_providers_deleted_at ON ai_service_providers(deleted_at);
 
 -- ======================================
--- 7. 初始数据
+-- 7. 分发相关表
+-- ======================================
+
+-- Upload-Post 用户映射
+CREATE TABLE IF NOT EXISTS upload_post_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, active, error
+    connected_platforms TEXT, -- JSON存储
+    profile_snapshot TEXT, -- JSON存储
+    last_sync_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_post_profiles_deleted_at ON upload_post_profiles(deleted_at);
+
+-- 用户分发目标
+CREATE TABLE IF NOT EXISTS distribution_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    platform TEXT NOT NULL, -- pinterest, reddit, discord
+    target_type TEXT NOT NULL, -- pinterest_board, reddit_subreddit, discord_webhook
+    identifier TEXT NOT NULL,
+    name TEXT,
+    status TEXT NOT NULL DEFAULT 'active', -- pending, active, needs_rebind, disabled
+    is_default INTEGER NOT NULL DEFAULT 0,
+    config TEXT, -- JSON存储
+    secret_encrypted TEXT,
+    last_validated_at DATETIME,
+    last_sync_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_distribution_target_identity
+ON distribution_targets(device_id, platform, target_type, identifier);
+CREATE INDEX IF NOT EXISTS idx_distribution_targets_platform ON distribution_targets(platform);
+CREATE INDEX IF NOT EXISTS idx_distribution_targets_status ON distribution_targets(status);
+CREATE INDEX IF NOT EXISTS idx_distribution_targets_deleted_at ON distribution_targets(deleted_at);
+
+-- 分发任务
+CREATE TABLE IF NOT EXISTS distribution_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    source_ref TEXT,
+    content_type TEXT NOT NULL, -- text, image, video
+    title TEXT,
+    body TEXT,
+    media_url TEXT,
+    selected_platforms TEXT, -- JSON存储
+    platform_options TEXT, -- JSON存储
+    publish_mode TEXT NOT NULL DEFAULT 'immediate', -- immediate, schedule
+    scheduled_at DATETIME,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, scheduled, processing, completed, partially_failed, failed
+    request_snapshot TEXT, -- JSON存储
+    error_msg TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    deleted_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_distribution_jobs_device_id ON distribution_jobs(device_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_jobs_source_type ON distribution_jobs(source_type);
+CREATE INDEX IF NOT EXISTS idx_distribution_jobs_content_type ON distribution_jobs(content_type);
+CREATE INDEX IF NOT EXISTS idx_distribution_jobs_status ON distribution_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_distribution_jobs_scheduled_at ON distribution_jobs(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_distribution_jobs_deleted_at ON distribution_jobs(deleted_at);
+
+-- 分发结果
+CREATE TABLE IF NOT EXISTS distribution_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    target_id INTEGER,
+    content_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, scheduled, processing, success, failed
+    target_snapshot TEXT, -- JSON存储
+    request_snapshot TEXT, -- JSON存储
+    response_snapshot TEXT, -- JSON存储
+    external_request_id TEXT,
+    external_job_id TEXT,
+    external_message_id TEXT,
+    published_url TEXT,
+    error_msg TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at DATETIME,
+    started_at DATETIME,
+    completed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_distribution_results_job_id ON distribution_results(job_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_device_id ON distribution_results(device_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_platform ON distribution_results(platform);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_status ON distribution_results(status);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_target_id ON distribution_results(target_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_external_request_id ON distribution_results(external_request_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_external_job_id ON distribution_results(external_job_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_next_retry_at ON distribution_results(next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_distribution_results_deleted_at ON distribution_results(deleted_at);
+
+-- ======================================
+-- 8. 初始数据
 -- ======================================
 
 -- 插入默认AI服务提供商

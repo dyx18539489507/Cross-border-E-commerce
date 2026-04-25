@@ -4,13 +4,12 @@
     <header class="app-header">
       <div class="header-content">
         <div class="header-left">
-          <router-link to="/" class="logo">
-            <span class="logo-text">🎬 数字丝路</span>
+          <router-link to="/dramas" class="logo">
+            <span class="logo-text">🎬 {{ t('app.name') }}</span>
           </router-link>
         </div>
         <div class="header-right">
           <LanguageSwitcher />
-          <ThemeToggle />
         </div>
       </div>
     </header>
@@ -23,8 +22,10 @@
 </template>
 
 <script setup lang="ts">
-import ThemeToggle from './ThemeToggle.vue'
+import { useI18n } from 'vue-i18n'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+
+const { t } = useI18n()
 </script>
 
 <style scoped>
@@ -32,23 +33,27 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  padding: 24px;
 }
 
 .app-header {
   position: sticky;
-  top: 0;
+  top: 18px;
   z-index: 100;
+  border: 1px solid var(--border-primary);
+  border-radius: 28px;
   background: var(--bg-card);
-  border-bottom: 1px solid var(--border-primary);
-  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(24px);
 }
 
 .header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-4);
-  height: 56px;
+  gap: var(--space-4);
+  min-height: 76px;
+  padding: 14px 22px;
   max-width: 100%;
   margin: 0 auto;
 }
@@ -89,11 +94,11 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 }
 
 .logo-text {
-  background: linear-gradient(135deg, var(--accent) 0%, #06b6d4 100%);
+  background: linear-gradient(135deg, var(--theme-text) 0%, var(--theme-indigo) 58%, var(--theme-orange) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  font-size: 1.5rem;
+  font-size: 1.75rem;
 }
 
 .header-right {
@@ -104,10 +109,11 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 .app-main {
   flex: 1;
+  padding-top: 28px;
 }
 
 /* Dark mode adjustments */
 .dark .app-header {
-  background: rgba(26, 33, 41, 0.95);
+  background: var(--bg-card);
 }
 </style>

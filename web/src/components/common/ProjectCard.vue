@@ -73,15 +73,19 @@ const formattedDate = computed(() => {
   flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  border-radius: 26px;
   overflow: hidden;
   cursor: pointer;
   transition: all var(--transition-normal);
-  width: 200px;
+  width: 220px;
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(18px);
 }
 
 .project-card:hover {
-  border-color: var(--accent);
+  border-color: var(--border-secondary);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-3px);
 }
 
 .project-card:focus-visible {
@@ -92,16 +96,17 @@ const formattedDate = computed(() => {
 /* Card Header / 卡片头部 */
 .card-header {
   position: relative;
-  height: 120px;
-  background: linear-gradient(135deg, var(--accent) 0%, #06b6d4 100%);
+  height: 132px;
+  background:
+    linear-gradient(135deg, rgba(52, 183, 232, 0.9) 0%, rgba(85, 104, 239, 0.84) 55%, rgba(255, 138, 38, 0.82) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .header-icon {
-  font-size: 28px;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 34px;
+  color: rgba(255, 255, 255, 0.88);
 }
 
 /* Hover Actions / 悬停操作区 */
@@ -125,14 +130,14 @@ const formattedDate = computed(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px;
-  gap: 10px;
+  padding: 18px;
+  gap: 12px;
 }
 
 .card-title {
   margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-size: 1.18rem;
+  font-weight: 800;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -141,7 +146,7 @@ const formattedDate = computed(() => {
 
 .card-description {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.92rem;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,11 +160,11 @@ const formattedDate = computed(() => {
 /* Footer Section / 底部区域 */
 .card-footer {
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-primary);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .meta-time,

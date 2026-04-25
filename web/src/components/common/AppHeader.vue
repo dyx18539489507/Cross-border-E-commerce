@@ -4,8 +4,8 @@
       <div class="header-content">
         <!-- Left section: Logo + Left slot -->
         <div class="header-left">
-          <router-link v-if="showLogo" to="/" class="logo">
-            <span class="logo-text">🎬 数字丝路</span>
+          <router-link v-if="showLogo" to="/dramas" class="logo">
+            <span class="logo-text">🎬 {{ t('app.name') }}</span>
           </router-link>
           <!-- Left slot for business content | 左侧插槽用于业务内容 -->
           <slot name="left" />
@@ -18,12 +18,8 @@
 
         <!-- Right section: Actions + Right slot -->
         <div class="header-right">
-          
           <!-- Language Switcher | 语言切换 -->
           <LanguageSwitcher v-if="showLanguage" />
-          
-          <!-- Theme Toggle | 主题切换 -->
-          <ThemeToggle v-if="showTheme" />
 
           <!-- Right slot for business content (before actions) | 右侧插槽（在操作按钮前） -->
           <slot name="right" />
@@ -34,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import ThemeToggle from './ThemeToggle.vue'
+import { useI18n } from 'vue-i18n'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 /**
@@ -43,7 +39,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
  * 
  * Features | 功能:
  * - Fixed position at top | 固定在顶部
- * - Model/Theme/Language switch | 模型/主题/语言切换
+ * - Language switch | 语言切换
  * - Slots support for business content | 支持插槽放置业务内容
  * 
  * Slots | 插槽:
@@ -59,39 +55,41 @@ interface Props {
   showLogo?: boolean
   /** Show language switcher | 是否显示语言切换 */
   showLanguage?: boolean
-  /** Show theme toggle | 是否显示主题切换 */
-  showTheme?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   fixed: true,
   showLogo: true,
-  showLanguage: true,
-  showTheme: true
+  showLanguage: true
 })
+
+const { t } = useI18n()
 </script>
 
 <style scoped>
 .app-header {
+  border: 1px solid var(--border-primary);
+  border-radius: 28px;
   background: var(--bg-card);
-  border-bottom: 1px solid var(--border-primary);
-  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(24px);
   z-index: 1000;
 }
 
 .app-header.header-fixed {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 18px;
+  left: 24px;
+  right: 24px;
 }
 
 .header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-4);
-  height: 70px;
+  gap: var(--space-4);
+  min-height: 78px;
+  padding: 14px 22px;
   max-width: 100%;
   margin: 0 auto;
 }
@@ -125,7 +123,7 @@ const props = withDefaults(defineProps<Props>(), {
   text-decoration: none;
   color: var(--text-primary);
   font-weight: 700;
-  font-size: 2.25rem;
+  font-size: 2rem;
   transition: opacity var(--transition-fast);
 }
 
@@ -134,7 +132,7 @@ const props = withDefaults(defineProps<Props>(), {
 }
 
 .logo-text {
-  background: linear-gradient(135deg, var(--accent) 0%, #06b6d4 100%);
+  background: linear-gradient(135deg, var(--theme-text) 0%, var(--theme-indigo) 58%, var(--theme-orange) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -142,7 +140,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 .header-btn {
   border-radius: var(--radius-lg);
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .header-btn .btn-text {
@@ -151,7 +149,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 /* Dark mode adjustments | 深色模式适配 */
 .dark .app-header {
-  background: rgba(26, 33, 41, 0.95);
+  background: var(--bg-card);
 }
 
 /* ========================================
@@ -211,8 +209,16 @@ const props = withDefaults(defineProps<Props>(), {
 
 /* Responsive | 响应式 */
 @media (max-width: 768px) {
+  .app-header.header-fixed {
+    top: 12px;
+    left: 16px;
+    right: 16px;
+    border-radius: 24px;
+  }
+
   .header-content {
-    padding: 0 var(--space-3);
+    min-height: 70px;
+    padding: 12px 16px;
   }
   
   .btn-text {

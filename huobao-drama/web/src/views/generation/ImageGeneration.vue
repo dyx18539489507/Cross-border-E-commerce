@@ -42,7 +42,7 @@
       </el-form>
     </el-card>
 
-    <el-row :gutter="16" v-loading="loading">
+    <el-row :gutter="16" v-loading="showGridLoadingMask">
       <el-col
         v-for="image in images"
         :key="image.id"
@@ -160,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -178,6 +178,7 @@ const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
+const hasLoadedImages = ref(false)
 const images = ref<ImageGeneration[]>([])
 const dramas = ref<Drama[]>([])
 const total = ref(0)
@@ -195,6 +196,8 @@ const pagination = reactive({
   page_size: 12
 })
 
+const showGridLoadingMask = computed(() => loading.value && !hasLoadedImages.value)
+
 const loadImages = async () => {
   loading.value = true
   try {
@@ -210,6 +213,7 @@ const loadImages = async () => {
     ElMessage.error(error.message || '加载失败')
   } finally {
     loading.value = false
+    hasLoadedImages.value = true
   }
 }
 

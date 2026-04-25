@@ -10,6 +10,9 @@ import (
 type VideoDistributionPlatform string
 
 const (
+	VideoDistributionPlatformDiscord   VideoDistributionPlatform = "discord"
+	VideoDistributionPlatformReddit    VideoDistributionPlatform = "reddit"
+	VideoDistributionPlatformPinterest VideoDistributionPlatform = "pinterest"
 	VideoDistributionPlatformTikTok    VideoDistributionPlatform = "tiktok"
 	VideoDistributionPlatformYouTube   VideoDistributionPlatform = "youtube"
 	VideoDistributionPlatformInstagram VideoDistributionPlatform = "instagram"
