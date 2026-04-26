@@ -5,9 +5,12 @@
         <div class="video-editor-header__left">
           <button type="button" class="brand-link" @click="router.push('/')">
             <span class="brand-link__mark">
-              <img :src="brandIcon" alt="" />
+              <img :src="brandLogo" alt="" />
             </span>
-            <span class="brand-link__name">{{ t('app.name') }}</span>
+            <span class="brand-link__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
           </button>
 
           <nav class="video-editor-nav" aria-label="主导航">
@@ -367,12 +370,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { assetAPI } from '@/api/asset'
 import { dramaAPI } from '@/api/drama'
 import bellIcon from '@/assets/product-entry/bell.svg'
-import brandIcon from '@/assets/product-entry/brand-icon.svg'
 import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import VideoTimelineEditor from '@/components/editor/VideoTimelineEditor.vue'
 import type { Asset } from '@/types/asset'
@@ -472,7 +473,7 @@ const qualityOptions = ['高', '超清', '标准']
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const brandLogo = '/logo_circle.png'
 const flowContext = ref<EpisodeWorkflowContext | null>(null)
 const liveLoading = ref(false)
 const liveTimelineError = ref('')
@@ -505,7 +506,7 @@ const navItems = computed(() => [
     label: '脚本/分镜',
     path: flowContext.value ? buildEpisodeStagePath('script', flowContext.value) : '/workspace/script',
     active: false,
-    width: '80px'
+    width: '92px'
   },
   {
     label: '内容创作',
@@ -801,6 +802,27 @@ onMounted(async () => {
   color: #0a2463;
 }
 
+.brand-link__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-link__copy strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.brand-link__copy small {
+  color: #62748e;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 .video-editor-nav {
   display: inline-flex;
   align-items: center;
@@ -809,6 +831,8 @@ onMounted(async () => {
 }
 
 .video-editor-nav__item {
+  box-sizing: border-box;
+  flex: 0 0 auto;
   height: 32px;
   border: none;
   border-radius: 12px;
@@ -819,6 +843,23 @@ onMounted(async () => {
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
+}
+
+.brand-link__mark {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
+}
+
+.brand-link__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
 }
 
 .video-editor-nav__item--active {

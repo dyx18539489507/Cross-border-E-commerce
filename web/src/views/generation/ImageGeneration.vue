@@ -5,9 +5,12 @@
         <div class="creation-header__left">
           <button type="button" class="brand-link" @click="router.push('/')">
             <span class="brand-link__mark">
-              <img :src="brandIcon" alt="" />
+              <img :src="brandLogo" alt="" />
             </span>
-            <span class="brand-link__name">{{ t('app.name') }}</span>
+            <span class="brand-link__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
           </button>
 
           <nav class="creation-nav" aria-label="主导航">
@@ -265,12 +268,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { imageAPI } from '@/api/image'
 import { videoAPI } from '@/api/video'
 import bellIcon from '@/assets/product-entry/bell.svg'
-import brandIcon from '@/assets/product-entry/brand-icon.svg'
 import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import {
   buildEpisodeStagePath,
@@ -347,7 +348,7 @@ const planSteps: PlanStep[] = [
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const brandLogo = '/logo_circle.png'
 const flowContext = ref<EpisodeWorkflowContext | null>(null)
 const remoteImageCount = ref(0)
 const remoteVideoCount = ref(0)
@@ -366,7 +367,7 @@ const navItems = computed(() => [
     label: '脚本/分镜',
     path: flowContext.value ? buildEpisodeStagePath('script', flowContext.value) : '/workspace/script',
     active: false,
-    width: '86px'
+    width: '92px'
   },
   { label: '内容创作', path: '/workspace/content', active: true, width: '80px' },
   {
@@ -558,21 +559,20 @@ onMounted(async () => {
   left: 0;
   right: 0;
   z-index: 30;
-  height: 72px;
-  backdrop-filter: blur(18px);
-  background: rgba(255, 255, 255, 0.82);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+  height: 65px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .creation-header__inner {
-  width: min(100%, 1384px);
-  height: 100%;
+  width: min(100%, 1075px);
+  height: 64px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 18px;
 }
 
 .creation-header__left,
@@ -582,7 +582,9 @@ onMounted(async () => {
 }
 
 .creation-header__left {
-  gap: 28px;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 32px;
 }
 
 .creation-header__right {
@@ -622,39 +624,81 @@ onMounted(async () => {
   color: #0a2463;
 }
 
+.brand-link__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-link__copy strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.brand-link__copy small {
+  color: #62748e;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 .creation-nav {
-  display: inline-flex;
+  min-width: 0;
+  display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px;
-  border-radius: 18px;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.creation-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .creation-nav__item {
-  height: 36px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  height: 32px;
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
-  color: #62748e;
+  color: #45556c;
   font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.22s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.brand-link__mark {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
+}
+
+.brand-link__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
 }
 
 .creation-nav__item--active {
-  color: #ffffff;
-  font-weight: 700;
-  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%);
-  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.24);
+  color: #0a2463;
+  font-weight: 500;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%);
 }
 
 .creation-nav__item:not(.creation-nav__item--active):hover {
   color: #0a2463;
-  background: rgba(226, 232, 240, 0.65);
+  background: rgba(241, 245, 249, 0.92);
 }
 
 .header-icon-button {

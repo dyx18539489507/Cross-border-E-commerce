@@ -5,9 +5,12 @@
         <div class="compliance-header__left">
           <button type="button" class="brand-link" @click="router.push('/')">
             <span class="brand-link__mark">
-              <img :src="brandIcon" alt="" />
+              <img :src="brandLogo" alt="" />
             </span>
-            <span class="brand-link__name">{{ t('app.name') }}</span>
+            <span class="brand-link__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
           </button>
 
           <nav class="compliance-nav" aria-label="主导航">
@@ -17,6 +20,8 @@
               type="button"
               class="compliance-nav__item"
               :class="{ 'compliance-nav__item--active': item.active }"
+              :style="{ width: item.width }"
+              :aria-current="item.active ? 'page' : undefined"
               @click="handleNavClick(item.path)"
             >
               {{ item.label }}
@@ -166,7 +171,6 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
 import { dramaAPI } from '@/api/drama'
 import aiSuggestionIcon from '@/assets/compliance-analysis/ai-suggestion.svg'
 import itemInfoIcon from '@/assets/compliance-analysis/item-info.svg'
@@ -175,7 +179,6 @@ import riskShieldIcon from '@/assets/compliance-analysis/risk-shield.svg'
 import riskWarningIcon from '@/assets/compliance-analysis/risk-warning.svg'
 import sectionDocIcon from '@/assets/compliance-analysis/section-doc.svg'
 import bellIcon from '@/assets/product-entry/bell.svg'
-import brandIcon from '@/assets/product-entry/brand-icon.svg'
 import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import { buildCreateDramaPayload } from '@/utils/compliance'
 import { clearCreateDramaDraft, peekCreateDramaDraft } from '@/utils/createDramaDraft'
@@ -204,17 +207,17 @@ interface ReportSection {
 const PRODUCT_ENTRY_DRAFT_KEY = 'drama:create:product-entry:basic'
 
 const router = useRouter()
-const { t } = useI18n()
 const creatingFlow = ref(false)
+const brandLogo = '/logo_circle.png'
 
 const navItems = [
-  { label: '工作台', path: '/dramas', active: false },
-  { label: '商品录入', path: '/dramas/create', active: false },
-  { label: '合规分析', path: '', active: true },
-  { label: '脚本/分镜', path: '', active: false },
-  { label: '内容创作', path: '', active: false },
-  { label: '视频剪辑', path: '', active: false },
-  { label: '数据分析', path: '/analytics', active: false }
+  { label: '工作台', path: '/dramas', active: false, width: '66px' },
+  { label: '商品录入', path: '/dramas/create', active: false, width: '80px' },
+  { label: '合规分析', path: '/compliance', active: true, width: '80px' },
+  { label: '脚本/分镜', path: '/workspace/script', active: false, width: '92px' },
+  { label: '内容创作', path: '/workspace/content', active: false, width: '80px' },
+  { label: '视频剪辑', path: '/workspace/timeline', active: false, width: '80px' },
+  { label: '数据分析', path: '/analytics', active: false, width: '80px' }
 ] as const
 
 const reportMeta = reactive({
@@ -351,6 +354,17 @@ const handleNavClick = (path: string) => {
   }
 
   router.push(path)
+}
+
+const formatDateTime = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
 const handleContinue = async () => {
@@ -781,6 +795,27 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.brand-link__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-link__copy strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.brand-link__copy small {
+  color: #62748e;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 .compliance-nav {
   display: flex;
   align-items: center;
@@ -796,6 +831,8 @@ onMounted(() => {
 
 .compliance-nav__item {
   font-family: var(--compliance-body-font);
+  box-sizing: border-box;
+  flex: 0 0 auto;
   height: 32px;
   padding: 0 12px;
   border: none;
@@ -808,6 +845,23 @@ onMounted(() => {
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.brand-link__mark {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
+}
+
+.brand-link__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
 }
 
 .compliance-nav__item:hover {

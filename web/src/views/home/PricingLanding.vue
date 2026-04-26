@@ -173,6 +173,25 @@ import starterBadge from '@/assets/pricing/starter-badge.svg'
 
 type SectionKey = 'pricing' | 'about'
 type PlanActionKey = 'start' | 'sales'
+type PlanVariant = 'starter' | 'professional' | 'enterprise'
+
+interface PricingPlan {
+  name: string
+  englishName: string
+  description: string
+  price: string
+  priceSuffix?: string
+  buttonLabel: string
+  variant: PlanVariant
+  featured?: boolean
+  customPrice?: boolean
+  icon: string
+  action: PlanActionKey
+  features: Array<{
+    label: string
+    icon: string
+  }>
+}
 
 const router = useRouter()
 const brandLogo = '/logo_circle.png'
@@ -181,7 +200,7 @@ const activeSection = ref<SectionKey>('pricing')
 const pricingSection = ref<HTMLElement | null>(null)
 const aboutSection = ref<HTMLElement | null>(null)
 
-const plans = [
+const plans: PricingPlan[] = [
   {
     name: '入门版',
     englishName: 'Starter',
@@ -191,7 +210,7 @@ const plans = [
     buttonLabel: '开始使用',
     variant: 'starter',
     icon: starterBadge,
-    action: 'start' as PlanActionKey,
+    action: 'start',
     features: [
       { label: '每月100次合规检测', icon: checkIcon },
       { label: '10种语言内容生成', icon: checkIcon },
@@ -211,7 +230,7 @@ const plans = [
     variant: 'professional',
     featured: true,
     icon: professionalBadge,
-    action: 'start' as PlanActionKey,
+    action: 'start',
     features: [
       { label: '每月500次合规检测', icon: professionalFeatureIcon },
       { label: '30种语言内容生成', icon: professionalFeatureIcon },
@@ -232,7 +251,7 @@ const plans = [
     variant: 'enterprise',
     customPrice: true,
     icon: enterpriseBadge,
-    action: 'sales' as PlanActionKey,
+    action: 'sales',
     features: [
       { label: '无限次合规检测', icon: checkIcon },
       { label: '全部50+语言', icon: checkIcon },

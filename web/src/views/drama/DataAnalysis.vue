@@ -5,9 +5,12 @@
         <div class="data-analysis-header__left">
           <button type="button" class="brand-link" aria-label="返回首页" @click="router.push('/')">
             <span class="brand-link__mark">
-              <img :src="brandMarkIcon" alt="" />
+              <img :src="brandLogo" alt="" />
             </span>
-            <span class="brand-link__name">数字丝路</span>
+            <span class="brand-link__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
           </button>
 
           <nav class="data-analysis-nav" aria-label="主导航">
@@ -271,7 +274,6 @@
 
 <script setup lang="ts">
 import bellIcon from '@/assets/figma/product-entry/bell.svg'
-import brandMarkIcon from '@/assets/figma/product-entry/brand-mark.svg'
 import { useRouter } from 'vue-router'
 
 type MetricIcon = 'eye' | 'spark' | 'cart' | 'coin'
@@ -279,6 +281,7 @@ type InsightIcon = 'growth' | 'audience' | 'video'
 type AccentTone = 'blue' | 'purple' | 'orange' | 'green'
 
 const router = useRouter()
+const brandLogo = '/logo_circle.png'
 
 const navItems = [
   { label: '工作台', path: '/dramas', active: false, width: '66px' },
@@ -464,6 +467,27 @@ const getChartHeight = (value: number, max: number) => Number(((value / max) * 2
   white-space: nowrap;
 }
 
+.brand-link__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-link__copy strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.brand-link__copy small {
+  color: #62748e;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 .data-analysis-nav {
   min-width: 0;
   display: flex;
@@ -478,6 +502,7 @@ const getChartHeight = (value: number, max: number) => Number(((value / max) * 2
 }
 
 .data-analysis-nav__item {
+  box-sizing: border-box;
   height: 32px;
   padding: 0 12px;
   border: none;
@@ -490,6 +515,23 @@ const getChartHeight = (value: number, max: number) => Number(((value / max) * 2
   cursor: pointer;
   flex: 0 0 auto;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.brand-link__mark {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
+}
+
+.brand-link__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
 }
 
 .data-analysis-nav__item:hover {

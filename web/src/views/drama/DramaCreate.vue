@@ -30,10 +30,61 @@
         </div>
 
         <div class="product-entry-header__right">
-          <button type="button" class="header-icon-button" aria-label="通知">
-            <img :src="bellIcon" alt="" />
-            <span class="header-icon-button__dot"></span>
-          </button>
+          <div ref="notificationRef" class="notification-center">
+            <button
+              type="button"
+              class="header-icon-button"
+              aria-label="通知"
+              :aria-expanded="showNotifications"
+              aria-haspopup="dialog"
+              @click="toggleNotifications"
+            >
+              <img :src="bellIcon" alt="" />
+              <span v-if="unreadNotificationCount" class="header-icon-button__dot">
+                {{ unreadNotificationCount }}
+              </span>
+            </button>
+
+            <section v-if="showNotifications" class="notification-popover" aria-label="消息通知">
+              <div class="notification-popover__head">
+                <div>
+                  <strong>消息通知</strong>
+                  <span>{{ unreadNotificationCount }} 条未读消息</span>
+                </div>
+                <button type="button" class="notification-popover__link" @click="markAllNotificationsRead">
+                  全部已读
+                </button>
+              </div>
+
+              <div class="notification-list">
+                <article
+                  v-for="notice in notifications"
+                  :key="notice.id"
+                  class="notification-item"
+                  :class="{ 'notification-item--unread': !notice.read }"
+                >
+                  <span class="notification-item__status" aria-hidden="true"></span>
+                  <div class="notification-item__body">
+                    <div class="notification-item__title-row">
+                      <strong>{{ notice.title }}</strong>
+                      <span>{{ notice.time }}</span>
+                    </div>
+                    <p>{{ notice.content }}</p>
+                    <div class="notification-item__actions">
+                      <button type="button" @click="openNotification(notice.id)">
+                        查看
+                      </button>
+                      <button type="button" @click="dismissNotification(notice.id)">
+                        忽略
+                      </button>
+                    </div>
+                  </div>
+                </article>
+
+                <p v-if="notifications.length === 0" class="notification-empty">暂无新的消息</p>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     </header>
@@ -205,7 +256,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
@@ -225,6 +276,15 @@ interface ProductEntryDraft {
   brand: string
 }
 
+interface HeaderNotification {
+  id: number
+  title: string
+  content: string
+  time: string
+  read: boolean
+  path?: string
+}
+
 const PRODUCT_ENTRY_DRAFT_KEY = 'drama:create:product-entry:basic'
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
@@ -232,9 +292,38 @@ const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const router = useRouter()
 const brandLogo = '/logo_circle.png'
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const notificationRef = ref<HTMLElement | null>(null)
 const imagePreviewUrl = ref('')
 const imageName = ref('')
 const isDragOver = ref(false)
+const showNotifications = ref(false)
+
+const notifications = ref<HeaderNotification[]>([
+  {
+    id: 1,
+    title: '商品信息待完善',
+    content: '补充品牌或商品图后，AI 合规分析会给出更准确的准入风险。',
+    time: '刚刚',
+    read: false
+  },
+  {
+    id: 2,
+    title: '合规检测准备就绪',
+    content: '基本信息保存后，可进入目标市场选择并启动合规分析。',
+    time: '10 分钟前',
+    read: false,
+    path: '/compliance'
+  },
+  {
+    id: 3,
+    title: '素材规范提醒',
+    content: '商品图片建议使用清晰主图，支持 JPG、PNG，单张不超过 5MB。',
+    time: '今天',
+    read: true
+  }
+])
+
+const unreadNotificationCount = computed(() => notifications.value.filter((notice) => !notice.read).length)
 
 const form = reactive({
   title: '',
@@ -421,11 +510,49 @@ const handleNavClick = (path: string) => {
   router.push(path)
 }
 
+const toggleNotifications = () => {
+  showNotifications.value = !showNotifications.value
+}
+
+const markAllNotificationsRead = () => {
+  notifications.value = notifications.value.map((notice) => ({ ...notice, read: true }))
+}
+
+const dismissNotification = (id: number) => {
+  notifications.value = notifications.value.filter((notice) => notice.id !== id)
+}
+
+const openNotification = (id: number) => {
+  const notice = notifications.value.find((item) => item.id === id)
+  if (!notice) {
+    return
+  }
+
+  notice.read = true
+  showNotifications.value = false
+
+  if (notice.path) {
+    router.push(notice.path)
+  }
+}
+
+const handleDocumentClick = (event: MouseEvent) => {
+  if (!showNotifications.value || !notificationRef.value) {
+    return
+  }
+
+  if (!notificationRef.value.contains(event.target as Node)) {
+    showNotifications.value = false
+  }
+}
+
 onMounted(() => {
   restoreStepDraft()
+  document.addEventListener('click', handleDocumentClick)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
   revokeImagePreview()
 })
 </script>
@@ -575,6 +702,11 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
+.notification-center {
+  position: relative;
+  margin-left: auto;
+}
+
 .header-icon-button {
   position: relative;
   width: 36px;
@@ -601,12 +733,199 @@ onBeforeUnmount(() => {
 
 .header-icon-button__dot {
   position: absolute;
-  top: 6px;
+  top: 2px;
   left: 22px;
-  width: 8px;
-  height: 8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   background: #f97316;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 16px rgba(249, 115, 22, 0.22);
+}
+
+.notification-popover {
+  position: absolute;
+  top: calc(100% + 14px);
+  right: 0;
+  width: 340px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 48px rgba(15, 23, 42, 0.14),
+    0 8px 18px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.notification-popover::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  right: 18px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-top: 1px solid rgba(226, 232, 240, 0.96);
+  border-left: 1px solid rgba(226, 232, 240, 0.96);
+  transform: rotate(45deg);
+}
+
+.notification-popover__head {
+  position: relative;
+  z-index: 1;
+  padding: 18px 18px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.notification-popover__head div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notification-popover__head strong {
+  color: #0a2463;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+.notification-popover__head span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.notification-popover__link {
+  border: none;
+  padding: 2px 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.notification-popover__link:hover {
+  color: #0a2463;
+}
+
+.notification-list {
+  position: relative;
+  z-index: 1;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item--unread {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.08) 0%, rgba(124, 58, 237, 0.06) 100%);
+}
+
+.notification-item__status {
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.notification-item--unread .notification-item__status {
+  background: #f97316;
+}
+
+.notification-item__body {
+  min-width: 0;
+}
+
+.notification-item__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-item__title-row strong {
+  min-width: 0;
+  color: #0a2463;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.notification-item__title-row span {
+  color: #90a1b9;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.notification-item p {
+  margin: 4px 0 0;
+  color: #45556c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.notification-item__actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.notification-item__actions button {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.notification-item__actions button:last-child {
+  color: #64748b;
+}
+
+.notification-item__actions button:hover {
+  color: #0a2463;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 28px 18px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
 }
 
 
@@ -1079,6 +1398,10 @@ onBeforeUnmount(() => {
     justify-content: flex-end;
   }
 
+  .notification-popover {
+    right: 0;
+  }
+
   .product-entry-layout {
     padding-top: 140px;
   }
@@ -1134,6 +1457,22 @@ onBeforeUnmount(() => {
 
   .upload-zone {
     padding: 24px 20px;
+  }
+
+  .notification-center {
+    position: static;
+  }
+
+  .notification-popover {
+    position: fixed;
+    top: 78px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+
+  .notification-popover::before {
+    right: 22px;
   }
 }
 </style>

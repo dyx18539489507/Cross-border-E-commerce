@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import bellIcon from '../../assets/workbench/bell.svg'
-import brandLogo from '../../assets/workbench/brand-logo.svg'
 import overviewBagIcon from '../../assets/workbench/overview-bag.svg'
 import overviewComplianceIcon from '../../assets/workbench/overview-compliance.svg'
 import overviewMarketIcon from '../../assets/workbench/overview-market.svg'
@@ -52,12 +51,13 @@ type TaskItem = {
 
 const router = useRouter()
 const route = useRoute()
+const brandLogo = '/logo_circle.png'
 
 const navigationItems: NavItem[] = [
   { label: '工作台', path: '/dramas', width: 66 },
   { label: '商品录入', path: '/dramas/create', width: 80 },
   { label: '合规分析', path: '/compliance', width: 80 },
-  { label: '脚本/分镜', path: '/workspace/script', width: 86 },
+  { label: '脚本/分镜', path: '/workspace/script', width: 92 },
   { label: '内容创作', path: '/workspace/content', width: 80 },
   { label: '视频剪辑', path: '/workspace/timeline', width: 80 },
   { label: '数据分析', path: '/analytics', width: 80 }
@@ -234,7 +234,10 @@ function isActive(path?: string) {
             <span class="brand-button__mark">
               <img :src="brandLogo" alt="" />
             </span>
-            <span class="brand-button__text">数字丝路</span>
+            <span class="brand-button__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
           </button>
 
           <nav class="workbench-nav" aria-label="工作台导航">
@@ -555,6 +558,27 @@ function isActive(path?: string) {
   white-space: nowrap;
 }
 
+.brand-button__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-button__copy strong {
+  color: var(--wb-navy);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.brand-button__copy small {
+  color: var(--wb-text-soft);
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 .workbench-nav {
   display: flex;
   align-items: center;
@@ -563,6 +587,8 @@ function isActive(path?: string) {
 }
 
 .workbench-nav__item {
+  box-sizing: border-box;
+  flex: 0 0 auto;
   min-width: 0;
   height: 32px;
   padding: 0 12px;
@@ -576,6 +602,23 @@ function isActive(path?: string) {
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.brand-button__mark {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
+}
+
+.brand-button__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
 }
 
 .workbench-nav__item:hover {
