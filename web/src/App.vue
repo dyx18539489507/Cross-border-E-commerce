@@ -6,19 +6,18 @@
     <footer v-if="showFooter" class="site-footer">
       <BeianFooter />
     </footer>
-    <MobileAccessReminder />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { BeianFooter, MobileAccessReminder } from '@/components/common'
+import { BeianFooter } from '@/components/common'
 
 const route = useRoute()
 const showFooter = computed(
   () =>
-    !['Home', 'Product', 'Pricing', 'About', 'DramaList', 'DramaCreate', 'ComplianceAnalysis', 'DataAnalysis', 'EpisodeWorkflowNew', 'ScriptEdit', 'StoryboardEdit', 'DramaScriptStage', 'Generation', 'TimelineEditor'].includes(
+    !['Home', 'Product', 'Pricing', 'About', 'AgentResult', 'DramaList', 'DramaCreate', 'ComplianceAnalysis', 'DataAnalysis', 'EpisodeWorkflowNew', 'ScriptEdit', 'StoryboardEdit', 'DramaScriptStage', 'Generation', 'TimelineEditor'].includes(
       String(route.name ?? '')
     )
 )

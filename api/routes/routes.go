@@ -69,6 +69,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	socialBindingHandler := handlers2.NewSocialBindingHandler(db, log)
 	distributionService := services2.NewDistributionService(db, cfg, log)
 	distributionHandler := handlers2.NewDistributionHandler(distributionService, log)
+	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log)
 
 	api := r.Group("/api/v1")
 	{
@@ -104,6 +105,12 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		{
 			generation.POST("/characters", scriptGenHandler.GenerateCharacters)
 			generation.POST("/assist-script", aiAssistHandler.GenerateEpisodeScript)
+		}
+
+		agent := api.Group("/agent")
+		{
+			agent.POST("/generate", silkroadAgentHandler.Generate)
+			agent.POST("/analyze", silkroadAgentHandler.Analyze)
 		}
 
 		// 角色库路由

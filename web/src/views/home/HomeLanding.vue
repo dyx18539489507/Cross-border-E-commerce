@@ -58,6 +58,11 @@
             <button type="button" class="landing-button landing-button--secondary" @click="openProductPage">
               了解更多
             </button>
+            <button type="button" class="landing-button landing-button--agent" @click="scrollToAgentSection">
+              <Cpu class="landing-button__agent-icon" aria-hidden="true" />
+              <span class="landing-button__agent-text">体验丝路 Agent</span>
+              <span class="landing-button__agent-badge" aria-hidden="true">AI</span>
+            </button>
           </div>
 
           <div class="hero-stats" aria-label="平台核心数据">
@@ -85,6 +90,107 @@
               <p>{{ feature.description }}</p>
             </article>
           </div>
+        </div>
+      </section>
+
+      <section ref="agentSection" id="agent" class="landing-section agent-section" aria-labelledby="agent-title">
+        <div class="landing-shell">
+          <div class="agent-section__intro">
+            <div class="agent-section__eyebrow">
+              <Suitcase class="agent-section__eyebrow-icon" aria-hidden="true" />
+              <span>SILK ROAD AGENT · 跨境电商智能体</span>
+            </div>
+
+            <h2 id="agent-title">
+              <span>丝路 Agent：</span>
+              <strong>一句话生成完整出海营销路径</strong>
+            </h2>
+
+            <p>
+              输入商品信息,Agent自动理解需求、识别风险、生成本地化内容,并规划数字人营销与投放方案。
+            </p>
+          </div>
+
+          <div class="agent-section__grid">
+            <article class="agent-input-card" aria-label="丝路 Agent 输入演示">
+              <div class="agent-input-card__header">
+                <span class="agent-input-card__icon" aria-hidden="true">
+                  <SuitcaseLine />
+                </span>
+                <div>
+                  <h3>告诉丝路 Agent</h3>
+                </div>
+              </div>
+
+              <div class="agent-input-card__field" :class="{ 'is-invalid': agentPromptError }">
+                <textarea
+                  ref="agentPromptTextarea"
+                  v-model="agentPrompt"
+                  :class="{ 'is-invalid': agentPromptError }"
+                  :placeholder="agentPromptPlaceholder"
+                  aria-label="输入商品与目标市场"
+                  :aria-invalid="!!agentPromptError"
+                  required
+                  rows="4"
+                  @input="clearAgentPromptError"
+                ></textarea>
+              </div>
+
+              <label class="agent-image-upload-box">
+                <input type="file" accept="image/*" @change="handleAgentImageChange" />
+                <span class="agent-image-upload-box__icon" aria-hidden="true">
+                  <UploadFilled />
+                </span>
+                <span class="agent-image-upload-box__content">
+                  <strong>{{ agentImageName || '上传商品图片（可选）' }}</strong>
+                </span>
+              </label>
+
+              <div class="agent-input-card__tags" aria-label="快捷指令标签">
+                <button v-for="tag in agentPromptTags" :key="tag" type="button" @click="appendAgentTag(tag)">
+                  {{ tag }}
+                </button>
+              </div>
+
+              <button type="button" class="agent-input-card__action" @click="openAgentPage">
+                <Lightning class="agent-input-card__action-icon" aria-hidden="true" />
+                <span>启动丝路 Agent</span>
+                <ArrowRight class="agent-input-card__action-icon" aria-hidden="true" />
+              </button>
+            </article>
+
+            <article class="agent-chain-card" aria-label="丝路 Agent 能力链路">
+              <div class="agent-chain-card__header">
+                <span class="agent-chain-card__title">
+                  <MagicStick aria-hidden="true" />
+                  <span>智能任务链</span>
+                </span>
+              </div>
+
+              <div class="agent-chain">
+                <article
+                  v-for="step in agentSteps"
+                  :key="step.title"
+                  class="agent-chain__item"
+                >
+                  <div class="agent-chain__icon-wrap" :class="`agent-chain__icon-wrap--${step.tone}`">
+                    <component :is="step.icon" class="agent-chain__icon" aria-hidden="true" />
+                    <span class="agent-chain__index">{{ step.index }}</span>
+                  </div>
+                  <div class="agent-chain__content">
+                    <h3>{{ step.title }}</h3>
+                    <p>{{ step.description }}</p>
+                  </div>
+                  <CircleCheck class="agent-chain__check" aria-hidden="true" />
+                </article>
+              </div>
+            </article>
+          </div>
+
+          <p class="agent-section__note">
+            不是简单填表生成,而是由
+            <span class="agent-text-cyan">Agent 理解模糊需求</span>、<span class="agent-text-violet">主动补全信息</span>、<span class="agent-text-orange">自动规划任务</span>,并持续优化跨境营销方案。
+          </p>
         </div>
       </section>
 
@@ -155,10 +261,26 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  ArrowRight,
+  CircleCheck,
+  Cpu,
+  Goods,
+  Guide,
+  Lightning,
+  MagicStick,
+  Suitcase,
+  SuitcaseLine,
+  TrendCharts,
+  UploadFilled,
+  User
+} from '@element-plus/icons-vue'
 import { MarketingFooter } from '@/components/common'
+import type { AgentInput } from '@/types/agent'
+import { clearAgentResult, saveAgentInput, saveAgentUserInput } from '@/utils/agentStorage'
 import avatarChenYue from '@/assets/landing/avatar-chen-yue.webp'
 import avatarLiMing from '@/assets/landing/avatar-li-ming.webp'
-import avatarWangFang from '@/assets/landing/avatar-wang-fang.webp'
+import avatarWangXuan from '@/assets/landing/avatar-wang-xuan.webp'
 import ctaArrow from '@/assets/landing/cta-arrow.svg'
 import ctaDecor from '@/assets/landing/cta-decor.png'
 import ctaGlobe from '@/assets/landing/cta-globe.svg'
@@ -178,8 +300,24 @@ const brandLogo = '/logo_circle.png'
 
 const heroSection = ref<HTMLElement | null>(null)
 const productSection = ref<HTMLElement | null>(null)
+const agentSection = ref<HTMLElement | null>(null)
 const workflowSection = ref<HTMLElement | null>(null)
 const testimonialsSection = ref<HTMLElement | null>(null)
+const agentPromptTextarea = ref<HTMLTextAreaElement | null>(null)
+const agentPrompt = ref('')
+const agentPromptError = ref('')
+const agentProductName = ref('')
+const agentCategory = ref('')
+const agentTargetMarket = ref('')
+const agentTargetPlatform = ref('')
+const agentTargetAudience = ref('')
+const agentSellingPoints = ref('')
+const agentMaterialSpec = ref('')
+const agentUsageScenario = ref('')
+const agentImageDataUrl = ref('')
+const agentImageName = ref('')
+const agentPromptPlaceholder = '请描述你的商品、目标市场、内容平台、目标用户和核心卖点。例如：我有一款便携榨汁杯，想卖到马来西亚，计划做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
+const defaultAgentUserInput = '我有一款便携榨汁杯，想卖到马来西亚，主要做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
 
 const stats = [
   { value: '1000+', label: '商品类目' },
@@ -223,6 +361,51 @@ const workflowSteps = [
   { index: '05', title: '成片输出', description: '剪辑优化与发布' }
 ]
 
+const agentPromptTags = [
+  '商品准入分析',
+  '生成本地化脚本',
+  '数字人口播方案',
+  '投放优化建议'
+]
+
+const agentSteps = [
+  {
+    index: '1',
+    icon: Goods,
+    tone: 'cyan',
+    title: '商品理解',
+    description: '识别商品类目、卖点、目标市场和用户人群'
+  },
+  {
+    index: '2',
+    icon: CircleCheck,
+    tone: 'blue',
+    title: '合规分析',
+    description: '判断禁限售风险、认证要求和广告敏感表达'
+  },
+  {
+    index: '3',
+    icon: Guide,
+    tone: 'violet',
+    title: '本地化内容',
+    description: '生成目标市场语言下的标题、卖点和短视频脚本'
+  },
+  {
+    index: '4',
+    icon: User,
+    tone: 'pink',
+    title: '数字人方案',
+    description: '推荐数字人形象、口播语气、字幕语言和视频风格'
+  },
+  {
+    index: '5',
+    icon: TrendCharts,
+    tone: 'orange',
+    title: '投放建议',
+    description: '给出平台选择、内容方向和优化指标建议'
+  }
+]
+
 const testimonials = [
   {
     quote: '"使用数字丝路后，合规问题减少90%，视频制作效率提升10倍，ROI提升3倍。"',
@@ -238,9 +421,9 @@ const testimonials = [
   },
   {
     quote: '"为客户提供服务时，数字丝路让我们的效率和专业度都大幅提升。"',
-    name: '王芳',
+    name: '王轩',
     role: '代运营服务商 · 某跨境代运营公司',
-    avatar: avatarWangFang
+    avatar: avatarWangXuan
   }
 ]
 
@@ -254,6 +437,179 @@ const openProductPage = () => {
 
 const openAboutPage = () => {
   router.push('/about')
+}
+
+const openAgentPage = () => {
+  if (!agentPrompt.value.trim()) {
+    agentPromptError.value = '请先描述你的商品、目标市场、内容平台、目标用户和核心卖点。'
+    agentPromptTextarea.value?.focus()
+    return
+  }
+
+  const promptInfo = extractAgentInputFromPrompt(agentPrompt.value)
+  const sellingPoints = parseAgentSellingPoints(agentSellingPoints.value)
+  const input: AgentInput = {
+    requestId: createAgentRequestId(),
+    productName: agentProductName.value.trim() || promptInfo.productName,
+    category: agentCategory.value.trim() || promptInfo.category,
+    targetMarket: agentTargetMarket.value.trim() || promptInfo.targetMarket,
+    targetPlatform: agentTargetPlatform.value.trim() || promptInfo.targetPlatform,
+    targetAudience: agentTargetAudience.value.trim() || promptInfo.targetAudience,
+    coreSellingPoints: sellingPoints.length ? sellingPoints : promptInfo.coreSellingPoints,
+    materialSpec: agentMaterialSpec.value.trim() || promptInfo.materialSpec,
+    usageScenario: agentUsageScenario.value.trim() || promptInfo.usageScenario,
+    rawPrompt: agentPrompt.value.trim(),
+    imageDataUrl: isUsableAgentImage(agentImageDataUrl.value) ? agentImageDataUrl.value : ''
+  }
+  saveAgentInput(input)
+  saveAgentUserInput(input.rawPrompt || defaultAgentUserInput)
+  clearAgentResult()
+  router.push('/agent/transition')
+}
+
+const clearAgentPromptError = () => {
+  if (agentPromptError.value && agentPrompt.value.trim()) {
+    agentPromptError.value = ''
+  }
+}
+
+const parseAgentSellingPoints = (value: string) => {
+  return value
+    .split(/[,，;；\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const extractAgentInputFromPrompt = (value: string): AgentInput => {
+  const prompt = value.trim()
+  if (!prompt) return {}
+
+  const productName = extractFirstMatch(prompt, [
+    /(?:我有|我们有|这是一款|这款|一款|一个|一种|商品是|产品是)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|想|计划|准备|主打|目标|卖到|出口|做|$)/,
+    /(?:销售|卖)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|到|去|$)/
+  ])
+
+  const targetMarket = cleanupExtractedText(extractFirstMatch(prompt, [
+    /(?:卖到|出口到|进入|面向|投放到|推广到)([^，,。；;\n]{2,24}?)(?:市场|用户|消费者|，|,|。|；|;|$)/,
+    /(?:目标市场|目标国家|国家|市场)(?:是|为|:|：)?([^，,。；;\n]{2,24})/
+  ]))
+
+  const targetAudience = cleanupExtractedText(extractFirstMatch(prompt, [
+    /(?:目标用户|目标人群|受众|面向用户)(?:是|为|:|：)?([^，,。；;\n]{2,44})/,
+    /(?:用户是|人群是)([^，,。；;\n]{2,44})/
+  ]))
+
+  const category = cleanupExtractedText(extractFirstMatch(prompt, [
+    /(?:商品类目|产品类目|类目|品类|属于)(?:是|为|:|：)?([^，,。；;\n]{2,28})/
+  ]))
+
+  const materialSpec = cleanupExtractedText(extractFirstMatch(prompt, [
+    /(?:材质|成分|容量|规格|尺寸|型号)(?:是|为|:|：)?([^。；;\n]{2,52})/
+  ]))
+
+  const usageScenario = cleanupExtractedText(extractFirstMatch(prompt, [
+    /(?:使用场景|应用场景|场景)(?:是|为|:|：)?([^。；;\n]{2,64})/
+  ]))
+
+  const pointsText = cleanupExtractedText(extractFirstMatch(prompt, [
+    /(?:核心卖点|卖点|主打|突出)(?:是|为|:|：)?([^。；;\n]{2,80})/
+  ]))
+
+  return {
+    productName: cleanupExtractedText(productName),
+    category,
+    targetMarket,
+    targetPlatform: extractTargetPlatform(prompt),
+    targetAudience,
+    coreSellingPoints: parseAgentSellingPoints(pointsText),
+    materialSpec,
+    usageScenario
+  }
+}
+
+const extractFirstMatch = (value: string, patterns: RegExp[]) => {
+  for (const pattern of patterns) {
+    const match = value.match(pattern)
+    const captured = match?.[1]?.trim()
+    if (captured) return captured
+  }
+  return ''
+}
+
+const cleanupExtractedText = (value?: string) => {
+  return (value || '')
+    .replace(/^(的|到|给|为|是|做|在)/, '')
+    .replace(/(市场|平台|用户|人群)$/g, '')
+    .trim()
+}
+
+const extractTargetPlatform = (value: string) => {
+  const platforms = [
+    'TikTok',
+    'Instagram Reels',
+    'Instagram',
+    'YouTube Shorts',
+    'YouTube',
+    'Shopee',
+    'Lazada',
+    'Amazon',
+    'Temu',
+    'eBay',
+    'Facebook',
+    '小红书',
+    '抖音'
+  ]
+  const lowerValue = value.toLowerCase()
+  return platforms.find((platform) => lowerValue.includes(platform.toLowerCase())) || ''
+}
+
+const createAgentRequestId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const isUsableAgentImage = (value: string) => {
+  return value.trim().toLowerCase().startsWith('data:image/')
+}
+
+const appendAgentTag = (tag: string) => {
+  const prefix = agentPrompt.value.trim()
+  agentPrompt.value = prefix ? `${prefix}\n${tag}: ` : `${tag}: `
+}
+
+const handleAgentImageChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) {
+    agentImageDataUrl.value = ''
+    agentImageName.value = ''
+    return
+  }
+  if (!file.type.startsWith('image/')) {
+    input.value = ''
+    agentImageDataUrl.value = ''
+    agentImageName.value = ''
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    agentImageDataUrl.value = typeof reader.result === 'string' ? reader.result : ''
+    agentImageName.value = file.name
+  }
+  reader.readAsDataURL(file)
+}
+
+const scrollToAgentSection = () => {
+  if (!agentSection.value) return
+
+  const top = agentSection.value.getBoundingClientRect().top + window.scrollY
+  window.scrollTo({
+    top,
+    behavior: 'smooth',
+  })
 }
 
 const getSectionElement = (key: SectionKey) => {
@@ -490,6 +846,55 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 24px -24px rgba(15, 23, 42, 0.28);
 }
 
+.landing-button--agent {
+  position: relative;
+  min-height: 60px;
+  width: 207px;
+  padding: 16px 32px;
+  color: #06b6d4;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    linear-gradient(164deg, #06b6d4 0%, #7c3aed 100%) border-box;
+  box-shadow: 0 10px 24px -22px rgba(15, 23, 42, 0.35);
+}
+
+.landing-button--agent:hover {
+  box-shadow: 0 18px 34px -24px rgba(124, 58, 237, 0.5);
+}
+
+.landing-button__agent-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.landing-button__agent-text {
+  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  white-space: nowrap;
+}
+
+.landing-button__agent-badge {
+  position: absolute;
+  right: -4px;
+  top: -10px;
+  min-width: 27px;
+  height: 19px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #ffffff;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 700;
+}
+
 .landing-button--light {
   background: #ffffff;
   color: #0a2463;
@@ -619,6 +1024,520 @@ onBeforeUnmount(() => {
   font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
   font-size: 16px;
   line-height: 24px;
+}
+
+.agent-section {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 80px 0;
+  scroll-margin-top: 0;
+  overflow: hidden;
+  background: linear-gradient(138deg, #0a2463 0%, #0f2f7a 50%, #1e3a8a 100%);
+}
+
+.agent-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 42% 16%, rgba(6, 182, 212, 0.22) 0, rgba(6, 182, 212, 0) 240px),
+    radial-gradient(circle at 58% 74%, rgba(124, 58, 237, 0.22) 0, rgba(124, 58, 237, 0) 260px),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 32px);
+  opacity: 1;
+}
+
+.agent-section .landing-shell {
+  position: relative;
+  width: min(1103px, 100%);
+  padding-inline: 32px;
+}
+
+.agent-section__intro {
+  min-height: 178px;
+  text-align: center;
+}
+
+.agent-section__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 16px;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cefafe;
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.agent-section__eyebrow-icon {
+  width: 16px;
+  height: 16px;
+  color: #06b6d4;
+}
+
+.agent-section__intro h2 {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: 'Urbanist', 'Noto Sans SC', 'PingFang SC', sans-serif;
+  font-size: 48px;
+  line-height: 48px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.agent-section__intro h2 strong {
+  background: linear-gradient(90deg, #06b6d4 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.agent-section__intro p {
+  width: min(768px, 100%);
+  margin: 16px auto 0;
+  color: rgba(206, 250, 254, 0.8);
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 18px;
+  line-height: 28px;
+}
+
+.agent-section__grid {
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 24px;
+}
+
+.agent-input-card,
+.agent-chain-card {
+  min-height: 530px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+
+.agent-input-card {
+  padding: 28px;
+}
+
+.agent-input-card__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-input-card__icon {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, #06b6d4 0%, #7c3aed 100%);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.1);
+  color: #ffffff;
+}
+
+.agent-input-card__icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.agent-input-card__header div {
+  min-width: 0;
+}
+
+.agent-input-card h3 {
+  margin: 0;
+  color: #ffffff;
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.agent-input-card__header p {
+  margin-top: 0;
+  color: rgba(162, 244, 253, 0.7);
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.agent-input-card__field {
+  position: relative;
+  margin-top: 20px;
+  min-height: 80px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(15, 23, 43, 0.4);
+}
+
+.agent-input-card__field textarea {
+  width: 100%;
+  height: 92px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-color: rgba(206, 250, 254, 0.28) transparent;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  background: transparent;
+  color: rgba(236, 254, 255, 0.9);
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 14px;
+  line-height: 23px;
+}
+
+.agent-input-card__field.is-invalid {
+  border-color: rgba(248, 113, 113, 0.78);
+  background: rgba(127, 29, 29, 0.16);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.1);
+}
+
+.agent-input-card__field textarea.is-invalid::placeholder {
+  color: rgba(254, 202, 202, 0.62);
+}
+
+.agent-input-card__field textarea::placeholder {
+  color: rgba(206, 250, 254, 0.5);
+}
+
+.agent-input-card__field textarea::-webkit-scrollbar {
+  width: 5px;
+}
+
+.agent-input-card__field textarea::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.agent-input-card__field textarea::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.agent-input-card__field textarea::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(206, 250, 254, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.08);
+}
+
+.agent-input-card__field textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(206, 250, 254, 0.38);
+}
+
+.agent-input-card__field textarea::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.agent-image-upload-box {
+  margin-top: 12px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(15, 23, 43, 0.28);
+  color: rgba(206, 250, 254, 0.86);
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.agent-image-upload-box:hover {
+  border-color: rgba(6, 182, 212, 0.45);
+  background: rgba(6, 182, 212, 0.08);
+  transform: translateY(-1px);
+}
+
+.agent-image-upload-box input {
+  display: none;
+}
+
+.agent-image-upload-box__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.22), rgba(124, 58, 237, 0.2));
+  color: #cefafe;
+}
+
+.agent-image-upload-box__icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.agent-image-upload-box__content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-image-upload-box__content strong {
+  overflow: hidden;
+  color: #cefafe;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-text-cyan {
+  color: #06b6d4;
+  font-weight: 700;
+}
+
+.agent-text-violet {
+  color: #a78bfa;
+  font-weight: 700;
+}
+
+.agent-text-orange {
+  color: #f97316;
+  font-weight: 700;
+}
+
+.agent-input-card__tags {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-input-card__tags button {
+  min-height: 30px;
+  padding: 7px 13px;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #cefafe;
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.agent-input-card__tags button::before {
+  content: '# ';
+}
+
+.agent-input-card__tags button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(167, 139, 250, 0.48);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.agent-input-card__action {
+  margin-top: 20px;
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #ffffff;
+  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 50%, #f97316 100%);
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.agent-input-card__action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 34px -22px rgba(6, 182, 212, 0.7);
+}
+
+.agent-input-card__action-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.agent-chain-card {
+  padding: 28px 28px 1px;
+}
+
+.agent-chain-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.agent-chain-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.agent-chain-card__title svg {
+  width: 20px;
+  height: 20px;
+  color: #06b6d4;
+}
+
+.agent-chain {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-chain__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  min-height: 70px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.agent-chain__item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 70px;
+  width: 1px;
+  height: 10px;
+  background: linear-gradient(180deg, rgba(6, 182, 212, 0.6) 0%, rgba(6, 182, 212, 0) 100%);
+}
+
+.agent-chain__icon-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.agent-chain__icon-wrap--cyan {
+  background: linear-gradient(135deg, #00d3f3 0%, #2b7fff 100%);
+}
+
+.agent-chain__icon-wrap--blue {
+  background: linear-gradient(135deg, #2b7fff 0%, #615fff 100%);
+}
+
+.agent-chain__icon-wrap--violet {
+  background: linear-gradient(135deg, #615fff 0%, #ad46ff 100%);
+}
+
+.agent-chain__icon-wrap--pink {
+  background: linear-gradient(135deg, #ad46ff 0%, #f6339a 100%);
+}
+
+.agent-chain__icon-wrap--orange {
+  background: linear-gradient(135deg, #f6339a 0%, #ff6900 100%);
+}
+
+.agent-chain__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.agent-chain__index {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #06b6d4;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a2463;
+  color: #06b6d4;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: 700;
+}
+
+.agent-chain__content {
+  min-width: 0;
+}
+
+.agent-chain__content h3 {
+  margin: 0;
+  color: #ffffff;
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.agent-chain__content p {
+  margin-top: 2px;
+  color: rgba(206, 250, 254, 0.6);
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.agent-chain__check {
+  width: 16px;
+  height: 16px;
+  color: #06b6d4;
+  opacity: 0.76;
+}
+
+.agent-section__note {
+  width: min(768px, 100%);
+  margin: 40px auto 0;
+  color: rgba(206, 250, 254, 0.7);
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 400;
+  text-align: center;
 }
 
 .feature-section,
@@ -1083,6 +2002,20 @@ onBeforeUnmount(() => {
     font-size: 40px;
     line-height: 44px;
   }
+
+  .agent-section__intro h2 {
+    font-size: 42px;
+    line-height: 50px;
+  }
+
+  .agent-section__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-input-card,
+  .agent-chain-card {
+    min-height: auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1120,12 +2053,102 @@ onBeforeUnmount(() => {
     line-height: 28px;
   }
 
+  .hero-section__actions {
+    width: 100%;
+    gap: 14px;
+  }
+
+  .hero-section__actions .landing-button {
+    width: 100%;
+    max-width: 320px;
+  }
+
   .hero-stats,
   .feature-grid,
   .workflow-grid,
   .testimonial-grid,
   .landing-footer__top {
     grid-template-columns: 1fr;
+  }
+
+  .agent-section {
+    min-height: auto;
+    padding: 64px 0;
+  }
+
+  .agent-section .landing-shell {
+    padding-inline: 20px;
+  }
+
+  .agent-section__intro {
+    min-height: auto;
+  }
+
+  .agent-section__intro h2 {
+    font-size: 36px;
+    line-height: 42px;
+  }
+
+  .agent-section__intro p,
+  .agent-section__note {
+    font-size: 16px;
+    line-height: 26px;
+  }
+
+  .agent-section__grid {
+    margin-top: 32px;
+    gap: 20px;
+  }
+
+  .agent-input-card,
+  .agent-chain-card {
+    border-radius: 16px;
+  }
+
+  .agent-input-card {
+    padding: 22px;
+  }
+
+  .agent-input-card h3 {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .agent-input-card__field {
+    min-height: 112px;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .agent-input-card__tags {
+    gap: 10px;
+  }
+
+  .agent-input-card__tags button {
+    flex: 1 1 calc(50% - 10px);
+    padding-inline: 10px;
+  }
+
+  .agent-chain-card {
+    padding: 22px;
+  }
+
+  .agent-chain-card__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .agent-chain__item {
+    grid-template-columns: 40px minmax(0, 1fr) 16px;
+    gap: 12px;
+  }
+
+  .agent-chain__item:not(:last-child)::after {
+    left: 26px;
+  }
+
+  .agent-chain__content {
+    padding: 0;
   }
 
   .feature-card,

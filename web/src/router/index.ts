@@ -22,6 +22,21 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/home/AboutLanding.vue')
   },
   {
+    path: '/agent/transition',
+    name: 'AgentTransition',
+    component: () => import('../views/agent/AgentTransitionPage.vue')
+  },
+  {
+    path: '/agent/result',
+    name: 'AgentResult',
+    component: () => import('../views/agent/AgentResultPage.vue')
+  },
+  {
+    path: '/agent',
+    name: 'AgentEntry',
+    redirect: '/agent/transition'
+  },
+  {
     path: '/dramas',
     name: 'DramaList',
     component: () => import('../views/drama/WorkbenchDashboard.vue')
@@ -116,7 +131,15 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior() {
+  scrollBehavior(to) {
+    if (to.hash) {
+      return {
+        el: to.hash,
+        top: 80,
+        behavior: 'smooth'
+      }
+    }
+
     return { top: 0, left: 0 }
   }
 })
