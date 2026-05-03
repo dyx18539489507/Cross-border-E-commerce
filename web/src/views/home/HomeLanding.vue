@@ -55,13 +55,12 @@
               <span>立即开始</span>
               <img :src="heroArrow" alt="" aria-hidden="true" class="landing-button__icon" />
             </button>
-            <button type="button" class="landing-button landing-button--secondary" @click="openProductPage">
-              了解更多
-            </button>
             <button type="button" class="landing-button landing-button--agent" @click="scrollToAgentSection">
               <Cpu class="landing-button__agent-icon" aria-hidden="true" />
               <span class="landing-button__agent-text">体验丝路 Agent</span>
-              <span class="landing-button__agent-badge" aria-hidden="true">AI</span>
+            </button>
+            <button type="button" class="landing-button landing-button--secondary" @click="openProductPage">
+              了解更多
             </button>
           </div>
 
@@ -876,23 +875,6 @@ onBeforeUnmount(() => {
   background-clip: text;
   color: transparent;
   white-space: nowrap;
-}
-
-.landing-button__agent-badge {
-  position: absolute;
-  right: -4px;
-  top: -10px;
-  min-width: 27px;
-  height: 19px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.1);
-  color: #ffffff;
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 10px;
-  line-height: 15px;
-  font-weight: 700;
 }
 
 .landing-button--light {
@@ -2055,12 +2037,11 @@ onBeforeUnmount(() => {
 
   .hero-section__actions {
     width: 100%;
-    gap: 14px;
+    gap: 12px;
   }
 
   .hero-section__actions .landing-button {
-    width: 100%;
-    max-width: 320px;
+    width: min(100%, 280px);
   }
 
   .hero-stats,

@@ -832,25 +832,42 @@ const scrollToTop = () => {
 
 @media (max-width: 860px) {
   .about-shell {
-    width: min(100%, calc(100% - 32px));
+    width: min(100%, calc(100% - 24px));
+    padding-inline: 20px;
   }
 
   .about-header__inner {
-    min-height: 68px;
-    flex-wrap: wrap;
-    justify-content: center;
-    padding: 14px 0;
+    min-height: 76px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    padding-block: 0;
   }
 
   .about-nav {
-    order: 3;
-    width: 100%;
-    justify-content: center;
-    gap: 22px;
+    display: none;
   }
 
   .about-header__actions {
-    display: none;
+    display: flex;
+  }
+
+  .about-header .brand-lockup__mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+  }
+
+  .about-header .brand-lockup__copy strong {
+    line-height: 28px;
+  }
+
+  .about-header .about-button--primary {
+    min-height: 44px;
+    padding: 10px 20px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, #f97316 0%, #fb923c 100%);
+    font-size: 16px;
+    line-height: 24px;
   }
 
   .section-heading p,
@@ -885,6 +902,10 @@ const scrollToTop = () => {
 }
 
 @media (max-width: 640px) {
+  .about-header .brand-lockup__copy small {
+    display: none;
+  }
+
   .about-main {
     padding-bottom: 64px;
   }

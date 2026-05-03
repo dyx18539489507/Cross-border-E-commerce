@@ -151,20 +151,90 @@
                     品类
                     <span class="field-block__required">*</span>
                   </label>
-                  <div class="select-shell" :class="{ 'select-shell--error': Boolean(errors.category) }">
-                    <select
+                  <div ref="categoryCascaderRef" class="category-cascader">
+                    <button
                       id="product-category"
-                      v-model="form.category"
-                      class="select-shell__control"
-                      :class="{ 'select-shell__control--placeholder': !form.category }"
-                      @change="handleCategoryChange"
+                      type="button"
+                      class="category-cascader__trigger"
+                      :class="{
+                        'category-cascader__trigger--placeholder': !resolvedCategoryLabel,
+                        'category-cascader__trigger--error': Boolean(errors.category),
+                        'category-cascader__trigger--open': isCategoryCascaderOpen
+                      }"
+                      aria-haspopup="listbox"
+                      :aria-expanded="isCategoryCascaderOpen"
+                      @click="toggleCategoryCascader"
                     >
-                      <option value="" disabled>请选择商品品类</option>
-                      <option v-for="option in categoryOptions" :key="option" :value="option">
-                        {{ option }}
-                      </option>
-                    </select>
-                    <img :src="chevronDownIcon" alt="" class="select-shell__icon" />
+                      <span>{{ resolvedCategoryLabel || '请选择商品品类' }}</span>
+                      <img :src="chevronDownIcon" alt="" class="category-cascader__icon" />
+                    </button>
+
+                    <div v-if="isCategoryCascaderOpen" class="category-cascader__panel">
+                      <div class="category-cascader__search">
+                        <input
+                          ref="categorySearchInputRef"
+                          v-model="categorySearchKeyword"
+                          type="search"
+                          class="category-cascader__search-input"
+                          placeholder="搜索一级或二级品类"
+                          aria-label="搜索商品品类"
+                          @click.stop
+                          @keydown.stop
+                        />
+                      </div>
+
+                      <div v-if="normalizedCategorySearch" class="category-cascader__results" role="listbox">
+                        <button
+                          v-for="result in categorySearchResults"
+                          :key="`${result.primary}/${result.secondary}`"
+                          type="button"
+                          class="category-cascader__result"
+                          :class="{
+                            'category-cascader__result--active':
+                              form.categoryPrimary === result.primary && form.categorySecondary === result.secondary
+                          }"
+                          @click="selectCategoryResult(result)"
+                        >
+                          <span class="category-cascader__result-primary">{{ result.primary }}</span>
+                          <strong class="category-cascader__result-secondary">{{ result.secondary }}</strong>
+                        </button>
+
+                        <p v-if="categorySearchResults.length === 0" class="category-cascader__empty">
+                          未找到匹配品类
+                        </p>
+                      </div>
+
+                      <div v-else class="category-cascader__columns">
+                        <div class="category-cascader__column category-cascader__column--primary" role="listbox">
+                          <button
+                            v-for="group in categoryGroups"
+                            :key="group.label"
+                            type="button"
+                            class="category-cascader__option"
+                            :class="{ 'category-cascader__option--active': form.categoryPrimary === group.label }"
+                            @click="selectCategoryPrimary(group.label)"
+                          >
+                            {{ group.label }}
+                          </button>
+                        </div>
+
+                        <div class="category-cascader__column category-cascader__column--secondary" role="listbox">
+                          <p v-if="!form.categoryPrimary" class="category-cascader__empty">请先选择一级品类</p>
+                          <template v-else>
+                            <button
+                              v-for="option in subcategoryOptions"
+                              :key="option"
+                              type="button"
+                              class="category-cascader__option"
+                              :class="{ 'category-cascader__option--active': form.categorySecondary === option }"
+                              @click="selectCategorySecondary(option)"
+                            >
+                              {{ option }}
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <p v-if="errors.category" class="field-block__error">{{ errors.category }}</p>
                 </div>
@@ -256,7 +326,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
@@ -273,6 +343,8 @@ import uploadIcon from '@/assets/figma/product-entry/upload.svg'
 interface ProductEntryDraft {
   title: string
   category: string
+  categoryPrimary?: string
+  categorySecondary?: string
   brand: string
 }
 
@@ -285,6 +357,11 @@ interface HeaderNotification {
   path?: string
 }
 
+interface CategorySearchResult {
+  primary: string
+  secondary: string
+}
+
 const PRODUCT_ENTRY_DRAFT_KEY = 'drama:create:product-entry:basic'
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
@@ -292,11 +369,15 @@ const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 const router = useRouter()
 const brandLogo = '/logo_circle.png'
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const categorySearchInputRef = ref<HTMLInputElement | null>(null)
 const notificationRef = ref<HTMLElement | null>(null)
+const categoryCascaderRef = ref<HTMLElement | null>(null)
 const imagePreviewUrl = ref('')
 const imageName = ref('')
 const isDragOver = ref(false)
 const showNotifications = ref(false)
+const isCategoryCascaderOpen = ref(false)
+const categorySearchKeyword = ref('')
 
 const notifications = ref<HeaderNotification[]>([
   {
@@ -328,6 +409,8 @@ const unreadNotificationCount = computed(() => notifications.value.filter((notic
 const form = reactive({
   title: '',
   category: '',
+  categoryPrimary: '',
+  categorySecondary: '',
   brand: ''
 })
 
@@ -353,22 +436,174 @@ const steps = [
   { label: '完成', icon: stepCompleteIcon, active: false }
 ] as const
 
-const categoryOptions = [
-  '消费电子',
-  '家居家电',
-  '运动户外',
-  '美妆个护',
-  '母婴玩具',
-  '宠物用品'
+const categoryGroups = [
+  {
+    label: '消费电子',
+    children: ['智能穿戴', '智能手表', '手机配件', '电脑周边', '音频设备', '摄影摄像', '游戏外设', '充电储能']
+  },
+  {
+    label: '家用电器',
+    children: ['厨房小家电', '空气炸锅', '咖啡设备', '清洁电器', '个护电器', '环境电器', '食品接触小家电']
+  },
+  {
+    label: '智能家居',
+    children: ['智能安防', '智能照明', '智能插座', '智能门锁', '传感器', '智能窗帘']
+  },
+  {
+    label: '家居生活',
+    children: ['厨房餐厨', '收纳整理', '家纺布艺', '灯具照明', '卫浴用品', '家装五金']
+  },
+  {
+    label: '美妆个护',
+    children: ['护肤', '彩妆', '美发造型', '身体护理', '口腔护理', '美容仪器', '香氛']
+  },
+  {
+    label: '服饰配件',
+    children: ['女装', '男装', '鞋靴', '箱包', '饰品配件', '运动服饰', '内衣家居服']
+  },
+  {
+    label: '运动户外',
+    children: ['健身器材', '户外露营', '骑行装备', '球类运动', '瑜伽训练', '运动护具']
+  },
+  {
+    label: '母婴玩具',
+    children: ['婴童用品', '益智玩具', '毛绒玩具', '童车童床', '喂养用品', '儿童服饰']
+  },
+  {
+    label: '玩具模型',
+    children: ['积木拼插', '模型手办', '遥控玩具', '桌游卡牌', '科学玩具']
+  },
+  {
+    label: '宠物用品',
+    children: ['宠物喂养', '宠物清洁', '宠物玩具', '宠物出行']
+  },
+  {
+    label: '食品饮料',
+    children: ['休闲零食', '冲调饮品', '健康食品', '烘焙原料', '调味品', '即食食品']
+  },
+  {
+    label: '汽摩配件',
+    children: ['车载电子', '汽车内饰', '清洁养护', '骑行配件', '维修工具', '安全应急']
+  },
+  {
+    label: '办公文具',
+    children: ['办公设备', '书写工具', '纸品本册', '桌面收纳', '会议用品', '打印耗材']
+  },
+  {
+    label: '工业工具',
+    children: ['手动工具', '电动工具', '测量仪器', '劳保用品', '包装耗材', '五金配件']
+  },
+  {
+    label: '电子元器件',
+    children: ['连接器', '传感元件', '开发板', '电源模块', '线缆线束', '显示模组']
+  },
+  {
+    label: '商业设备',
+    children: ['收银设备', '条码扫描', '展示货架', '餐饮设备', '仓储设备', '广告标识']
+  },
+  {
+    label: '包装印刷',
+    children: ['纸箱纸盒', '快递包装', '食品包装', '礼品包装', '标签贴纸', '包装袋']
+  },
+  {
+    label: '家装建材',
+    children: ['墙地面材料', '门窗五金', '厨卫五金', '电工电料', '装饰材料', '防水密封']
+  },
+  {
+    label: '珠宝饰品',
+    children: ['时尚首饰', '手表', '眼镜配件', '发饰']
+  },
+  {
+    label: '箱包旅行',
+    children: ['旅行箱', '双肩包', '收纳包', '钱包卡包', '旅行配件', '防盗包']
+  },
+  {
+    label: '园艺工具',
+    children: ['园艺工具', '户外照明', '花盆容器', '灌溉设备', '草坪维护']
+  },
+  {
+    label: '医疗健康',
+    children: ['家用检测', '康复护理', '按摩理疗', '健康监测', '辅助器具', '消毒防护']
+  },
+  {
+    label: '乐器音响',
+    children: ['乐器配件', '录音设备', '扬声器', '调音设备']
+  },
+  {
+    label: '图书教育',
+    children: ['教辅材料', '早教用品', '教学教具', '科学实验']
+  },
+  {
+    label: '鞋服箱配',
+    children: ['功能鞋靴', '户外鞋服', '帽袜围巾', '服装辅料']
+  },
+  {
+    label: '节庆礼品',
+    children: ['节日装饰', '派对用品', '创意礼品', '贺卡包装', '婚庆用品', '定制礼品']
+  },
+  {
+    label: '艺术手工',
+    children: ['绘画用品', '针织缝纫', '陶艺材料', '纸艺材料', '手账文创']
+  },
+  {
+    label: '安防监控',
+    children: ['监控摄像', '门禁考勤', '报警器', '可视门铃', '消防用品', '安全标识']
+  },
+  {
+    label: '绿色能源',
+    children: ['太阳能设备', '储能电源', '节能照明', '充电桩配件', '户外电源', '电池配件']
+  },
+  {
+    label: '农牧用品',
+    children: ['农用工具', '灌溉配件', '养殖设备', '种植耗材', '温室配件']
+  }
 ]
+
+const selectedCategoryGroup = computed(() => {
+  return categoryGroups.find((group) => group.label === form.categoryPrimary)
+})
+
+const subcategoryOptions = computed(() => selectedCategoryGroup.value?.children || [])
+
+const normalizeCategorySearchText = (value: string) => value.trim().toLocaleLowerCase('zh-CN')
+
+const normalizedCategorySearch = computed(() => normalizeCategorySearchText(categorySearchKeyword.value))
+
+const categorySearchResults = computed<CategorySearchResult[]>(() => {
+  const keyword = normalizedCategorySearch.value
+
+  if (!keyword) {
+    return []
+  }
+
+  return categoryGroups.flatMap((group) => {
+    const primaryMatches = normalizeCategorySearchText(group.label).includes(keyword)
+
+    return group.children
+      .filter((secondary) => {
+        const fullLabel = normalizeCategorySearchText(`${group.label} ${secondary}`)
+        return primaryMatches || fullLabel.includes(keyword)
+      })
+      .map((secondary) => ({
+        primary: group.label,
+        secondary
+      }))
+  })
+})
+
+const getResolvedCategory = () => {
+  return [form.categoryPrimary, form.categorySecondary].filter(Boolean).join(' / ')
+}
+
+const resolvedCategoryLabel = computed(() => getResolvedCategory())
 
 const getCompatibleDraft = (): CreateDramaRequest => ({
   title: form.title.trim(),
-  description: [form.category.trim(), form.brand.trim()].filter(Boolean).join(' / '),
+  description: [getResolvedCategory(), form.brand.trim()].filter(Boolean).join(' / '),
   target_country: [],
   material_composition: '',
   marketing_selling_points: '',
-  genre: form.category.trim() || undefined,
+  genre: getResolvedCategory() || undefined,
   tags: form.brand.trim() || undefined
 })
 
@@ -379,7 +614,9 @@ const persistStepDraft = () => {
 
   const draft: ProductEntryDraft = {
     title: form.title,
-    category: form.category,
+    category: getResolvedCategory(),
+    categoryPrimary: form.categoryPrimary,
+    categorySecondary: form.categorySecondary,
     brand: form.brand
   }
 
@@ -400,7 +637,11 @@ const restoreStepDraft = () => {
   try {
     const draft = JSON.parse(raw) as Partial<ProductEntryDraft>
     form.title = typeof draft.title === 'string' ? draft.title : ''
-    form.category = typeof draft.category === 'string' ? draft.category : ''
+    const savedCategory = typeof draft.category === 'string' ? draft.category : ''
+    const [savedPrimary = '', savedSecondary = ''] = savedCategory.split('/').map((item) => item.trim())
+    form.categoryPrimary = typeof draft.categoryPrimary === 'string' ? draft.categoryPrimary : savedPrimary
+    form.categorySecondary = typeof draft.categorySecondary === 'string' ? draft.categorySecondary : savedSecondary
+    form.category = getResolvedCategory()
     form.brand = typeof draft.brand === 'string' ? draft.brand : ''
   } catch {
     window.sessionStorage.removeItem(PRODUCT_ENTRY_DRAFT_KEY)
@@ -425,9 +666,45 @@ const handleTextInput = (field: keyof typeof errors) => {
   persistStepDraft()
 }
 
-const handleCategoryChange = () => {
+const focusCategorySearchInput = () => {
+  void nextTick(() => {
+    categorySearchInputRef.value?.focus()
+  })
+}
+
+const toggleCategoryCascader = () => {
+  isCategoryCascaderOpen.value = !isCategoryCascaderOpen.value
+
+  if (isCategoryCascaderOpen.value) {
+    categorySearchKeyword.value = ''
+    focusCategorySearchInput()
+  }
+}
+
+const selectCategoryPrimary = (label: string) => {
+  if (form.categoryPrimary === label) {
+    return
+  }
+
+  form.categoryPrimary = label
+  form.categorySecondary = ''
+  form.category = getResolvedCategory()
   clearFieldError('category')
   persistStepDraft()
+}
+
+const selectCategorySecondary = (option: string) => {
+  form.categorySecondary = option
+  form.category = getResolvedCategory()
+  clearFieldError('category')
+  persistStepDraft()
+  categorySearchKeyword.value = ''
+  isCategoryCascaderOpen.value = false
+}
+
+const selectCategoryResult = (result: CategorySearchResult) => {
+  form.categoryPrimary = result.primary
+  selectCategorySecondary(result.secondary)
 }
 
 const validateVisibleFields = () => {
@@ -438,8 +715,8 @@ const validateVisibleFields = () => {
     valid = false
   }
 
-  if (!form.category.trim()) {
-    errors.category = '请选择商品品类'
+  if (!form.categoryPrimary.trim() || !form.categorySecondary.trim()) {
+    errors.category = '请选择完整的一级和二级商品品类'
     valid = false
   }
 
@@ -537,12 +814,15 @@ const openNotification = (id: number) => {
 }
 
 const handleDocumentClick = (event: MouseEvent) => {
-  if (!showNotifications.value || !notificationRef.value) {
-    return
+  const target = event.target as Node
+
+  if (showNotifications.value && notificationRef.value && !notificationRef.value.contains(target)) {
+    showNotifications.value = false
   }
 
-  if (!notificationRef.value.contains(event.target as Node)) {
-    showNotifications.value = false
+  if (isCategoryCascaderOpen.value && categoryCascaderRef.value && !categoryCascaderRef.value.contains(target)) {
+    isCategoryCascaderOpen.value = false
+    categorySearchKeyword.value = ''
   }
 }
 
@@ -939,7 +1219,7 @@ onBeforeUnmount(() => {
 }
 
 .product-entry-layout {
-  padding: 104px 25.5px 48px;
+  padding: 96px 25.5px 28px;
   background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
 }
 
@@ -968,20 +1248,21 @@ onBeforeUnmount(() => {
 .product-entry-steps {
   width: 960px;
   height: 76px;
-  margin: 32px auto 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 28px auto 0;
+  display: flex;
+  align-items: flex-start;
 }
 
 .product-entry-step {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding-right: 16px;
+  min-width: 0;
+  flex: 1 1 0;
 }
 
 .product-entry-step--last {
-  padding-right: 0;
+  flex: 0 0 auto;
 }
 
 .product-entry-step__lead {
@@ -1031,10 +1312,12 @@ onBeforeUnmount(() => {
 }
 
 .product-entry-step__line {
-  width: 152px;
+  width: auto;
+  min-width: 0;
   height: 2px;
   background: #e2e8f0;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  margin-right: 16px;
   overflow: hidden;
 }
 
@@ -1047,8 +1330,7 @@ onBeforeUnmount(() => {
 
 .product-entry-card {
   width: 960px;
-  min-height: 607px;
-  margin: 48px auto 0;
+  margin: 36px auto 0;
   border: 1px solid #e2e8f0;
   border-radius: 16px;
   background: #ffffff;
@@ -1060,8 +1342,8 @@ onBeforeUnmount(() => {
 .product-entry-card__body {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 33px 33px 0;
+  gap: 20px;
+  padding: 28px 33px 0;
 }
 
 .field-block {
@@ -1082,7 +1364,7 @@ onBeforeUnmount(() => {
 }
 
 .field-block__control,
-.select-shell {
+.category-cascader__trigger {
   width: 100%;
   height: 50px;
   border: 1px solid #e2e8f0;
@@ -1107,12 +1389,13 @@ onBeforeUnmount(() => {
 }
 
 .field-block__control:hover,
-.select-shell:hover {
+.category-cascader__trigger:hover {
   border-color: #cad5e2;
 }
 
 .field-block__control:focus,
-.select-shell:focus-within {
+.category-cascader__trigger:focus-visible,
+.category-cascader__trigger--open {
   outline: none;
   border-color: #7c3aed;
   box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08);
@@ -1120,7 +1403,7 @@ onBeforeUnmount(() => {
 }
 
 .field-block__control--error,
-.select-shell--error {
+.category-cascader__trigger--error {
   border-color: #fb7185;
 }
 
@@ -1136,36 +1419,41 @@ onBeforeUnmount(() => {
   gap: 24px;
 }
 
-.select-shell {
+.category-cascader {
   position: relative;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
+  width: 100%;
 }
 
-.select-shell__control {
-  width: 100%;
-  height: 100%;
+.category-cascader__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 12px 48px 12px 16px;
-  border: none;
-  background: transparent;
   color: #0f172a;
   font-size: 16px;
   font-weight: 400;
   line-height: normal;
-  appearance: none;
+  text-align: left;
   cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
 }
 
-.select-shell__control:focus {
-  outline: none;
+.category-cascader__trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.select-shell__control--placeholder {
+.category-cascader__trigger--placeholder {
   color: rgba(15, 23, 42, 0.5);
 }
 
-.select-shell__icon {
+.category-cascader__icon {
   position: absolute;
   top: 50%;
   right: 16px;
@@ -1175,17 +1463,169 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
+.category-cascader__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dbe4ef;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow:
+    0 16px 36px rgba(15, 23, 42, 0.12),
+    0 4px 12px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.category-cascader__search {
+  padding: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.category-cascader__search-input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #dbe4ef;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 8px 12px;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 20px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.category-cascader__search-input::placeholder {
+  color: #90a1b9;
+}
+
+.category-cascader__search-input:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
+  background: #ffffff;
+}
+
+.category-cascader__columns {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+.category-cascader__column {
+  padding: 8px;
+}
+
+.category-cascader__column--primary {
+  max-height: 286px;
+  overflow-y: auto;
+}
+
+.category-cascader__column--primary {
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.category-cascader__column--secondary {
+  overflow: visible;
+}
+
+.category-cascader__option {
+  width: 100%;
+  min-height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  padding: 8px 10px;
+  color: #314158;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.category-cascader__option:hover,
+.category-cascader__option--active {
+  background: rgba(124, 58, 237, 0.08);
+  color: #0a2463;
+  font-weight: 600;
+}
+
+.category-cascader__results {
+  max-height: 286px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.category-cascader__result {
+  width: 100%;
+  min-height: 46px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.category-cascader__result:hover,
+.category-cascader__result--active {
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.category-cascader__result-primary {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.category-cascader__result-secondary {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.category-cascader__empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: #90a1b9;
+  font-size: 14px;
+  line-height: 20px;
+}
+
 .upload-input {
   display: none;
 }
 
 .upload-zone {
-  min-height: 184px;
+  min-height: 164px;
   width: 100%;
   border: 2px dashed #cad5e2;
   border-radius: 16px;
   background: transparent;
-  padding: 24px 32px;
+  padding: 20px 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1305,8 +1745,8 @@ onBeforeUnmount(() => {
 }
 
 .product-entry-card__footer {
-  margin: 32px 33px 32px;
-  padding-top: 33px;
+  margin: 24px 33px 28px;
+  padding-top: 24px;
   border-top: 1px solid #e2e8f0;
   display: flex;
   align-items: flex-start;
@@ -1407,6 +1847,7 @@ onBeforeUnmount(() => {
   }
 
   .product-entry-steps {
+    display: grid;
     height: auto;
     gap: 20px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1453,6 +1894,77 @@ onBeforeUnmount(() => {
 
   .footer-button {
     width: 100%;
+  }
+
+  .category-cascader__panel {
+    position: fixed;
+    top: auto;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 16px;
+    max-height: min(78vh, 560px);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  .category-cascader__search {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 12px;
+  }
+
+  .category-cascader__search-input {
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .category-cascader__columns {
+    grid-template-columns: minmax(118px, 0.42fr) minmax(0, 1fr);
+    max-height: calc(min(78vh, 560px) - 69px);
+    overflow: hidden;
+  }
+
+  .category-cascader__column {
+    max-height: none;
+    padding: 10px;
+  }
+
+  .category-cascader__column--primary {
+    display: block;
+    max-height: calc(min(78vh, 560px) - 69px);
+    overflow-y: auto;
+    border-right: 1px solid #e2e8f0;
+    border-bottom: none;
+    background: #f8fafc;
+    scrollbar-width: none;
+  }
+
+  .category-cascader__column--primary::-webkit-scrollbar {
+    display: none;
+  }
+
+  .category-cascader__column--secondary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 8px;
+    max-height: calc(min(78vh, 560px) - 69px);
+    overflow-y: auto;
+  }
+
+  .category-cascader__option {
+    min-height: 42px;
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+
+  .category-cascader__results {
+    max-height: calc(min(78vh, 560px) - 69px);
+  }
+
+  .category-cascader__column--primary .category-cascader__option + .category-cascader__option {
+    margin-top: 8px;
   }
 
   .upload-zone {
