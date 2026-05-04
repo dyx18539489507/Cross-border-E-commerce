@@ -315,7 +315,7 @@ const agentMaterialSpec = ref('')
 const agentUsageScenario = ref('')
 const agentImageDataUrl = ref('')
 const agentImageName = ref('')
-const agentPromptPlaceholder = '请描述你的商品、目标市场、内容平台、目标用户和核心卖点。例如：我有一款便携榨汁杯，想卖到马来西亚，计划做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
+const agentPromptPlaceholder = '请描述你的商品、目标市场和内容平台。例如，我有一款便捷榨汁杯，想卖到马来西亚，主要做TikTok短视频，主打便捷和健康。'
 const defaultAgentUserInput = '我有一款便携榨汁杯，想卖到马来西亚，主要做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
 
 const stats = [
