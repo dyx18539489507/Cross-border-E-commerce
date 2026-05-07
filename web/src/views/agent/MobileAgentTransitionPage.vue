@@ -157,7 +157,7 @@ interface TaskStep {
   description: string
 }
 
-const DEFAULT_USER_INPUT = '我有一款便携榨汁杯，想卖到马来西亚，主要做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
+const DEFAULT_USER_INPUT = '请补充商品、目标市场、内容平台、目标用户和核心卖点。'
 
 const router = useRouter()
 const phase = ref<Phase>('analyzing')
@@ -222,7 +222,7 @@ const recognizedTags = computed(() => {
 const taskSteps: TaskStep[] = [
   { step: 1, name: '商品理解', description: '确认商品类目、卖点与使用场景' },
   { step: 2, name: '合规风险识别', description: '匹配目标市场规则与广告敏感表达' },
-  { step: 3, name: '本地化方向', description: '生成符合马来西亚用户习惯的内容方向' },
+  { step: 3, name: '本地化方向', description: '根据已明确的目标市场生成内容方向' },
   { step: 4, name: '短视频脚本', description: '生成开头、中段、结尾三段式脚本' },
   { step: 5, name: '数字人方案', description: '推荐数字人形象、口播语气与字幕语言' },
   { step: 6, name: '投放优化', description: '规划平台、内容方向与关键指标' }
@@ -419,8 +419,8 @@ const runLocalFallbackFlow = async () => {
   const info = currentRecognizedInfo()
   const paragraphs = [
     '已接收到你的出海需求，正在从自然语言中提取商品、目标市场、平台、人群和核心卖点。\n\n',
-    `识别到商品为${info.product}，属于${info.category}，目标市场为${info.market}，主要投放平台为${info.platform}。\n\n`,
-    '该商品涉及食品接触场景，后续合规分析将重点关注杯体材质、食品接触认证、电池容量和充电方式。\n\n',
+    `识别到商品为${info.product}，属于${info.category}，${describeTargetMarketForSummary(info.market)}，主要投放平台为${info.platform}。\n\n`,
+    `${buildComplianceFocusText(info)}\n\n`,
     '接下来将基于合规边界，生成本地化营销方向、短视频脚本、数字人方案和投放建议。'
   ]
 
@@ -493,25 +493,110 @@ const normalizeRecognizedInfo = (value: Partial<MobileRecognizedInfo>): MobileRe
   }
 }
 
+const cleanupExtractedValue = (value: string) => {
+  return value.trim().replace(/^[，,。；;\s]+|[，,。；;\s]+$/g, '')
+}
+
+const isUnknownTargetMarket = (value: string) => {
+  const cleanValue = cleanupExtractedValue(value)
+  return !cleanValue || /待补充|待识别|未明确/.test(cleanValue)
+}
+
+const describeTargetMarketForSummary = (market: string) => {
+  return isUnknownTargetMarket(market) ? '目标市场暂未明确' : `目标市场为${cleanupExtractedValue(market)}`
+}
+
+const targetMarketForStorage = (market: string) => {
+  return isUnknownTargetMarket(market) ? '' : cleanupExtractedValue(market)
+}
+
 const inferRecognizedInfo = (input: AgentInput | null, prompt: string): MobileRecognizedInfo => {
-  const product = input?.productName || extractMatch(prompt, /(?:我有|这是一款|一款)([^，,。；;\n]{2,28}?)(?:，|,|。|想|主打|卖到|做|$)/) || '便携榨汁杯'
-  const category = input?.category || (product.includes('榨汁杯') ? '小家电 / 食品接触用品' : '跨境电商商品')
-  const market = input?.targetMarket || extractMatch(prompt, /(?:卖到|目标市场|进入|推广到)([^，,。；;\n]{2,24}?)(?:市场|，|,|。|$)/) || '马来西亚'
+  const product = input?.productName || extractPromptProductName(prompt) || '待分析商品'
+  const category = input?.category || inferCategoryByProduct(product)
+  const market = input?.targetMarket || inferTargetMarket(prompt) || '目标市场待补充'
   const platform = input?.targetPlatform || extractPlatform(prompt) || 'TikTok'
   const audience = input?.targetAudience || extractMatch(prompt, /(?:目标用户|目标人群|用户是|人群是)(?:是|为)?([^，,。；;\n]{2,44})/) || '年轻女性 / 学生 / 办公室'
   const sellingPoints = input?.coreSellingPoints?.length
     ? input.coreSellingPoints.join(' / ')
-    : extractMatch(prompt, /(?:主打|卖点|核心卖点)(?:是|为)?([^。；;\n]{2,80})/) || '便携 / 健康 / 易清洗'
+    : extractMatch(prompt, /(?:主打|卖点|核心卖点)(?:是|为)?([^。；;\n]{2,80})/) || inferSellingPointsByProduct(product)
 
   return { product, category, market, platform, audience, sellingPoints }
 }
 
 const extractMatch = (value: string, pattern: RegExp) => value.match(pattern)?.[1]?.trim() || ''
 
+const extractPromptProductName = (value: string) => {
+  const taggedProduct = extractMatch(value, /(?:商品准入分析|商品|产品|品名|商品名称|产品名称)\s*[:：]\s*([^，,。；;\n]{1,28})/)
+  if (taggedProduct) {
+    return cleanupProductName(taggedProduct)
+  }
+
+  const compactProduct = extractMatch(value, /^(?:帮我|请|麻烦)?(?:分析一下|分析|看看|测一下|识别一下|识别)?\s*([^，,。；;\n]{1,28}?)(?:卖到|卖|出口到|进入|面向|投放到|推广到|上架|发布到|做|去|给|给到|$)/)
+  if (compactProduct) {
+    return cleanupProductName(compactProduct)
+  }
+
+  const naturalProduct = extractMatch(value, /(?:我有|我们有|这是一款|这款|一款|一个|一种|商品是|产品是)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|想|计划|准备|主打|目标|卖到|出口|做|$)/)
+  if (naturalProduct) {
+    return cleanupProductName(naturalProduct)
+  }
+
+  return value
+    .split(/\n+/)
+    .map((line) => cleanupProductName(line))
+    .find((line) => line && line.length <= 18) || ''
+}
+
 const extractPlatform = (value: string) => {
   const platforms = ['TikTok', 'Instagram', 'YouTube', 'Shopee', 'Lazada', 'Amazon', 'Temu', 'eBay', 'Facebook', '小红书', '抖音']
   const lowerValue = value.toLowerCase()
   return platforms.find((platform) => lowerValue.includes(platform.toLowerCase())) || ''
+}
+
+const inferTargetMarket = (value: string) => {
+  const matched = extractMatch(value, /(?:卖到|卖|出口到|进入|面向|投放到|推广到|去|给到)([^，,。；;\n]{1,24}?)(?:市场|用户|消费者|，|,|。|；|;|$)/)
+    .replace(/TikTok|Instagram Reels|Instagram|YouTube Shorts|YouTube|Shopee|Lazada|Amazon|Temu|eBay|Facebook|小红书|抖音/gi, '')
+    .trim()
+  if (matched) return matched
+
+  const markets = ['美国', '英国', '加拿大', '澳大利亚', '德国', '法国', '日本', '韩国', '马来西亚', '新加坡', '泰国', '越南', '印尼', '印度尼西亚', '菲律宾', '印度', '墨西哥', '巴西', '沙特', '阿联酋', '中东', '欧洲', '东南亚', '北美']
+  const lowerValue = value.toLowerCase()
+  return markets.find((market) => lowerValue.includes(market.toLowerCase())) || ''
+}
+
+const cleanupProductName = (value: string) => {
+  return value
+    .trim()
+    .replace(/^[，,。；;\s]+|[，,。；;\s]+$/g, '')
+    .split(/(?:生成本地化脚本|数字人口播方案|投放优化建议|商品准入分析)\s*[:：]?/)[0]
+    .replace(/^(分析|识别|检测)/, '')
+    .trim()
+}
+
+const isFoodProduct = (product: string, category = '') => {
+  return /食品|饮料|零食|即食|餐|鸡|鸭|肉|鱼|虾|糕|饼|糖|茶|咖啡|炸|烤|卤|吃/.test(`${product} ${category}`)
+}
+
+const inferCategoryByProduct = (product: string) => {
+  if (product.includes('榨汁杯') || product.includes('杯')) return '小家电 / 食品接触用品'
+  if (isFoodProduct(product)) return '食品饮料 / 即食食品'
+  return '跨境电商商品'
+}
+
+const inferSellingPointsByProduct = (product: string) => {
+  if (isFoodProduct(product)) return '口味 / 便捷 / 场景化'
+  if (product.includes('榨汁杯') || product.includes('杯')) return '便携 / 健康 / 易清洗'
+  return '实用 / 本地化 / 易展示'
+}
+
+const buildComplianceFocusText = (info: MobileRecognizedInfo) => {
+  if (isFoodProduct(info.product, info.category)) {
+    return '该商品涉及食品销售场景，后续合规分析将重点关注配料表、过敏原提示、保质期、产地标识、食品准入与平台广告表达边界。'
+  }
+  if (info.category.includes('食品接触') || info.product.includes('杯')) {
+    return '该商品涉及食品接触场景，后续合规分析将重点关注材质说明、食品接触认证、电池参数和充电安全描述。'
+  }
+  return '该商品后续合规分析将重点关注目标市场准入要求、必要认证、禁限售规则和广告敏感表达。'
 }
 
 const buildFallbackInput = (): AgentInput => {
@@ -520,7 +605,7 @@ const buildFallbackInput = (): AgentInput => {
     rawPrompt: userInputText.value,
     productName: currentRecognizedInfo().product,
     category: currentRecognizedInfo().category,
-    targetMarket: currentRecognizedInfo().market,
+    targetMarket: targetMarketForStorage(currentRecognizedInfo().market),
     targetPlatform: currentRecognizedInfo().platform,
     targetAudience: currentRecognizedInfo().audience,
     coreSellingPoints: currentRecognizedInfo().sellingPoints.split(/[\/,，;；]/).map((item) => item.trim()).filter(Boolean)
@@ -529,45 +614,48 @@ const buildFallbackInput = (): AgentInput => {
 
 const buildFallbackResult = (input: AgentInput, info: MobileRecognizedInfo): AgentResult => {
   const sellingPoints = info.sellingPoints.split(/[\/,，;；]/).map((item) => item.trim()).filter(Boolean)
+  const isFood = isFoodProduct(info.product, info.category)
   return {
     schemaVersion: 2,
     requestId: input.requestId || createRequestId(),
     recognizedInfo: {
       productName: info.product,
       category: info.category,
-      targetMarket: info.market,
+      targetMarket: targetMarketForStorage(info.market) || '目标市场待补充',
       targetPlatform: info.platform,
       targetAudience: info.audience,
-      coreSellingPoints: sellingPoints.length ? sellingPoints : ['便携', '健康', '易清洗'],
+      coreSellingPoints: sellingPoints.length ? sellingPoints : inferSellingPointsByProduct(info.product).split(' / '),
       imageUnderstanding: '移动端过渡页已完成基础商品识别。'
     },
     overview: {
       complianceRiskLevel: '中风险',
-      marketStrategy: '先补齐食品接触材料与认证信息，再生成本地化素材。',
+      marketStrategy: isFood ? '先补齐食品标签与准入信息，再生成本地化素材。' : '先补齐必要认证与商品信息，再生成本地化素材。',
       recommendedVideoStyle: '生活场景化竖屏短视频',
       recommendedDigitalHuman: '亲和型本地化生活方式讲解者'
     },
     compliance: {
       title: '合规分析结果',
-      summary: '当前已完成基础识别，建议补充商品材质、食品接触认证、电池容量与充电方式，以便进一步判断准入与广告表达边界。',
-      riskTags: ['食品接触', '认证材料', '功效表达'],
-      missingInfo: ['杯体材质', '食品接触认证', '电池容量', '充电方式'],
+      summary: isFood
+        ? '当前已完成基础识别，建议补充配料表、过敏原、保质期、产地与食品准入材料，以便进一步判断准入与广告表达边界。'
+        : '当前已完成基础识别，建议补充商品材质、规格、认证或检测材料，以便进一步判断准入与广告表达边界。',
+      riskTags: isFood ? ['食品标签', '准入材料', '功效表达'] : ['信息缺口', '认证材料', '功效表达'],
+      missingInfo: isFood ? ['配料表', '过敏原提示', '保质期', '产地/生产信息'] : ['材质/成分/规格', '认证或检测报告', '目标售价区间'],
       suggestions: ['补充商品图片或详细描述，以便进行合规风险评估。'],
       forbiddenExpressions: ['100%安全', '永久有效', '官方认证', '治疗/治愈', '保证通过'],
       saferExpressions: ['适合日常使用', '建议查看材质说明', '以实际认证材料为准']
     },
     localization: {
       direction: '场景化种草 + 实用价值说明',
-      reason: '在目标市场信息不足时，先聚焦高频生活场景和明确卖点，可降低夸大宣传风险。',
-      keywords: ['portable', 'daily use', 'easy to use', 'lifestyle'],
+      reason: isFood ? '目标市场用户更容易被真实试吃、风味描述、价格场景和清晰食品标签信息吸引。' : '在目标市场信息不足时，先聚焦高频生活场景和明确卖点，可降低夸大宣传风险。',
+      keywords: isFood ? ['crispy chicken', 'taste test', 'ready to eat', 'snack time'] : ['portable', 'daily use', 'easy to use', 'lifestyle'],
       tone: '自然、可信、少夸张',
-      sceneSuggestions: ['宿舍早餐', '办公室轻食', '通勤随身携带']
+      sceneSuggestions: isFood ? ['开箱试吃', '朋友聚餐', '夜宵场景'] : ['开箱展示', '办公室/宿舍', '通勤随身携带']
     },
     script: {
       title: '短视频脚本',
       duration: '20-25s',
       opening: { time: '0-3s', content: '用一个真实生活小问题切入，展示目标用户在日常场景中的痛点。' },
-      middle: { time: '3-20s', content: '展示商品外观、核心卖点和使用步骤，强调便携、材质说明和适用场景，避免绝对化承诺。' },
+      middle: { time: '3-20s', content: isFood ? '展示包装、色泽、口感反馈和食用场景，强调风味与便利性，避免绝对化或健康功效承诺。' : '展示商品外观、核心卖点和使用步骤，强调材质说明和适用场景，避免绝对化承诺。' },
       ending: { time: '20-25s', content: '用温和行动号召引导查看商品详情与认证信息。' },
       storyboard: []
     },
@@ -581,13 +669,13 @@ const buildFallbackResult = (input: AgentInput, info: MobileRecognizedInfo): Age
     },
     promotion: {
       platforms: [info.platform],
-      contentTags: ['生活场景', '便携', '健康饮品', '开箱演示'],
+      contentTags: isFood ? ['试吃测评', '风味表达', '夜宵场景', '开箱展示'] : ['生活场景', '实用卖点', '开箱演示'],
       focusMetrics: ['完播率', '点击率', '收藏率'],
       optimizationAdvice: '先用场景化短视频测试用户兴趣，再根据评论补充材质、认证和使用限制信息。'
     },
     agentMessage: {
       summary: '已完成移动端过渡页分析与任务编排，建议继续补充商品材料和认证信息。',
-      missingInfoNotice: '建议补充杯体材质、食品接触认证、电池容量与充电方式。',
+      missingInfoNotice: isFood ? '建议补充配料表、过敏原提示、保质期和目标市场食品准入材料。' : '建议补充材质、规格、认证或检测材料。',
       quickActions: ['补充商品图片', '换成印尼市场', '进入视频剪辑']
     },
     isMock: true,

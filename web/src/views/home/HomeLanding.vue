@@ -121,19 +121,20 @@
                 </div>
               </div>
 
-              <div class="agent-input-card__field" :class="{ 'is-invalid': agentPromptError }">
+              <div class="agent-input-card__field" :class="{ 'is-invalid': hasAgentPromptInvalidState }">
                 <textarea
                   ref="agentPromptTextarea"
                   v-model="agentPrompt"
-                  :class="{ 'is-invalid': agentPromptError }"
+                  :class="{ 'is-invalid': hasAgentPromptInvalidState }"
                   :placeholder="agentPromptPlaceholder"
                   aria-label="输入商品与目标市场"
-                  :aria-invalid="!!agentPromptError"
+                  :aria-invalid="hasAgentPromptInvalidState"
                   required
                   rows="4"
                   @input="clearAgentPromptError"
                 ></textarea>
               </div>
+              <p v-if="agentPromptError" class="agent-input-card__error">{{ agentPromptError }}</p>
 
               <label class="agent-image-upload-box">
                 <input type="file" accept="image/*" @change="handleAgentImageChange" />
@@ -151,9 +152,9 @@
                 </button>
               </div>
 
-              <button type="button" class="agent-input-card__action" @click="openAgentPage">
+              <button type="button" class="agent-input-card__action" :disabled="agentStarting" @click="openAgentPage">
                 <Lightning class="agent-input-card__action-icon" aria-hidden="true" />
-                <span>启动丝路 Agent</span>
+                <span>{{ agentStarting ? '识别中...' : '启动丝路 Agent' }}</span>
                 <ArrowRight class="agent-input-card__action-icon" aria-hidden="true" />
               </button>
             </article>
@@ -258,7 +259,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight,
@@ -274,6 +275,7 @@ import {
   UploadFilled,
   User
 } from '@element-plus/icons-vue'
+import { agentAPI } from '@/api/agent'
 import { MarketingFooter } from '@/components/common'
 import type { AgentInput } from '@/types/agent'
 import { clearAgentResult, saveAgentInput, saveAgentUserInput } from '@/utils/agentStorage'
@@ -305,18 +307,13 @@ const testimonialsSection = ref<HTMLElement | null>(null)
 const agentPromptTextarea = ref<HTMLTextAreaElement | null>(null)
 const agentPrompt = ref('')
 const agentPromptError = ref('')
-const agentProductName = ref('')
-const agentCategory = ref('')
-const agentTargetMarket = ref('')
-const agentTargetPlatform = ref('')
-const agentTargetAudience = ref('')
-const agentSellingPoints = ref('')
-const agentMaterialSpec = ref('')
-const agentUsageScenario = ref('')
+const agentPromptInvalid = ref(false)
+const agentStarting = ref(false)
 const agentImageDataUrl = ref('')
 const agentImageName = ref('')
-const agentPromptPlaceholder = '请描述你的商品、目标市场和内容平台。例如，我有一款便捷榨汁杯，想卖到马来西亚，主要做TikTok短视频，主打便捷和健康。'
-const defaultAgentUserInput = '我有一款便携榨汁杯，想卖到马来西亚，主要做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
+const agentPromptPlaceholder = '请输入商品信息。例如：我有一款便携榨汁杯，想卖到马来西亚，主要做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。'
+const defaultAgentUserInput = '请补充商品、目标市场、内容平台、目标用户和核心卖点。'
+const hasAgentPromptInvalidState = computed(() => agentPromptInvalid.value || !!agentPromptError.value)
 
 const stats = [
   { value: '1000+', label: '商品类目' },
@@ -438,39 +435,79 @@ const openAboutPage = () => {
   router.push('/about')
 }
 
-const openAgentPage = () => {
+const openAgentPage = async () => {
   if (!agentPrompt.value.trim()) {
-    agentPromptError.value = '请先描述你的商品、目标市场、内容平台、目标用户和核心卖点。'
+    agentPromptInvalid.value = true
+    agentPromptError.value = ''
     agentPromptTextarea.value?.focus()
     return
   }
 
-  const promptInfo = extractAgentInputFromPrompt(agentPrompt.value)
-  const sellingPoints = parseAgentSellingPoints(agentSellingPoints.value)
-  const input: AgentInput = {
+  if (agentStarting.value) {
+    return
+  }
+
+  agentStarting.value = true
+  const localExtracted = extractAgentInputFromPrompt(agentPrompt.value)
+  const draft: AgentInput = {
     requestId: createAgentRequestId(),
-    productName: agentProductName.value.trim() || promptInfo.productName,
-    category: agentCategory.value.trim() || promptInfo.category,
-    targetMarket: agentTargetMarket.value.trim() || promptInfo.targetMarket,
-    targetPlatform: agentTargetPlatform.value.trim() || promptInfo.targetPlatform,
-    targetAudience: agentTargetAudience.value.trim() || promptInfo.targetAudience,
-    coreSellingPoints: sellingPoints.length ? sellingPoints : promptInfo.coreSellingPoints,
-    materialSpec: agentMaterialSpec.value.trim() || promptInfo.materialSpec,
-    usageScenario: agentUsageScenario.value.trim() || promptInfo.usageScenario,
+    ...localExtracted,
     rawPrompt: agentPrompt.value.trim(),
     imageDataUrl: isUsableAgentImage(agentImageDataUrl.value) ? agentImageDataUrl.value : ''
   }
-  saveAgentInput(input)
-  saveAgentUserInput(input.rawPrompt || defaultAgentUserInput)
-  clearAgentResult()
-  router.push('/agent/transition')
+
+  try {
+    const extracted = await extractAgentInput(draft)
+    const input = mergeAgentInput(extracted, draft)
+    if (!localExtracted.targetMarket) {
+      input.targetMarket = ''
+    }
+
+    if (!input.productName?.trim()) {
+      agentPromptError.value = '我还没识别到商品名称，请在描述里补充商品名，例如“炸子鸡”。'
+      agentPromptTextarea.value?.focus()
+      return
+    }
+
+    saveAgentInput(input)
+    saveAgentUserInput(input.rawPrompt || defaultAgentUserInput)
+    clearAgentResult()
+    router.push('/agent/transition')
+  } finally {
+    agentStarting.value = false
+  }
 }
 
 const clearAgentPromptError = () => {
+  if (agentPrompt.value.trim()) {
+    agentPromptInvalid.value = false
+  }
   if (agentPromptError.value && agentPrompt.value.trim()) {
     agentPromptError.value = ''
   }
 }
+
+const extractAgentInput = async (draft: AgentInput) => {
+  try {
+    return await agentAPI.extract(draft)
+  } catch {
+    return draft
+  }
+}
+
+const mergeAgentInput = (extracted: AgentInput, draft: AgentInput): AgentInput => ({
+  requestId: draft.requestId || extracted.requestId || createAgentRequestId(),
+  rawPrompt: draft.rawPrompt || extracted.rawPrompt || agentPrompt.value.trim(),
+  imageDataUrl: draft.imageDataUrl || extracted.imageDataUrl || '',
+  productName: extracted.productName || draft.productName || '',
+  category: extracted.category || draft.category || '',
+  targetMarket: extracted.targetMarket || draft.targetMarket || '',
+  targetPlatform: extracted.targetPlatform || draft.targetPlatform || '',
+  targetAudience: extracted.targetAudience || draft.targetAudience || '',
+  coreSellingPoints: extracted.coreSellingPoints?.length ? extracted.coreSellingPoints : draft.coreSellingPoints || [],
+  materialSpec: extracted.materialSpec || draft.materialSpec || '',
+  usageScenario: extracted.usageScenario || draft.usageScenario || ''
+})
 
 const parseAgentSellingPoints = (value: string) => {
   return value
@@ -483,15 +520,12 @@ const extractAgentInputFromPrompt = (value: string): AgentInput => {
   const prompt = value.trim()
   if (!prompt) return {}
 
-  const productName = extractFirstMatch(prompt, [
-    /(?:我有|我们有|这是一款|这款|一款|一个|一种|商品是|产品是)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|想|计划|准备|主打|目标|卖到|出口|做|$)/,
-    /(?:销售|卖)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|到|去|$)/
-  ])
+  const productName = extractPromptProductName(prompt)
 
   const targetMarket = cleanupExtractedText(extractFirstMatch(prompt, [
-    /(?:卖到|出口到|进入|面向|投放到|推广到)([^，,。；;\n]{2,24}?)(?:市场|用户|消费者|，|,|。|；|;|$)/,
+    /(?:卖到|卖|出口到|进入|面向|投放到|推广到|去|给到)([^，,。；;\n]{1,24}?)(?:市场|用户|消费者|，|,|。|；|;|$)/,
     /(?:目标市场|目标国家|国家|市场)(?:是|为|:|：)?([^，,。；;\n]{2,24})/
-  ]))
+  ])) || inferKnownMarket(prompt)
 
   const targetAudience = cleanupExtractedText(extractFirstMatch(prompt, [
     /(?:目标用户|目标人群|受众|面向用户)(?:是|为|:|：)?([^，,。；;\n]{2,44})/,
@@ -516,11 +550,13 @@ const extractAgentInputFromPrompt = (value: string): AgentInput => {
 
   return {
     productName: cleanupExtractedText(productName),
-    category,
+    category: category || inferCategoryByProduct(productName),
     targetMarket,
     targetPlatform: extractTargetPlatform(prompt),
     targetAudience,
-    coreSellingPoints: parseAgentSellingPoints(pointsText),
+    coreSellingPoints: parseAgentSellingPoints(pointsText).length
+      ? parseAgentSellingPoints(pointsText)
+      : inferSellingPointsByProduct(productName, category),
     materialSpec,
     usageScenario
   }
@@ -535,11 +571,94 @@ const extractFirstMatch = (value: string, patterns: RegExp[]) => {
   return ''
 }
 
+const extractPromptProductName = (value: string) => {
+  const taggedProduct = extractFirstMatch(value, [
+    /(?:商品准入分析|商品|产品|品名|商品名称|产品名称)\s*[:：]\s*([^，,。；;\n]{1,28})/,
+    /^(?:商品准入分析|商品|产品|品名|商品名称|产品名称)\s*[:：]\s*([^\n]{1,28})/
+  ])
+  if (taggedProduct) {
+    return cleanupExtractedProductName(taggedProduct)
+  }
+
+  const naturalProduct = extractFirstMatch(value, [
+    /^(?:帮我|请|麻烦)?(?:分析一下|分析|看看|测一下|识别一下|识别)?\s*([^，,。；;\n]{1,28}?)(?:卖到|卖|出口到|进入|面向|投放到|推广到|上架|发布到|做|去|给|给到|$)/,
+    /(?:我有|我们有|这是一款|这款|一款|一个|一种|商品是|产品是)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|想|计划|准备|主打|目标|卖到|出口|做|$)/,
+    /(?:销售|卖)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|到|去|$)/
+  ])
+  if (naturalProduct) {
+    return cleanupExtractedProductName(naturalProduct)
+  }
+
+  const compactPrompt = value
+    .split(/\n+/)
+    .map((line) => cleanupExtractedProductName(line))
+    .find((line) => line && line.length <= 18 && !agentPromptTags.some((tag) => line.includes(tag)))
+
+  return compactPrompt || ''
+}
+
+const cleanupExtractedProductName = (value: string) => {
+  return cleanupExtractedText(value)
+    .split(/(?:生成本地化脚本|数字人口播方案|投放优化建议|商品准入分析)\s*[:：]?/)[0]
+    .replace(/^(分析|识别|检测)/, '')
+    .trim()
+}
+
 const cleanupExtractedText = (value?: string) => {
   return (value || '')
+    .replace(/TikTok|Instagram Reels|Instagram|YouTube Shorts|YouTube|Shopee|Lazada|Amazon|Temu|eBay|Facebook|小红书|抖音/gi, '')
     .replace(/^(的|到|给|为|是|做|在)/, '')
     .replace(/(市场|平台|用户|人群)$/g, '')
     .trim()
+}
+
+const inferKnownMarket = (value: string) => {
+  const markets = [
+    '美国',
+    '英国',
+    '加拿大',
+    '澳大利亚',
+    '德国',
+    '法国',
+    '日本',
+    '韩国',
+    '马来西亚',
+    '新加坡',
+    '泰国',
+    '越南',
+    '印尼',
+    '印度尼西亚',
+    '菲律宾',
+    '印度',
+    '墨西哥',
+    '巴西',
+    '沙特',
+    '阿联酋',
+    '中东',
+    '欧洲',
+    '东南亚',
+    '北美'
+  ]
+  const lowerValue = value.toLowerCase()
+  return markets.find((market) => lowerValue.includes(market.toLowerCase())) || ''
+}
+
+const isFoodProduct = (product = '', category = '') => {
+  return /食品|饮料|零食|即食|餐|鸡|鸭|肉|鱼|虾|糕|饼|糖|茶|咖啡|炸|烤|卤|吃/.test(`${product} ${category}`)
+}
+
+const inferCategoryByProduct = (product = '') => {
+  if (!product) return ''
+  if (product.includes('榨汁杯') || product.includes('杯')) return '小家电 / 食品接触用品'
+  if (isFoodProduct(product)) return '食品饮料 / 即食食品'
+  return ''
+}
+
+const inferSellingPointsByProduct = (product = '', category = '') => {
+  if (!product) return []
+  if (isFoodProduct(product, category)) return ['口味', '便捷', '场景化']
+  if (product.includes('榨汁杯') || product.includes('杯')) return ['便携', '健康', '易清洗']
+  return []
 }
 
 const extractTargetPlatform = (value: string) => {
@@ -1232,6 +1351,14 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
+.agent-input-card__error {
+  margin-top: 8px;
+  color: #fecaca;
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+}
+
 .agent-image-upload-box {
   margin-top: 12px;
   min-height: 48px;
@@ -1361,6 +1488,13 @@ onBeforeUnmount(() => {
 .agent-input-card__action:hover {
   transform: translateY(-1px);
   box-shadow: 0 20px 34px -22px rgba(6, 182, 212, 0.7);
+}
+
+.agent-input-card__action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
+  box-shadow: none;
 }
 
 .agent-input-card__action-icon {

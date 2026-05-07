@@ -70,7 +70,10 @@
                 </span>
                 <h2>合规分析结果</h2>
               </div>
-              <span class="agent-risk-badge" :class="riskBadgeClass">{{ result.overview.complianceRiskLevel }}</span>
+              <div class="agent-card__header-actions">
+                <span v-if="hasAppliedUpdate('compliance')" class="agent-applied-badge">已根据追问更新</span>
+                <span class="agent-risk-badge" :class="riskBadgeClass">{{ result.overview.complianceRiskLevel }}</span>
+              </div>
             </div>
 
             <p class="compliance-result-card__body">
@@ -101,10 +104,13 @@
                 </span>
                 <h2>短视频脚本</h2>
               </div>
-              <span class="agent-safe-badge">
-                <CircleCheck class="agent-safe-badge__icon" aria-hidden="true" />
-                <span>已规避高风险功效表达</span>
-              </span>
+              <div class="agent-card__header-actions">
+                <span v-if="hasAppliedUpdate('video')" class="agent-applied-badge">已根据追问更新</span>
+                <span class="agent-safe-badge">
+                  <CircleCheck class="agent-safe-badge__icon" aria-hidden="true" />
+                  <span>已规避高风险功效表达</span>
+                </span>
+              </div>
             </div>
 
             <div class="video-script-card__timeline">
@@ -139,6 +145,7 @@
                 </span>
                 <h2>本地化营销方向</h2>
               </div>
+              <span v-if="hasAppliedUpdate('localization')" class="agent-applied-badge">已根据追问更新</span>
             </div>
 
             <div class="localization-card__focus">
@@ -159,6 +166,7 @@
                 </span>
                 <h2>数字人方案</h2>
               </div>
+              <span v-if="hasAppliedUpdate('digitalHuman')" class="agent-applied-badge">已根据追问更新</span>
             </div>
 
             <dl class="agent-info-list">
@@ -177,6 +185,7 @@
                 </span>
                 <h2>投放建议</h2>
               </div>
+              <span v-if="hasAppliedUpdate('promotion')" class="agent-applied-badge">已根据追问更新</span>
             </div>
 
             <div class="launch-suggestion-card__group">
@@ -217,37 +226,128 @@
           <span class="agent-reminder-card__time">最近一次回复 · 刚刚</span>
         </div>
 
-        <div class="agent-reminder-card__body">
-          <span class="agent-reminder-card__avatar" aria-hidden="true">
-            <Cpu />
-          </span>
-          <div class="agent-reminder-card__content">
-            <div class="agent-gap-card">
-              <div class="agent-gap-card__text">
-                <span class="agent-gap-card__icon" aria-hidden="true">
-                  <WarningFilled />
-                </span>
-                <div>
-                  <h3>Agent 发现的关键信息缺口</h3>
-                  <p>{{ result.agentMessage.missingInfoNotice }}</p>
+        <div ref="followUpChatRef" class="follow-up-chat" aria-live="polite">
+          <article class="follow-up-message follow-up-message--agent follow-up-message--initial">
+            <span class="agent-reminder-card__avatar" aria-hidden="true">
+              <Cpu />
+            </span>
+            <div class="agent-reminder-card__content">
+              <div class="agent-gap-card">
+                <div class="agent-gap-card__text">
+                  <span class="agent-gap-card__icon" aria-hidden="true">
+                    <WarningFilled />
+                  </span>
+                  <div>
+                    <h3>Agent 发现的关键信息缺口</h3>
+                    <p>{{ result.agentMessage.missingInfoNotice }}</p>
+                  </div>
+                </div>
+                <div class="agent-gap-card__actions">
+                  <button
+                    v-for="(action, index) in quickActions"
+                    :key="action"
+                    type="button"
+                    class="agent-gap-card__button"
+                    :class="{ 'agent-gap-card__button--primary': index === 0, 'agent-gap-card__button--quiet': index > 1 }"
+                    @click="markReminderAction(action)"
+                  >
+                    {{ action }}
+                  </button>
                 </div>
               </div>
-              <div class="agent-gap-card__actions">
-                <button
-                  v-for="(action, index) in quickActions"
-                  :key="action"
-                  type="button"
-                  class="agent-gap-card__button"
-                  :class="{ 'agent-gap-card__button--primary': index === 0, 'agent-gap-card__button--quiet': index > 1 }"
-                  @click="markReminderAction(action)"
-                >
-                  {{ action }}
-                </button>
-              </div>
-            </div>
 
-            <p v-if="reminderAction" class="agent-reminder-card__feedback">{{ reminderAction }}已记录，后续优化会基于该选择继续。</p>
-          </div>
+              <p v-if="reminderAction" class="agent-reminder-card__feedback">{{ reminderAction }}已记录，后续优化会基于该选择继续。</p>
+            </div>
+          </article>
+
+          <article
+            v-for="message in messages"
+            :key="message.id"
+            class="follow-up-message"
+            :class="[`follow-up-message--${message.role}`, `follow-up-message--${message.type}`]"
+          >
+            <template v-if="message.role === 'user'">
+              <div class="follow-up-user-bubble">{{ message.content }}</div>
+            </template>
+
+            <template v-else>
+              <span class="agent-reminder-card__avatar follow-up-message__avatar" aria-hidden="true">
+                <Cpu />
+              </span>
+              <div class="follow-up-agent-panel">
+                <div v-if="message.type === 'thinking'" class="agent-thinking-card">
+                  <div class="agent-thinking-card__header">
+                    <span class="agent-thinking-card__pulse" aria-hidden="true"></span>
+                    <strong>丝路 Agent 正在增量分析</strong>
+                  </div>
+                  <ul class="agent-thinking-card__steps">
+                    <li
+                      v-for="(step, index) in message.visibleThinkingSteps"
+                      :key="step"
+                      :class="{ 'is-active': index === (message.visibleThinkingSteps?.length || 0) - 1 }"
+                    >
+                      <span>{{ step }}</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div v-else-if="message.type === 'summary'" class="agent-follow-up-card">
+                  <div class="agent-follow-up-card__bar" aria-hidden="true"></div>
+                  <div class="agent-follow-up-card__header">
+                    <div class="agent-follow-up-card__title">
+                      <Cpu aria-hidden="true" />
+                      <strong>Agent 补充建议</strong>
+                      <span>| 根据追问生成</span>
+                    </div>
+                    <span v-if="message.applied" class="agent-follow-up-card__sync">
+                      <CircleCheck aria-hidden="true" />
+                      已同步到当前方案
+                    </span>
+                  </div>
+                  <p class="agent-follow-up-card__summary">{{ message.summary }}</p>
+                  <div class="agent-follow-up-card__tags">
+                    <span v-for="tag in message.tags" :key="tag">{{ tag }}</span>
+                  </div>
+                  <div class="agent-follow-up-details">
+                    <article>
+                      <strong>合规变化</strong>
+                      <p>{{ message.details?.compliance }}</p>
+                    </article>
+                    <article>
+                      <strong>内容风格变化</strong>
+                      <p>{{ message.details?.contentStyle }}</p>
+                    </article>
+                    <article>
+                      <strong>视频表达建议</strong>
+                      <p>{{ message.details?.videoExpression }}</p>
+                    </article>
+                    <article>
+                      <strong>投放建议</strong>
+                      <p>{{ message.details?.promotion }}</p>
+                    </article>
+                  </div>
+                  <div class="agent-follow-up-card__actions">
+                    <button
+                      type="button"
+                      class="agent-follow-up-card__button agent-follow-up-card__button--primary"
+                      :disabled="message.applied"
+                      @click="applyFollowUp(message)"
+                    >
+                      {{ message.applied ? '已应用' : '应用到当前方案' }}
+                    </button>
+                  </div>
+                </div>
+
+                <div v-else-if="message.type === 'error'" class="agent-follow-up-error">
+                  <WarningFilled aria-hidden="true" />
+                  <div>
+                    <strong>Agent 暂时无法继续分析，请稍后重试。</strong>
+                    <button type="button" @click="regenerateFollowUp(message)">重新生成</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </article>
         </div>
 
         <div class="agent-reminder-input" aria-label="继续与丝路 Agent 对话">
@@ -257,9 +357,15 @@
             type="text"
             aria-label="继续告诉丝路 Agent"
             placeholder="输入补充要求，例如换成印尼市场、语气更年轻一点……"
+            :disabled="isFollowUpLoading"
             @keyup.enter="sendAgentMessage"
           />
-          <button type="button" class="agent-reminder-input__button" @click="sendAgentMessage">
+          <button
+            type="button"
+            class="agent-reminder-input__button"
+            :disabled="isFollowUpLoading || !agentMessage.trim()"
+            @click="sendAgentMessage"
+          >
             <Promotion class="agent-reminder-input__icon" aria-hidden="true" />
             <span>发送</span>
           </button>
@@ -272,7 +378,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Component } from 'vue'
 import {
@@ -305,10 +411,64 @@ type OverviewItem = {
   icon: Component
 }
 
+type FollowUpMessage = {
+  id: string
+  role: 'user' | 'agent'
+  type: 'text' | 'thinking' | 'summary' | 'error'
+  content: string
+  thinkingSteps?: string[]
+  visibleThinkingSteps?: string[]
+  summary?: string
+  tags?: string[]
+  detailExpanded?: boolean
+  applied?: boolean
+  details?: FollowUpDetails
+}
+
+type FollowUpDetails = {
+  compliance: string
+  contentStyle: string
+  videoExpression: string
+  promotion: string
+}
+
+type FollowUpResult = {
+  summary: string
+  affectedModules: string[]
+  details: FollowUpDetails
+}
+
+type FollowUpContext = {
+  productName: string
+  targetMarket: string
+  platform: string
+  audience: string
+  sellingPoints: string
+  complianceResult: string
+  contentStrategy: string
+  digitalHumanPlan: string
+  promotionAdvice: string
+}
+
 const router = useRouter()
 const reminderAction = ref('')
 const agentMessage = ref('')
 const storedResult = ref<AgentResult | null>(readAgentResult())
+const messages = ref<FollowUpMessage[]>([])
+const isFollowUpLoading = ref(false)
+const appliedUpdateModules = ref<string[]>([])
+const followUpChatRef = ref<HTMLElement | null>(null)
+
+const thinkingSteps = [
+  '正在读取当前商品信息……',
+  '正在结合原方案判断影响模块……',
+  '正在重新评估目标市场与内容风格……',
+  '正在检查合规表达边界……',
+  '正在整理可执行优化建议……'
+]
+
+const thinkingTimers = new Map<string, number>()
+let followUpAbortController: AbortController | null = null
 
 const fallbackResult: AgentResult = {
   recognizedInfo: {
@@ -458,11 +618,299 @@ const markReminderAction = (action: string) => {
 
 const sendAgentMessage = () => {
   const message = agentMessage.value.trim()
-  if (!message) return
+  if (!message || isFollowUpLoading.value) return
 
   reminderAction.value = `“${message}”`
   agentMessage.value = ''
+  appendFollowUp(message)
 }
+
+const appendFollowUp = (question: string) => {
+  const userMessage: FollowUpMessage = {
+    id: createMessageId('user'),
+    role: 'user',
+    type: 'text',
+    content: question
+  }
+  const agentReply: FollowUpMessage = {
+    id: createMessageId('agent'),
+    role: 'agent',
+    type: 'thinking',
+    content: question,
+    thinkingSteps: [...thinkingSteps],
+    visibleThinkingSteps: []
+  }
+
+  messages.value.push(userMessage, agentReply)
+  startThinkingSteps(agentReply.id)
+  scrollFollowUpChat()
+  void requestFollowUp(question, agentReply.id)
+}
+
+const requestFollowUp = async (question: string, agentMessageId: string) => {
+  isFollowUpLoading.value = true
+  followUpAbortController = new AbortController()
+  let receivedResult = false
+  let streamError = ''
+
+  try {
+    const response = await fetch('/api/v1/agent/follow-up', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        context: buildFollowUpContext()
+      }),
+      signal: followUpAbortController.signal
+    })
+
+    if (!response.ok || !response.body) {
+      throw new Error('follow-up stream unavailable')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const blocks = buffer.split(/\n\n/)
+      buffer = blocks.pop() || ''
+      for (const block of blocks) {
+        const event = parseSSEBlock(block)
+        if (!event) continue
+        if (event.event === 'result') {
+          updateAgentSummary(agentMessageId, normalizeFollowUpResult(event.data))
+          receivedResult = true
+        } else if (event.event === 'error') {
+          streamError = event.data?.message || 'follow-up stream error'
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const event = parseSSEBlock(buffer)
+      if (event?.event === 'result') {
+        updateAgentSummary(agentMessageId, normalizeFollowUpResult(event.data))
+        receivedResult = true
+      } else if (event?.event === 'error') {
+        streamError = event.data?.message || 'follow-up stream error'
+      }
+    }
+
+    if (streamError || !receivedResult) {
+      throw new Error(streamError || 'follow-up result missing')
+    }
+  } catch (error) {
+    if ((error as Error).name !== 'AbortError') {
+      updateAgentError(agentMessageId)
+    }
+  } finally {
+    stopThinkingSteps(agentMessageId)
+    isFollowUpLoading.value = false
+    followUpAbortController = null
+    scrollFollowUpChat()
+  }
+}
+
+const parseSSEBlock = (block: string) => {
+  const lines = block.split(/\r?\n/)
+  let event = 'message'
+  const dataLines: string[] = []
+
+  lines.forEach((line) => {
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim())
+    }
+  })
+
+  if (!dataLines.length) return null
+  try {
+    return { event, data: JSON.parse(dataLines.join('\n')) }
+  } catch {
+    return { event, data: {} }
+  }
+}
+
+const startThinkingSteps = (messageId: string) => {
+  const message = findMessage(messageId)
+  if (!message) return
+  message.visibleThinkingSteps = [thinkingSteps[0]]
+
+  let index = 1
+  const timer = window.setInterval(() => {
+    const target = findMessage(messageId)
+    if (!target || target.type !== 'thinking') {
+      stopThinkingSteps(messageId)
+      return
+    }
+    if (index < thinkingSteps.length) {
+      target.visibleThinkingSteps = thinkingSteps.slice(0, index + 1)
+      index += 1
+      scrollFollowUpChat()
+    }
+  }, 760)
+  thinkingTimers.set(messageId, timer)
+}
+
+const stopThinkingSteps = (messageId: string) => {
+  const timer = thinkingTimers.get(messageId)
+  if (timer) {
+    window.clearInterval(timer)
+    thinkingTimers.delete(messageId)
+  }
+}
+
+const finishThinkingSteps = (messageId: string) => {
+  const message = findMessage(messageId)
+  if (message?.type === 'thinking') {
+    message.visibleThinkingSteps = [...thinkingSteps]
+  }
+  stopThinkingSteps(messageId)
+}
+
+const updateAgentSummary = (messageId: string, payload: FollowUpResult) => {
+  finishThinkingSteps(messageId)
+  const message = findMessage(messageId)
+  if (!message) return
+
+  message.type = 'summary'
+  message.summary = payload.summary
+  message.tags = payload.affectedModules
+  message.details = payload.details
+  message.detailExpanded = true
+  message.applied = false
+  scrollFollowUpChat()
+}
+
+const updateAgentError = (messageId: string) => {
+  finishThinkingSteps(messageId)
+  const message = findMessage(messageId)
+  if (!message) return
+  message.type = 'error'
+  message.summary = ''
+  message.tags = []
+  message.detailExpanded = false
+  message.applied = false
+}
+
+const normalizeFollowUpResult = (data: any): FollowUpResult => {
+  const details = data?.details || {}
+  const modules = Array.isArray(data?.affectedModules)
+    ? data.affectedModules.filter((item: unknown): item is string => typeof item === 'string' && item.trim() !== '')
+    : []
+
+  return {
+    summary: sanitizeDisplayText(data?.summary, '已基于当前商品和原方案，整理出适合继续优化的补充建议。'),
+    affectedModules: modules.length ? modules.slice(0, 6) : ['市场策略', '内容风格', '投放建议', '合规风险'],
+    details: {
+      compliance: sanitizeDisplayText(details.compliance, '继续避免绝对化、医疗化和未经证实的认证表达，并以目标市场实际准入材料为准。'),
+      contentStyle: sanitizeDisplayText(details.contentStyle, '内容语气应贴近目标人群日常表达，保留真实体验感，减少夸张承诺。'),
+      videoExpression: sanitizeDisplayText(details.videoExpression, '前 3 秒突出核心场景和可见卖点，中段用真实使用画面承接。'),
+      promotion: sanitizeDisplayText(details.promotion, '优先测试当前主平台短视频内容，结合完播率、点击率和评论问题继续迭代素材。')
+    }
+  }
+}
+
+const sanitizeDisplayText = (value: unknown, fallback: string) => {
+  if (typeof value !== 'string') return fallback
+  const cleaned = value.replace(/reasoning_content|思维链|chain-of-thought|内部推理/gi, '').replace(/\s+/g, ' ').trim()
+  return cleaned || fallback
+}
+
+const buildFollowUpContext = (): FollowUpContext => {
+  const current = result.value
+  return {
+    productName: current.recognizedInfo.productName,
+    targetMarket: current.recognizedInfo.targetMarket,
+    platform: current.recognizedInfo.targetPlatform,
+    audience: current.recognizedInfo.targetAudience,
+    sellingPoints: current.recognizedInfo.coreSellingPoints.join(' / '),
+    complianceResult: `${current.overview.complianceRiskLevel}；${current.compliance.summary}`,
+    contentStrategy: [
+      current.localization.direction,
+      current.localization.reason,
+      current.script.opening.content,
+      current.script.middle.content,
+      current.script.ending.content
+    ].filter(Boolean).join('；'),
+    digitalHumanPlan: [
+      current.digitalHuman.persona,
+      current.digitalHuman.tone,
+      current.digitalHuman.visualStyle,
+      current.digitalHuman.shootingStyle
+    ].filter(Boolean).join('；'),
+    promotionAdvice: [
+      current.promotion.platforms.join(' / '),
+      current.promotion.contentTags.join(' / '),
+      current.promotion.optimizationAdvice
+    ].filter(Boolean).join('；')
+  }
+}
+
+const applyFollowUp = (message: FollowUpMessage) => {
+  if (message.type !== 'summary' || message.applied) return
+  message.applied = true
+  const nextModules = new Set(appliedUpdateModules.value)
+  ;(message.tags || []).forEach((tag) => nextModules.add(tag))
+  appliedUpdateModules.value = Array.from(nextModules)
+}
+
+const regenerateFollowUp = (message: FollowUpMessage) => {
+  if (isFollowUpLoading.value || !message.content) return
+  message.type = 'thinking'
+  message.thinkingSteps = [...thinkingSteps]
+  message.visibleThinkingSteps = []
+  message.summary = ''
+  message.tags = []
+  message.details = undefined
+  message.detailExpanded = false
+  message.applied = false
+  startThinkingSteps(message.id)
+  void requestFollowUp(message.content, message.id)
+}
+
+type AppliedModuleKey = 'compliance' | 'video' | 'localization' | 'digitalHuman' | 'promotion'
+
+const hasAppliedUpdate = (module: AppliedModuleKey) => {
+  const modules = appliedUpdateModules.value.join(' ')
+  const rules: Record<AppliedModuleKey, string[]> = {
+    compliance: ['合规', '风险'],
+    video: ['视频', '表达', '内容风格'],
+    localization: ['市场', '内容风格', '本地化'],
+    digitalHuman: ['数字人'],
+    promotion: ['投放', '平台']
+  }
+  return rules[module].some((keyword) => modules.includes(keyword))
+}
+
+const findMessage = (messageId: string) => messages.value.find((message) => message.id === messageId)
+
+const createMessageId = (prefix: string) => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const scrollFollowUpChat = () => {
+  void nextTick(() => {
+    const el = followUpChatRef.value
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  })
+}
+
+onBeforeUnmount(() => {
+  followUpAbortController?.abort()
+  thinkingTimers.forEach((timer) => window.clearInterval(timer))
+  thinkingTimers.clear()
+})
 </script>
 
 <style scoped>
@@ -650,6 +1098,27 @@ const sendAgentMessage = () => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.agent-card__header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.agent-applied-badge {
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid rgba(124, 58, 237, 0.24);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.09), rgba(124, 58, 237, 0.1));
+  color: #7c3aed;
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .agent-section-title {
@@ -1431,6 +1900,55 @@ const sendAgentMessage = () => {
   white-space: nowrap;
 }
 
+.follow-up-chat {
+  min-height: 214px;
+  max-height: 560px;
+  margin-top: 16px;
+  padding: 2px 2px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.24) transparent;
+}
+
+.follow-up-message {
+  min-width: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.follow-up-message--initial {
+  align-items: flex-start;
+}
+
+.follow-up-message--user {
+  justify-content: flex-end;
+}
+
+.follow-up-user-bubble {
+  max-width: min(620px, 82%);
+  padding: 11px 15px;
+  border-radius: 18px 18px 6px 18px;
+  background: linear-gradient(135deg, #06b6d4 0%, #7c3aed 100%);
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 700;
+  box-shadow: 0 18px 28px -22px rgba(124, 58, 237, 0.7);
+  overflow-wrap: anywhere;
+}
+
+.follow-up-message__avatar {
+  margin-top: 2px;
+}
+
+.follow-up-agent-panel {
+  min-width: 0;
+  width: min(768px, calc(100% - 48px));
+}
+
 .agent-reminder-card__body {
   margin-top: 16px;
   display: flex;
@@ -1546,6 +2064,291 @@ const sendAgentMessage = () => {
   line-height: 18px;
 }
 
+.agent-thinking-card {
+  width: min(520px, 100%);
+  margin-left: 8px;
+  padding: 15px 16px;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.92) 0%, rgba(255, 255, 255, 0.96) 48%, rgba(124, 58, 237, 0.08) 100%);
+  box-shadow: 0 12px 28px -26px rgba(15, 23, 42, 0.38);
+}
+
+.agent-thinking-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0a2463;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.agent-thinking-card__pulse {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #7c3aed;
+  box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.32);
+  animation: agent-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-thinking-card__steps {
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  list-style: none;
+}
+
+.agent-thinking-card__steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.agent-thinking-card__steps li::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: rgba(6, 182, 212, 0.52);
+}
+
+.agent-thinking-card__steps li.is-active span {
+  background: linear-gradient(90deg, #0891b2 0%, #7c3aed 100%);
+  background-clip: text;
+  color: transparent;
+  font-weight: 700;
+}
+
+.agent-thinking-card__steps li.is-active span::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 999px;
+  background: #7c3aed;
+  vertical-align: -2px;
+  animation: agent-cursor-blink 0.86s steps(2, start) infinite;
+}
+
+.agent-follow-up-card {
+  position: relative;
+  width: min(768px, 100%);
+  margin-left: 8px;
+  padding: 16px;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(145deg, #ffffff 0%, #ffffff 48%, rgba(124, 58, 237, 0.09) 100%);
+  box-shadow: 0 18px 34px -28px rgba(15, 23, 42, 0.5);
+}
+
+.agent-follow-up-card__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 54%, #f97316 100%);
+}
+
+.agent-follow-up-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-follow-up-card__title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-follow-up-card__title svg {
+  width: 14px;
+  height: 14px;
+  color: #7c3aed;
+  flex: 0 0 auto;
+}
+
+.agent-follow-up-card__title strong {
+  color: #0a2463;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agent-follow-up-card__title span {
+  color: #90a1b9;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.agent-follow-up-card__sync {
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid #b9f8cf;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #f0fdf4;
+  color: #008236;
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.agent-follow-up-card__sync svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agent-follow-up-card__summary {
+  margin: 13px 0 0;
+  color: #314158;
+  font-size: 14px;
+  line-height: 23px;
+}
+
+.agent-follow-up-card__tags {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-follow-up-card__tags span {
+  min-height: 23px;
+  padding: 3px 9px;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1), rgba(124, 58, 237, 0.1));
+  color: #0a2463;
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 700;
+}
+
+.agent-follow-up-details {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.agent-follow-up-details article {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.74);
+}
+
+.agent-follow-up-details strong {
+  display: block;
+  color: #7c3aed;
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0.5px;
+}
+
+.agent-follow-up-details p {
+  margin: 4px 0 0;
+  color: #45556c;
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.agent-follow-up-card__actions {
+  margin-top: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-follow-up-card__button {
+  min-height: 30px;
+  padding: 7px 13px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0a2463;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.agent-follow-up-card__button:hover:not(:disabled) {
+  border-color: rgba(124, 58, 237, 0.34);
+  transform: translateY(-1px);
+}
+
+.agent-follow-up-card__button--primary {
+  border-color: transparent;
+  background: linear-gradient(90deg, #06b6d4 0%, #7c3aed 100%);
+  color: #ffffff;
+}
+
+.agent-follow-up-card__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.agent-follow-up-error {
+  width: min(520px, 100%);
+  margin-left: 8px;
+  padding: 15px;
+  border: 1px solid rgba(251, 44, 54, 0.18);
+  border-radius: 16px;
+  display: flex;
+  gap: 10px;
+  background: rgba(254, 242, 242, 0.78);
+  color: #991b1b;
+}
+
+.agent-follow-up-error > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.agent-follow-up-error strong {
+  display: block;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.agent-follow-up-error button {
+  margin-top: 8px;
+  min-height: 30px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0a2463;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .agent-reminder-input {
   min-height: 55px;
   margin-top: 16px;
@@ -1605,11 +2408,45 @@ const sendAgentMessage = () => {
   line-height: 20px;
   font-weight: 700;
   cursor: pointer;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.agent-reminder-input__button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.agent-reminder-input__button:disabled,
+.agent-reminder-input__field:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .agent-reminder-input__icon {
   width: 14px;
   height: 14px;
+}
+
+@keyframes agent-thinking-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.32);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(124, 58, 237, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+  }
+}
+
+@keyframes agent-cursor-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .agent-optimize-card {
@@ -1817,6 +2654,18 @@ const sendAgentMessage = () => {
     flex-direction: column;
   }
 
+  .follow-up-message--agent {
+    align-items: flex-start;
+  }
+
+  .follow-up-agent-panel,
+  .agent-follow-up-card,
+  .agent-thinking-card,
+  .agent-follow-up-error {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .agent-reminder-card__content {
     max-width: none;
   }
@@ -1889,6 +2738,33 @@ const sendAgentMessage = () => {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .agent-card__header-actions,
+  .agent-follow-up-card__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .follow-up-chat {
+    max-height: none;
+  }
+
+  .follow-up-user-bubble {
+    max-width: 92%;
+  }
+
+  .agent-follow-up-details {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-reminder-input {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agent-reminder-input__button {
+    width: 100%;
   }
 
   .script-step {

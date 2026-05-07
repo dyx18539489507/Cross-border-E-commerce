@@ -41,6 +41,8 @@ const getOrCreateDeviceID = (): string => {
   return created
 }
 
+export const getClientDeviceID = getOrCreateDeviceID
+
 // 开源版本 - 无需认证token
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {

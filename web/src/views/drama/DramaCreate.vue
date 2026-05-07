@@ -22,6 +22,8 @@
               :class="{ 'product-entry-nav__item--active': item.active }"
               :style="{ width: item.width }"
               :aria-current="item.active ? 'page' : undefined"
+              @pointerenter="preloadRouteByPath(item.path)"
+              @focus="preloadRouteByPath(item.path)"
               @click="handleNavClick(item.path)"
             >
               {{ item.label }}
@@ -30,61 +32,7 @@
         </div>
 
         <div class="product-entry-header__right">
-          <div ref="notificationRef" class="notification-center">
-            <button
-              type="button"
-              class="header-icon-button"
-              aria-label="通知"
-              :aria-expanded="showNotifications"
-              aria-haspopup="dialog"
-              @click="toggleNotifications"
-            >
-              <img :src="bellIcon" alt="" />
-              <span v-if="unreadNotificationCount" class="header-icon-button__dot">
-                {{ unreadNotificationCount }}
-              </span>
-            </button>
-
-            <section v-if="showNotifications" class="notification-popover" aria-label="消息通知">
-              <div class="notification-popover__head">
-                <div>
-                  <strong>消息通知</strong>
-                  <span>{{ unreadNotificationCount }} 条未读消息</span>
-                </div>
-                <button type="button" class="notification-popover__link" @click="markAllNotificationsRead">
-                  全部已读
-                </button>
-              </div>
-
-              <div class="notification-list">
-                <article
-                  v-for="notice in notifications"
-                  :key="notice.id"
-                  class="notification-item"
-                  :class="{ 'notification-item--unread': !notice.read }"
-                >
-                  <span class="notification-item__status" aria-hidden="true"></span>
-                  <div class="notification-item__body">
-                    <div class="notification-item__title-row">
-                      <strong>{{ notice.title }}</strong>
-                      <span>{{ notice.time }}</span>
-                    </div>
-                    <p>{{ notice.content }}</p>
-                    <div class="notification-item__actions">
-                      <button type="button" @click="openNotification(notice.id)">
-                        查看
-                      </button>
-                      <button type="button" @click="dismissNotification(notice.id)">
-                        忽略
-                      </button>
-                    </div>
-                  </div>
-                </article>
-
-                <p v-if="notifications.length === 0" class="notification-empty">暂无新的消息</p>
-              </div>
-            </section>
-          </div>
+          <NotificationBell />
         </div>
       </div>
     </header>
@@ -329,10 +277,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { preloadRouteByPath } from '@/router'
+import { notificationAPI } from '@/api/notification'
+import NotificationBell from '@/components/common/NotificationBell.vue'
 import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
+import { PRODUCT_ENTRY_BASIC_DRAFT_KEY, saveProductEntryBasicInfo } from '@/utils/productEntryDraft'
 import type { CreateDramaRequest } from '@/types/drama'
 import arrowRightIcon from '@/assets/figma/product-entry/arrow-right.svg'
-import bellIcon from '@/assets/figma/product-entry/bell.svg'
 import chevronDownIcon from '@/assets/figma/product-entry/chevron-down.svg'
 import stepBasicIcon from '@/assets/figma/product-entry/step-basic.svg'
 import stepCompleteIcon from '@/assets/figma/product-entry/step-complete.svg'
@@ -348,21 +299,11 @@ interface ProductEntryDraft {
   brand: string
 }
 
-interface HeaderNotification {
-  id: number
-  title: string
-  content: string
-  time: string
-  read: boolean
-  path?: string
-}
-
 interface CategorySearchResult {
   primary: string
   secondary: string
 }
 
-const PRODUCT_ENTRY_DRAFT_KEY = 'drama:create:product-entry:basic'
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 
@@ -370,41 +311,12 @@ const router = useRouter()
 const brandLogo = '/logo_circle.png'
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const categorySearchInputRef = ref<HTMLInputElement | null>(null)
-const notificationRef = ref<HTMLElement | null>(null)
 const categoryCascaderRef = ref<HTMLElement | null>(null)
 const imagePreviewUrl = ref('')
 const imageName = ref('')
 const isDragOver = ref(false)
-const showNotifications = ref(false)
 const isCategoryCascaderOpen = ref(false)
 const categorySearchKeyword = ref('')
-
-const notifications = ref<HeaderNotification[]>([
-  {
-    id: 1,
-    title: '商品信息待完善',
-    content: '补充品牌或商品图后，AI 合规分析会给出更准确的准入风险。',
-    time: '刚刚',
-    read: false
-  },
-  {
-    id: 2,
-    title: '合规检测准备就绪',
-    content: '基本信息保存后，可进入目标市场选择并启动合规分析。',
-    time: '10 分钟前',
-    read: false,
-    path: '/compliance'
-  },
-  {
-    id: 3,
-    title: '素材规范提醒',
-    content: '商品图片建议使用清晰主图，支持 JPG、PNG，单张不超过 5MB。',
-    time: '今天',
-    read: true
-  }
-])
-
-const unreadNotificationCount = computed(() => notifications.value.filter((notice) => !notice.read).length)
 
 const form = reactive({
   title: '',
@@ -620,7 +532,7 @@ const persistStepDraft = () => {
     brand: form.brand
   }
 
-  window.sessionStorage.setItem(PRODUCT_ENTRY_DRAFT_KEY, JSON.stringify(draft))
+  saveProductEntryBasicInfo(draft)
   saveCreateDramaDraft(getCompatibleDraft())
 }
 
@@ -629,7 +541,7 @@ const restoreStepDraft = () => {
     return
   }
 
-  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_DRAFT_KEY)
+  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
   if (!raw) {
     return
   }
@@ -644,7 +556,7 @@ const restoreStepDraft = () => {
     form.category = getResolvedCategory()
     form.brand = typeof draft.brand === 'string' ? draft.brand : ''
   } catch {
-    window.sessionStorage.removeItem(PRODUCT_ENTRY_DRAFT_KEY)
+    window.sessionStorage.removeItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
   }
 }
 
@@ -776,49 +688,30 @@ const handleNextStep = () => {
   }
 
   persistStepDraft()
-  router.push('/compliance')
+  void notificationAPI.create({
+    type: 'product_entry_basic_saved',
+    title: '商品基础信息已保存',
+    content: `「${form.title.trim()}」的基础信息已保存，可继续选择目标市场。`,
+    path: '/product-entry/market',
+    metadata: {
+      category: getResolvedCategory(),
+      brand: form.brand.trim()
+    }
+  }).catch(() => {})
+  router.push('/product-entry/market')
 }
 
 const handleNavClick = (path: string) => {
-  if (!path) {
+  if (!path || path === router.currentRoute.value.path) {
     return
   }
 
+  preloadRouteByPath(path)
   router.push(path)
-}
-
-const toggleNotifications = () => {
-  showNotifications.value = !showNotifications.value
-}
-
-const markAllNotificationsRead = () => {
-  notifications.value = notifications.value.map((notice) => ({ ...notice, read: true }))
-}
-
-const dismissNotification = (id: number) => {
-  notifications.value = notifications.value.filter((notice) => notice.id !== id)
-}
-
-const openNotification = (id: number) => {
-  const notice = notifications.value.find((item) => item.id === id)
-  if (!notice) {
-    return
-  }
-
-  notice.read = true
-  showNotifications.value = false
-
-  if (notice.path) {
-    router.push(notice.path)
-  }
 }
 
 const handleDocumentClick = (event: MouseEvent) => {
   const target = event.target as Node
-
-  if (showNotifications.value && notificationRef.value && !notificationRef.value.contains(target)) {
-    showNotifications.value = false
-  }
 
   if (isCategoryCascaderOpen.value && categoryCascaderRef.value && !categoryCascaderRef.value.contains(target)) {
     isCategoryCascaderOpen.value = false
@@ -975,11 +868,11 @@ onBeforeUnmount(() => {
 }
 
 .product-entry-header__right {
-  width: 188px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-shrink: 0;
 }
 
 .notification-center {

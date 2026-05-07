@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { preloadRouteByPath } from '@/router'
 
-import bellIcon from '../../assets/workbench/bell.svg'
+import NotificationBell from '@/components/common/NotificationBell.vue'
+import { workbenchAPI } from '@/api/workbench'
+import type { WorkbenchSummary } from '@/types/workbench'
 import overviewBagIcon from '../../assets/workbench/overview-bag.svg'
 import overviewComplianceIcon from '../../assets/workbench/overview-compliance.svg'
 import overviewMarketIcon from '../../assets/workbench/overview-market.svg'
@@ -47,6 +50,7 @@ type TaskItem = {
   status: string
   meta: string
   tone: TaskStatus
+  path?: string
 }
 
 const router = useRouter()
@@ -63,36 +67,40 @@ const navigationItems: NavItem[] = [
   { label: '数据分析', path: '/analytics', width: 80 }
 ]
 
-const overviewCards: GradientCard[] = [
+const formatTrend = (value = 0) => `+${Math.max(0, Math.round(value))}`
+
+const buildOverviewCards = (summary?: WorkbenchSummary): GradientCard[] => [
   {
     label: '待处理商品',
-    value: '12',
-    trend: '+3',
+    value: String(summary?.overview.pendingProducts ?? 0),
+    trend: formatTrend(summary?.trends.pendingProducts),
     icon: overviewBagIcon,
     gradient: 'linear-gradient(135deg, #2b7fff 0%, #00b8db 100%)'
   },
   {
     label: '合规检测完成',
-    value: '156',
-    trend: '+24',
+    value: String(summary?.overview.complianceCompleted ?? 0),
+    trend: formatTrend(summary?.trends.complianceCompleted),
     icon: overviewComplianceIcon,
     gradient: 'linear-gradient(135deg, #ad46ff 0%, #f6339a 100%)'
   },
   {
     label: '视频已生成',
-    value: '89',
-    trend: '+15',
+    value: String(summary?.overview.videosGenerated ?? 0),
+    trend: formatTrend(summary?.trends.videosGenerated),
     icon: overviewVideoIcon,
     gradient: 'linear-gradient(135deg, #ff6900 0%, #fb2c36 100%)'
   },
   {
     label: '覆盖市场',
-    value: '23',
-    trend: '+5',
+    value: String(summary?.overview.coveredMarkets ?? 0),
+    trend: formatTrend(summary?.trends.coveredMarkets),
     icon: overviewMarketIcon,
     gradient: 'linear-gradient(135deg, #00c950 0%, #00bc7d 100%)'
   }
 ]
+
+const overviewCards = ref<GradientCard[]>(buildOverviewCards())
 
 const quickActions: QuickAction[] = [
   {
@@ -121,88 +129,80 @@ const quickActions: QuickAction[] = [
   }
 ]
 
-const weeklyActivity = [
-  { label: '周一', value: 11 },
-  { label: '周二', value: 18 },
-  { label: '周三', value: 15 },
-  { label: '周四', value: 24 },
-  { label: '周五', value: 21 },
-  { label: '周六', value: 17 },
-  { label: '周日', value: 19 }
-]
+const weeklyActivity = ref([
+  { label: '周一', value: 0 },
+  { label: '周二', value: 0 },
+  { label: '周三', value: 0 },
+  { label: '周四', value: 0 },
+  { label: '周五', value: 0 },
+  { label: '周六', value: 0 },
+  { label: '周日', value: 0 }
+])
 
-const conversionTrend = [
-  { label: '1月', value: 2.4 },
-  { label: '2月', value: 3.2 },
-  { label: '3月', value: 4.1 },
-  { label: '4月', value: 4.8 }
-]
+const conversionTrend = ref([
+  { label: '1月', value: 0 },
+  { label: '2月', value: 0 },
+  { label: '3月', value: 0 },
+  { label: '4月', value: 0 }
+])
 
-const recentTasks: TaskItem[] = [
-  {
-    title: '智能手表 Pro',
-    market: '美国',
-    status: '已完成',
-    meta: '2小时前',
-    tone: 'done'
-  },
-  {
-    title: '无线耳机',
-    market: '德国',
-    status: '进行中',
-    meta: '正在进行',
-    tone: 'progress'
-  },
-  {
-    title: '蓝牙音箱',
-    market: '日本',
-    status: '待处理',
-    meta: '待开始',
-    tone: 'pending'
-  },
-  {
-    title: '充电宝',
-    market: '英国',
-    status: '已完成',
-    meta: '1天前',
-    tone: 'done'
-  }
-]
+const recentTasks = ref<TaskItem[]>([])
 
 const barChart = computed(() => {
   const coordinates = [
-    { x: 70.2857, y: 125, width: 19, height: 90, labelX: 91.4286 },
-    { x: 123.1429, y: 72.5, width: 19, height: 142.5, labelX: 144.2857 },
-    { x: 176, y: 102.5, width: 19, height: 112.5, labelX: 197.1429 },
-    { x: 228.8571, y: 27.5, width: 19, height: 187.5, labelX: 250 },
-    { x: 281.7143, y: 50, width: 19, height: 165, labelX: 302.8571 },
-    { x: 334.5714, y: 80, width: 19, height: 135, labelX: 355.7143 },
-    { x: 387.4286, y: 65, width: 19, height: 150, labelX: 408.5714 }
+    { x: 70.2857, width: 19, labelX: 91.4286 },
+    { x: 123.1429, width: 19, labelX: 144.2857 },
+    { x: 176, width: 19, labelX: 197.1429 },
+    { x: 228.8571, width: 19, labelX: 250 },
+    { x: 281.7143, width: 19, labelX: 302.8571 },
+    { x: 334.5714, width: 19, labelX: 355.7143 },
+    { x: 387.4286, width: 19, labelX: 408.5714 }
   ]
+  const maxValue = Math.max(1, ...weeklyActivity.value.map((item) => item.value), 28)
 
-  return weeklyActivity.map((item, index) => ({
-    ...item,
-    ...coordinates[index]
-  }))
+  return weeklyActivity.value.map((item, index) => {
+    const height = Math.max(4, Math.min(208, (item.value / maxValue) * 208))
+    return {
+      ...item,
+      ...coordinates[index],
+      y: 214 - height,
+      height
+    }
+  })
 })
 
 const lineChartPoints = computed(() => {
-  const coordinates = [
-    { x: 65, y: 146 },
-    { x: 188.3333, y: 125 },
-    { x: 311.6667, y: 101.375 },
-    { x: 435, y: 83 }
-  ]
+  const xCoordinates = [65, 188.3333, 311.6667, 435]
+  const maxValue = Math.max(1, ...conversionTrend.value.map((item) => item.value), 8)
 
-  return conversionTrend.map((item, index) => ({
-    ...item,
-    ...coordinates[index]
-  }))
+  return conversionTrend.value.map((item, index) => {
+    const y = 214 - Math.min(208, (item.value / maxValue) * 208)
+    return {
+      ...item,
+      x: xCoordinates[index] || 65,
+      y
+    }
+  })
 })
 
 const linePath = computed(() =>
   lineChartPoints.value.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
 )
+
+const conversionTrendNote = computed(() => {
+  const points = conversionTrend.value
+  const first = points[0]?.value || 0
+  const last = points[points.length - 1]?.value || 0
+  if (first <= 0 && last <= 0) {
+    return '暂无足够数据计算转化率趋势'
+  }
+  if (first <= 0) {
+    return `转化率提升 ${last.toFixed(1)} 个百分点`
+  }
+  const change = ((last - first) / first) * 100
+  const verb = change >= 0 ? '提升' : '下降'
+  return `转化率${verb} ${Math.abs(change).toFixed(0)}% 相比前期`
+})
 
 const taskIcons: Record<TaskStatus, string> = {
   done: taskDoneIcon,
@@ -215,12 +215,32 @@ function navigateTo(path?: string) {
     return
   }
 
+  preloadRouteByPath(path)
   router.push(path)
 }
 
 function isActive(path?: string) {
   return path === route.path
 }
+
+async function loadWorkbenchSummary() {
+  try {
+    const summary = await workbenchAPI.summary()
+    overviewCards.value = buildOverviewCards(summary)
+    weeklyActivity.value = summary.weeklyActivity?.length ? summary.weeklyActivity : weeklyActivity.value
+    conversionTrend.value = summary.conversionTrend?.length ? summary.conversionTrend : conversionTrend.value
+    recentTasks.value = (summary.recentTasks || []).map((task) => ({
+      ...task,
+      tone: task.tone === 'done' || task.tone === 'progress' ? task.tone : 'pending'
+    }))
+  } catch {
+    // The dashboard keeps its empty state if the summary API is temporarily unavailable.
+  }
+}
+
+onMounted(() => {
+  loadWorkbenchSummary()
+})
 </script>
 
 <template>
@@ -230,7 +250,7 @@ function isActive(path?: string) {
     <header class="workbench-header">
       <div class="workbench-header__inner">
         <div class="workbench-header__left">
-          <button type="button" class="brand-button" @click="navigateTo('/dramas')">
+          <button type="button" class="brand-button" @click="navigateTo('/')">
             <span class="brand-button__mark">
               <img :src="brandLogo" alt="" />
             </span>
@@ -248,6 +268,8 @@ function isActive(path?: string) {
               class="workbench-nav__item"
               :class="{ 'workbench-nav__item--active': isActive(item.path) }"
               :style="{ width: `${item.width}px` }"
+              @pointerenter="preloadRouteByPath(item.path)"
+              @focus="preloadRouteByPath(item.path)"
               @click="navigateTo(item.path)"
             >
               {{ item.label }}
@@ -256,10 +278,7 @@ function isActive(path?: string) {
         </div>
 
         <div class="workbench-header__actions">
-          <button type="button" class="icon-button" aria-label="消息提醒">
-            <img :src="bellIcon" alt="" />
-            <span class="icon-button__dot"></span>
-          </button>
+          <NotificationBell />
         </div>
       </div>
     </header>
@@ -429,7 +448,7 @@ function isActive(path?: string) {
 
           <div class="trend-note">
             <img :src="trendNoteIcon" alt="" />
-            <span>转化率提升 100% 相比上季度</span>
+            <span>{{ conversionTrendNote }}</span>
           </div>
         </article>
       </section>
@@ -444,7 +463,8 @@ function isActive(path?: string) {
         </div>
 
         <div class="tasks-list">
-          <article v-for="task in recentTasks" :key="task.title" class="task-row">
+          <p v-if="recentTasks.length === 0" class="tasks-list__empty">暂无最近任务</p>
+          <article v-for="task in recentTasks" :key="`${task.title}-${task.meta}`" class="task-row" @click="navigateTo(task.path)">
             <div class="task-row__info">
               <img class="task-row__status-icon" :src="taskIcons[task.tone]" alt="" />
               <div class="task-row__copy">
@@ -902,6 +922,17 @@ function isActive(path?: string) {
   gap: 16px;
 }
 
+.tasks-list__empty {
+  margin: 0;
+  padding: 24px 16px;
+  border-radius: 16px;
+  background: var(--wb-surface);
+  color: var(--wb-text-soft);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
 .task-row {
   display: flex;
   align-items: center;
@@ -910,6 +941,7 @@ function isActive(path?: string) {
   padding: 16px;
   border-radius: 16px;
   background: var(--wb-surface);
+  cursor: pointer;
 }
 
 .task-row__info {

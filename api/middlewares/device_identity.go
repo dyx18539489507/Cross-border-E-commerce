@@ -30,6 +30,9 @@ func DeviceIdentityMiddleware() gin.HandlerFunc {
 			}
 		}
 		if deviceID == "" {
+			deviceID = normalizeDeviceID(c.Query("device_id"))
+		}
+		if deviceID == "" {
 			deviceID = generateDeviceID()
 		}
 

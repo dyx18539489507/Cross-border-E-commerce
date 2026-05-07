@@ -22,6 +22,8 @@
               :class="{ 'compliance-nav__item--active': item.active }"
               :style="{ width: item.width }"
               :aria-current="item.active ? 'page' : undefined"
+              @pointerenter="preloadRouteByPath(item.path)"
+              @focus="preloadRouteByPath(item.path)"
               @click="handleNavClick(item.path)"
             >
               {{ item.label }}
@@ -30,10 +32,7 @@
         </div>
 
         <div class="compliance-header__right">
-          <button type="button" class="header-icon-button" aria-label="通知">
-            <img :src="bellIcon" alt="" />
-            <span class="header-icon-button__dot"></span>
-          </button>
+          <NotificationBell />
         </div>
       </div>
     </header>
@@ -171,6 +170,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { preloadRouteByPath } from '@/router'
+import NotificationBell from '@/components/common/NotificationBell.vue'
 import { dramaAPI } from '@/api/drama'
 import aiSuggestionIcon from '@/assets/compliance-analysis/ai-suggestion.svg'
 import itemInfoIcon from '@/assets/compliance-analysis/item-info.svg'
@@ -178,11 +179,11 @@ import itemWarningIcon from '@/assets/compliance-analysis/item-warning.svg'
 import riskShieldIcon from '@/assets/compliance-analysis/risk-shield.svg'
 import riskWarningIcon from '@/assets/compliance-analysis/risk-warning.svg'
 import sectionDocIcon from '@/assets/compliance-analysis/section-doc.svg'
-import bellIcon from '@/assets/product-entry/bell.svg'
 import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import { buildCreateDramaPayload } from '@/utils/compliance'
 import { clearCreateDramaDraft, peekCreateDramaDraft } from '@/utils/createDramaDraft'
 import { buildEpisodeStagePath, saveEpisodeWorkflowContext } from '@/utils/episodeWorkflowContext'
+import { PRODUCT_ENTRY_BASIC_DRAFT_KEY, readProductEntryDraft } from '@/utils/productEntryDraft'
 
 type DetailTone = 'warning' | 'success' | 'info'
 
@@ -203,8 +204,6 @@ interface ReportSection {
     icon: DetailTone
   }>
 }
-
-const PRODUCT_ENTRY_DRAFT_KEY = 'drama:create:product-entry:basic'
 
 const router = useRouter()
 const creatingFlow = ref(false)
@@ -320,7 +319,18 @@ const restoreDraft = () => {
     return
   }
 
-  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_DRAFT_KEY)
+  const flowDraft = readProductEntryDraft()
+  if (typeof flowDraft.basicInfo.title === 'string' && flowDraft.basicInfo.title.trim()) {
+    reportProduct.title = flowDraft.basicInfo.title.trim()
+  }
+  if (typeof flowDraft.basicInfo.category === 'string' && flowDraft.basicInfo.category.trim()) {
+    reportProduct.category = flowDraft.basicInfo.category.trim()
+  }
+  if (typeof flowDraft.targetMarket.marketName === 'string' && flowDraft.targetMarket.marketName.trim()) {
+    reportProduct.market = `${flowDraft.targetMarket.marketEmoji || ''} ${flowDraft.targetMarket.marketName}`.trim()
+  }
+
+  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
   if (!raw) {
     return
   }
@@ -334,7 +344,7 @@ const restoreDraft = () => {
       reportProduct.category = draft.category.trim()
     }
   } catch {
-    window.sessionStorage.removeItem(PRODUCT_ENTRY_DRAFT_KEY)
+    window.sessionStorage.removeItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
   }
 }
 
@@ -349,10 +359,11 @@ const getItemIcon = (tone: DetailTone) => {
 }
 
 const handleNavClick = (path: string) => {
-  if (!path) {
+  if (!path || path === router.currentRoute.value.path) {
     return
   }
 
+  preloadRouteByPath(path)
   router.push(path)
 }
 

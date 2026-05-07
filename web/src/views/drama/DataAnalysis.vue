@@ -22,6 +22,8 @@
               :class="{ 'data-analysis-nav__item--active': item.active }"
               :style="{ width: item.width }"
               :aria-current="item.active ? 'page' : undefined"
+              @pointerenter="preloadRouteByPath(item.path)"
+              @focus="preloadRouteByPath(item.path)"
               @click="handleNavClick(item.path)"
             >
               {{ item.label }}
@@ -30,10 +32,7 @@
         </div>
 
         <div class="data-analysis-header__right">
-          <button type="button" class="header-icon-button" aria-label="通知">
-            <img :src="bellIcon" alt="" />
-            <span class="header-icon-button__dot"></span>
-          </button>
+          <NotificationBell />
         </div>
       </div>
     </header>
@@ -273,8 +272,9 @@
 </template>
 
 <script setup lang="ts">
-import bellIcon from '@/assets/figma/product-entry/bell.svg'
 import { useRouter } from 'vue-router'
+import { preloadRouteByPath } from '@/router'
+import NotificationBell from '@/components/common/NotificationBell.vue'
 
 type MetricIcon = 'eye' | 'spark' | 'cart' | 'coin'
 type InsightIcon = 'growth' | 'audience' | 'video'
@@ -378,10 +378,11 @@ const recommendations = [
 ] as const
 
 const handleNavClick = (path: string) => {
-  if (!path) {
+  if (!path || path === router.currentRoute.value.path) {
     return
   }
 
+  preloadRouteByPath(path)
   router.push(path)
 }
 

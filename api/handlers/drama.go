@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"strconv"
 
 	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
@@ -14,19 +15,21 @@ import (
 )
 
 type DramaHandler struct {
-	db                *gorm.DB
-	dramaService      *services.DramaService
-	videoMergeService *services.VideoMergeService
-	log               *logger.Logger
+	db                  *gorm.DB
+	dramaService        *services.DramaService
+	videoMergeService   *services.VideoMergeService
+	notificationService *services.NotificationService
+	log                 *logger.Logger
 }
 
-func NewDramaHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger, transferService *services.ResourceTransferService) *DramaHandler {
+func NewDramaHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger, transferService *services.ResourceTransferService, notificationService *services.NotificationService) *DramaHandler {
 	complianceService := services.NewComplianceService(cfg.Compliance, log)
 	return &DramaHandler{
-		db:                db,
-		dramaService:      services.NewDramaService(db, log, complianceService),
-		videoMergeService: services.NewVideoMergeService(db, transferService, cfg.Storage.LocalPath, cfg.Storage.BaseURL, log),
-		log:               log,
+		db:                  db,
+		dramaService:        services.NewDramaService(db, log, complianceService),
+		videoMergeService:   services.NewVideoMergeService(db, transferService, cfg.Storage.LocalPath, cfg.Storage.BaseURL, log),
+		notificationService: notificationService,
+		log:                 log,
 	}
 }
 
@@ -63,6 +66,18 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 		return
 	}
 
+	h.notify(deviceID, services.CreateNotificationInput{
+		Type:    "product_created",
+		Title:   "商品项目已创建",
+		Content: "「" + drama.Title + "」已保存并进入脚本与分镜流程。",
+		Path:    "/dramas/" + strconv.FormatUint(uint64(drama.ID), 10),
+		Metadata: map[string]interface{}{
+			"dramaId": drama.ID,
+			"level":   compliance.Level,
+			"score":   compliance.Score,
+		},
+	})
+
 	response.Created(c, gin.H{
 		"drama":      drama,
 		"compliance": compliance,
@@ -87,6 +102,17 @@ func (h *DramaHandler) CheckCompliance(c *gin.Context) {
 		response.InternalError(c, "合规校验失败")
 		return
 	}
+
+	h.notify(deviceID, services.CreateNotificationInput{
+		Type:    "compliance_completed",
+		Title:   "合规检测完成",
+		Content: "商品合规评分 " + strconv.Itoa(compliance.Score) + "，风险等级：" + compliance.LevelLabel + "。",
+		Path:    "/compliance",
+		Metadata: map[string]interface{}{
+			"level": compliance.Level,
+			"score": compliance.Score,
+		},
+	})
 
 	response.Success(c, gin.H{
 		"compliance":       compliance,
@@ -188,6 +214,15 @@ func (h *DramaHandler) GetDramaStats(c *gin.Context) {
 	}
 
 	response.Success(c, stats)
+}
+
+func (h *DramaHandler) notify(deviceID string, input services.CreateNotificationInput) {
+	if h.notificationService == nil {
+		return
+	}
+	if _, err := h.notificationService.Create(deviceID, input); err != nil && h.log != nil {
+		h.log.Warnw("failed to create drama notification", "error", err, "device_id", deviceID, "type", input.Type)
+	}
 }
 
 func (h *DramaHandler) SaveOutline(c *gin.Context) {

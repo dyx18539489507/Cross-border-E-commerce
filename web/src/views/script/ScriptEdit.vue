@@ -21,6 +21,8 @@
               class="stage-nav__item"
               :class="{ 'stage-nav__item--active': item.active }"
               :style="{ width: item.width }"
+              @pointerenter="preloadRouteByPath(item.path)"
+              @focus="preloadRouteByPath(item.path)"
               @click="handleNavClick(item.path)"
             >
               {{ item.label }}
@@ -29,10 +31,7 @@
         </div>
 
         <div class="stage-header__right">
-          <button type="button" class="header-icon-button" aria-label="通知">
-            <img :src="bellIcon" alt="" />
-            <span class="header-icon-button__dot"></span>
-          </button>
+          <NotificationBell />
         </div>
       </div>
     </header>
@@ -318,8 +317,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import { preloadRouteByPath } from '@/router'
+import NotificationBell from '@/components/common/NotificationBell.vue'
 import { dramaAPI } from '@/api/drama'
-import bellIcon from '@/assets/product-entry/bell.svg'
 import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import type { Drama, Episode } from '@/types/drama'
 import {
@@ -818,7 +818,8 @@ const persistEpisodeScript = async () => {
 }
 
 const handleNavClick = (path: string) => {
-  if (!path) return
+  if (!path || path === router.currentRoute.value.path) return
+  preloadRouteByPath(path)
   router.push(path)
 }
 

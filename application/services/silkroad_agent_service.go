@@ -52,6 +52,36 @@ type SilkroadAgentAnalyzeEvent struct {
 	Data interface{}
 }
 
+type SilkroadAgentFollowUpInput struct {
+	Question string                       `json:"question"`
+	Context  SilkroadAgentFollowUpContext `json:"context"`
+}
+
+type SilkroadAgentFollowUpContext struct {
+	ProductName      string `json:"productName"`
+	TargetMarket     string `json:"targetMarket"`
+	Platform         string `json:"platform"`
+	Audience         string `json:"audience"`
+	SellingPoints    string `json:"sellingPoints"`
+	ComplianceResult string `json:"complianceResult"`
+	ContentStrategy  string `json:"contentStrategy"`
+	DigitalHumanPlan string `json:"digitalHumanPlan"`
+	PromotionAdvice  string `json:"promotionAdvice"`
+}
+
+type SilkroadAgentFollowUpResult struct {
+	Summary         string                       `json:"summary"`
+	AffectedModules []string                     `json:"affectedModules"`
+	Details         SilkroadAgentFollowUpDetails `json:"details"`
+}
+
+type SilkroadAgentFollowUpDetails struct {
+	Compliance      string `json:"compliance"`
+	ContentStyle    string `json:"contentStyle"`
+	VideoExpression string `json:"videoExpression"`
+	Promotion       string `json:"promotion"`
+}
+
 type MobileRecognizedInfo struct {
 	Product       string `json:"product"`
 	Category      string `json:"category"`
@@ -169,8 +199,12 @@ func NewSilkroadAgentService(cfg *config.Config, log *logger.Logger) *SilkroadAg
 	}
 }
 
+func (s *SilkroadAgentService) ExtractInput(input SilkroadAgentInput) SilkroadAgentInput {
+	return extractSilkroadInput(input)
+}
+
 func (s *SilkroadAgentService) Generate(input SilkroadAgentInput) (*SilkroadAgentResult, error) {
-	input = normalizeSilkroadInput(input)
+	input = extractSilkroadInput(input)
 	settings := s.readSettings()
 	if settings.APIKey == "" {
 		if s.cfg != nil && s.cfg.App.Debug {
@@ -284,6 +318,56 @@ func (s *SilkroadAgentService) StreamMobileTransitionAnalysis(ctx context.Contex
 	return s.emitMobileAnalysisTail(ctx, recognized, emit)
 }
 
+func (s *SilkroadAgentService) StreamFollowUp(ctx context.Context, input SilkroadAgentFollowUpInput, emit func(SilkroadAgentAnalyzeEvent) error) error {
+	input = normalizeSilkroadFollowUpInput(input)
+	if input.Question == "" {
+		return errors.New("follow-up question is empty")
+	}
+
+	emitLocalResult := func(reason string) error {
+		if s.log != nil && reason != "" {
+			s.log.Warnw("silkroad agent follow-up switched to local fallback", "reason", reason)
+		}
+		return emit(SilkroadAgentAnalyzeEvent{Type: "result", Data: buildLocalFollowUpResult(input)})
+	}
+
+	settings := readDeepSeekFollowUpSettings()
+	if settings.APIKey == "" {
+		return emitLocalResult("DEEPSEEK_API_KEY is empty")
+	}
+
+	var raw strings.Builder
+	req := llmChatRequest{
+		Model: settings.TextModel,
+		Messages: []llmMessage{
+			{Role: "system", Content: silkroadFollowUpSystemPrompt()},
+			{Role: "user", Content: buildFollowUpPrompt(input)},
+		},
+		Temperature:    0.25,
+		MaxTokens:      1300,
+		Stream:         true,
+		ResponseFormat: &llmResponseFormat{Type: "json_object"},
+	}
+
+	if err := s.streamChat(ctx, settings, req, func(delta string) error {
+		cleaned := stripReasoningSensitiveText(delta)
+		raw.WriteString(cleaned)
+		return nil
+	}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return emitLocalResult(err.Error())
+	}
+
+	if strings.TrimSpace(raw.String()) == "" {
+		return emitLocalResult("empty model response")
+	}
+
+	result := parseFollowUpResult(raw.String(), input)
+	return emit(SilkroadAgentAnalyzeEvent{Type: "result", Data: result})
+}
+
 func (s *SilkroadAgentService) analyzeTransitionImage(input SilkroadAgentAnalyzeInput) string {
 	if !hasUsableAgentImage(input.ImageDataURL) {
 		return ""
@@ -334,7 +418,7 @@ func (s *SilkroadAgentService) emitMobileAnalysisTail(ctx context.Context, recog
 	}{
 		{Step: 1, Name: "商品理解", Status: "completed", Description: "确认商品类目、卖点与使用场景"},
 		{Step: 2, Name: "合规风险识别", Status: "completed", Description: "匹配目标市场规则与广告敏感表达"},
-		{Step: 3, Name: "本地化方向", Status: "completed", Description: "生成符合马来西亚用户习惯的内容方向"},
+		{Step: 3, Name: "本地化方向", Status: "completed", Description: taskLocalizationDescription(recognized.Market)},
 		{Step: 4, Name: "短视频脚本", Status: "completed", Description: "生成开头、中段、结尾三段式脚本"},
 		{Step: 5, Name: "数字人方案", Status: "completed", Description: "推荐数字人形象、口播语气与字幕语言"},
 		{Step: 6, Name: "投放优化", Status: "completed", Description: "规划平台、内容方向与关键指标"},
@@ -362,6 +446,15 @@ func readDeepSeekAnalyzeSettings() silkroadAgentSettings {
 		APIKey:      firstEnv("DEEPSEEK_API_KEY", "AGENT_API_KEY", "SILKROAD_AGENT_API_KEY"),
 		BaseURL:     firstEnvWithDefault("https://api.deepseek.com", "DEEPSEEK_BASE_URL", "AGENT_BASE_URL", "SILKROAD_AGENT_BASE_URL"),
 		TextModel:   firstEnvWithDefault("deepseek-v4-flash", "DEEPSEEK_MODEL", "AGENT_ANALYZE_MODEL", "SILKROAD_AGENT_ANALYZE_MODEL"),
+		VisionModel: "",
+	}
+}
+
+func readDeepSeekFollowUpSettings() silkroadAgentSettings {
+	return silkroadAgentSettings{
+		APIKey:      strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY")),
+		BaseURL:     "https://api.deepseek.com",
+		TextModel:   firstEnvWithDefault("deepseek-v4-flash", "DEEPSEEK_FOLLOW_UP_MODEL", "DEEPSEEK_MODEL"),
 		VisionModel: "",
 	}
 }
@@ -686,6 +779,7 @@ func silkroadAgentSystemPrompt() string {
 你需要根据商品信息、目标国家、目标平台和商品图片，生成一份适合展示在网页结果页的出海营销方案。
 你必须谨慎处理合规内容，不要给出绝对法律结论，只输出“风险提示、可能限制、建议补充材料、建议表达边界”。
 你必须避免夸大功效、绝对化宣传、医疗化表述、虚假认证表述。
+如果用户没有明确写出目标国家或目标市场，targetMarket 必须保持为空字符串，并把“目标市场”写入 missingInfo，不要猜测国家。
 你必须输出严格 JSON，不要输出 Markdown，不要输出解释性废话。
 
 输出 JSON 结构必须符合：
@@ -757,6 +851,7 @@ func silkroadMobileTransitionSystemPrompt() string {
 	return `你是「丝路 Agent」，服务于“数字丝路——跨境电商 AI 准入合规与智能营销引擎”。
 你的任务是基于用户的自然语言输入，生成面向用户可见的分析摘要，并提取结构化商品信息。
 你需要围绕跨境电商出海场景进行分析，重点关注商品理解、商品类目识别、目标市场判断、平台场景识别、目标用户识别、核心卖点提取、合规风险初步判断、本地化内容方向、数字人营销方向和投放优化方向。
+如果用户没有明确写出目标国家或目标市场，只说明“目标市场暂未明确”，不要猜测具体国家。
 只输出面向用户可见的分析摘要，不要输出原始思维链，不要展示内部推理过程，不要使用“思维链”“chain-of-thought”“reasoning_content”等词。
 文案要专业、简洁、适合移动端逐步展示。请输出 3 到 4 个短段落，直接写自然语言，不要 Markdown，不要 JSON，不要列表。`
 }
@@ -769,7 +864,7 @@ func buildMobileTransitionPrompt(input SilkroadAgentAnalyzeInput, recognized Mob
 		"图片理解结果": imageUnderstanding,
 	}
 	jsonPayload, _ := json.MarshalIndent(payload, "", "  ")
-	return string(jsonPayload) + "\n\n请生成手机过渡页可见的流式分析摘要，围绕跨境电商、合规、本地化、数字人和短视频投放展开。"
+	return string(jsonPayload) + "\n\n请生成手机过渡页可见的流式分析摘要，围绕跨境电商、合规、本地化、数字人和短视频投放展开。用户未明确目标市场时，不要自行补全国家。"
 }
 
 func buildAgentUserPrompt(input SilkroadAgentInput, imageUnderstanding string) string {
@@ -786,7 +881,46 @@ func buildAgentUserPrompt(input SilkroadAgentInput, imageUnderstanding string) s
 		"图片理解结果":   imageUnderstanding,
 	}
 	jsonPayload, _ := json.MarshalIndent(payload, "", "  ")
-	return string(jsonPayload) + "\n\n请基于以上信息生成结果页可直接展示的 JSON。缺失信息要写入 missingInfo 和 missingInfoNotice，不要自行编造认证或绝对法律结论。"
+	return string(jsonPayload) + "\n\n请基于以上信息生成结果页可直接展示的 JSON。缺失信息要写入 missingInfo 和 missingInfoNotice，不要自行编造认证、目标市场或绝对法律结论；如果目标市场/国家为空，recognizedInfo.targetMarket 必须为空字符串。"
+}
+
+func silkroadFollowUpSystemPrompt() string {
+	return `你是“丝路 Agent”，专注于跨境电商 AI 准入合规与智能营销方案优化。
+你需要基于已有商品信息、目标市场、平台场景、合规结论和营销方案，对用户追问进行增量分析。
+不要输出冗长解释。
+不要输出原始思维链。
+请返回适合前端展示的结构化结果。
+必须只输出合法 JSON，不要输出 Markdown，不要输出额外解释。
+JSON 结构必须符合：
+{
+  "summary": "已基于当前商品和原方案，重新调整目标市场、内容风格与合规提醒。",
+  "affectedModules": ["市场策略", "内容风格", "投放建议", "合规风险"],
+  "details": {
+    "compliance": "增加目标市场准入或广告表达提醒，移除高风险表达。",
+    "contentStyle": "说明内容语气、语言风格或本地化表达变化。",
+    "videoExpression": "说明短视频前 3 秒、中段场景或数字人表达建议。",
+    "promotion": "说明投放平台、组合渠道或重点指标调整。"
+  }
+}`
+}
+
+func buildFollowUpPrompt(input SilkroadAgentFollowUpInput) string {
+	payload := map[string]interface{}{
+		"用户追问": input.Question,
+		"当前方案上下文": map[string]string{
+			"当前商品名称":  input.Context.ProductName,
+			"当前目标市场":  input.Context.TargetMarket,
+			"当前平台":    input.Context.Platform,
+			"当前目标用户":  input.Context.Audience,
+			"当前卖点":    input.Context.SellingPoints,
+			"当前合规结论":  input.Context.ComplianceResult,
+			"当前内容策略":  input.Context.ContentStrategy,
+			"当前数字人方案": input.Context.DigitalHumanPlan,
+			"当前投放建议":  input.Context.PromotionAdvice,
+		},
+	}
+	jsonPayload, _ := json.MarshalIndent(payload, "", "  ")
+	return string(jsonPayload) + "\n\n请基于现有方案做增量优化，只返回 JSON。不要重新从零生成完整方案，不要输出思维链。"
 }
 
 func parseAgentResult(raw string) (SilkroadAgentResult, error) {
@@ -799,6 +933,48 @@ func parseAgentResult(raw string) (SilkroadAgentResult, error) {
 		return result, err
 	}
 	return result, nil
+}
+
+func parseFollowUpResult(raw string, input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpResult {
+	raw = stripReasoningSensitiveText(raw)
+	jsonText := extractFirstJSONObject(raw)
+	if jsonText != "" {
+		var result SilkroadAgentFollowUpResult
+		if err := json.Unmarshal([]byte(jsonText), &result); err == nil {
+			return fillFollowUpDefaults(result, raw, input)
+		}
+	}
+	return fillFollowUpDefaults(SilkroadAgentFollowUpResult{Summary: summarizeFollowUpText(raw)}, raw, input)
+}
+
+func buildLocalFollowUpResult(input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpResult {
+	product := firstNonBlank(input.Context.ProductName, "当前商品")
+	platform := firstNonBlank(input.Context.Platform, "TikTok")
+	targetMarket := firstNonBlank(inferTargetMarketFromPrompt(input.Question), input.Context.TargetMarket)
+	if isUnknownTargetMarket(targetMarket) {
+		targetMarket = "目标市场"
+	}
+	marketPhrase := cleanupTargetMarket(targetMarket)
+	if marketPhrase == "" || isUnknownTargetMarket(marketPhrase) {
+		marketPhrase = "目标市场"
+	}
+
+	result := SilkroadAgentFollowUpResult{
+		Summary: fmt.Sprintf("已基于%s和当前方案，将优化重点调整到%s、内容风格、合规表达与投放建议。", product, marketPhrase),
+		AffectedModules: []string{
+			"市场策略",
+			"内容风格",
+			"投放建议",
+			"合规风险",
+		},
+		Details: SilkroadAgentFollowUpDetails{
+			Compliance:      fmt.Sprintf("切换到%s时需重新核对当地准入、标签和广告表达边界，避免治疗、减肥、绝对化功效等高风险说法。", marketPhrase),
+			ContentStyle:    "语气可更年轻、口语化，保留真实体验和生活化表达，减少夸张承诺。",
+			VideoExpression: "前 3 秒突出可见卖点和高频场景，中段展示包装、使用或试吃反馈，结尾引导查看详情。",
+			Promotion:       fmt.Sprintf("优先在%s测试短视频素材，结合完播率、点击率和评论问题继续迭代内容。", platform),
+		},
+	}
+	return fillFollowUpDefaults(result, input.Question+" "+marketPhrase, input)
 }
 
 func extractFirstJSONObject(text string) string {
@@ -858,6 +1034,72 @@ func normalizeSilkroadInput(input SilkroadAgentInput) SilkroadAgentInput {
 	input.RawPrompt = strings.TrimSpace(input.RawPrompt)
 	input.ImageDataURL = strings.TrimSpace(input.ImageDataURL)
 	input.CoreSellingPoints = cleanStringList(input.CoreSellingPoints)
+	if shouldDropImplicitTargetMarket(input.RawPrompt, input.TargetMarket) {
+		input.TargetMarket = ""
+	}
+	if input.ProductName == "" {
+		input.ProductName = inferProductFromPrompt(input.RawPrompt)
+	}
+	if input.Category == "" && input.ProductName != "" {
+		input.Category = inferCategory(input.ProductName)
+	}
+	return input
+}
+
+func extractSilkroadInput(input SilkroadAgentInput) SilkroadAgentInput {
+	input = normalizeSilkroadInput(input)
+	prompt := input.RawPrompt
+
+	if input.ProductName == "" {
+		input.ProductName = inferProductFromPrompt(prompt)
+	}
+	if input.Category == "" {
+		input.Category = extractPromptMatch(prompt, []string{
+			`(?:商品类目|产品类目|类目|品类|属于)(?:是|为|:|：)?([^，,。；;\n]{2,28})`,
+		})
+	}
+	if input.Category == "" && input.ProductName != "" {
+		input.Category = inferCategory(input.ProductName)
+	}
+	if input.TargetMarket == "" {
+		input.TargetMarket = inferTargetMarketFromPrompt(prompt)
+	}
+	if input.TargetPlatform == "" {
+		input.TargetPlatform = extractKnownPlatform(prompt)
+	}
+	if input.TargetAudience == "" {
+		input.TargetAudience = extractPromptMatch(prompt, []string{
+			`(?:目标用户|目标人群|受众|面向用户)(?:是|为|:|：)?([^，,。；;\n]{2,44})`,
+			`(?:用户是|人群是)([^，,。；;\n]{2,44})`,
+		})
+	}
+	if input.MaterialSpec == "" {
+		input.MaterialSpec = extractPromptMatch(prompt, []string{
+			`(?:材质|成分|容量|规格|尺寸|型号)(?:是|为|:|：)?([^。；;\n]{2,52})`,
+		})
+	}
+	if input.UsageScenario == "" {
+		input.UsageScenario = extractPromptMatch(prompt, []string{
+			`(?:使用场景|应用场景|场景)(?:是|为|:|：)?([^。；;\n]{2,64})`,
+		})
+	}
+	if len(input.CoreSellingPoints) == 0 {
+		input.CoreSellingPoints = cleanStringList([]string{extractPromptMatch(prompt, []string{
+			`(?:核心卖点|卖点|主打|突出)(?:是|为|:|：)?([^。；;\n]{2,80})`,
+		})})
+	}
+	if len(input.CoreSellingPoints) == 0 && input.ProductName != "" {
+		input.CoreSellingPoints = inferSellingPoints(input.ProductName, input.Category)
+	}
+
+	input.ProductName = cleanupProductName(input.ProductName)
+	input.Category = cleanupExtractedChinese(input.Category)
+	input.TargetMarket = cleanupExtractedChinese(input.TargetMarket)
+	input.TargetPlatform = strings.TrimSpace(input.TargetPlatform)
+	input.TargetAudience = cleanupExtractedChinese(input.TargetAudience)
+	input.MaterialSpec = cleanupExtractedChinese(input.MaterialSpec)
+	input.UsageScenario = cleanupExtractedChinese(input.UsageScenario)
+	input.CoreSellingPoints = cleanStringList(input.CoreSellingPoints)
 	return input
 }
 
@@ -873,8 +1115,17 @@ func normalizeSilkroadAnalyzeInput(input SilkroadAgentAnalyzeInput) SilkroadAgen
 	input.UsageScenario = strings.TrimSpace(input.UsageScenario)
 	input.ImageDataURL = strings.TrimSpace(input.ImageDataURL)
 	input.CoreSellingPoints = cleanStringList(input.CoreSellingPoints)
+	if shouldDropImplicitTargetMarket(input.UserInput, input.TargetMarket) {
+		input.TargetMarket = ""
+	}
+	if input.ProductName == "" {
+		input.ProductName = inferProductFromPrompt(input.UserInput)
+	}
+	if input.Category == "" && input.ProductName != "" {
+		input.Category = inferCategory(input.ProductName)
+	}
 	if input.UserInput == "" {
-		input.UserInput = "我有一款便携榨汁杯，想卖到马来西亚，主要做 TikTok 短视频，目标用户是年轻女生，主打便携和健康。"
+		input.UserInput = "请补充商品信息。"
 	}
 	if input.Scene == "" {
 		input.Scene = "mobile_transition"
@@ -882,19 +1133,27 @@ func normalizeSilkroadAnalyzeInput(input SilkroadAgentAnalyzeInput) SilkroadAgen
 	return input
 }
 
+func normalizeSilkroadFollowUpInput(input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpInput {
+	input.Question = strings.TrimSpace(input.Question)
+	input.Context.ProductName = strings.TrimSpace(input.Context.ProductName)
+	input.Context.TargetMarket = strings.TrimSpace(input.Context.TargetMarket)
+	input.Context.Platform = strings.TrimSpace(input.Context.Platform)
+	input.Context.Audience = strings.TrimSpace(input.Context.Audience)
+	input.Context.SellingPoints = strings.TrimSpace(input.Context.SellingPoints)
+	input.Context.ComplianceResult = strings.TrimSpace(input.Context.ComplianceResult)
+	input.Context.ContentStrategy = strings.TrimSpace(input.Context.ContentStrategy)
+	input.Context.DigitalHumanPlan = strings.TrimSpace(input.Context.DigitalHumanPlan)
+	input.Context.PromotionAdvice = strings.TrimSpace(input.Context.PromotionAdvice)
+	return input
+}
+
 func buildMobileRecognizedInfo(input SilkroadAgentAnalyzeInput) MobileRecognizedInfo {
 	prompt := input.UserInput
-	product := firstNonEmpty(input.ProductName, extractPromptMatch(prompt, []string{
-		`(?:我有|我们有|这是一款|这款|一款|一个|一种|商品是|产品是)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|想|计划|准备|主打|目标|卖到|出口|做|$)`,
-		`(?:销售|卖)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|到|去|$)`,
-	}), "便携榨汁杯")
+	product := firstNonEmpty(input.ProductName, inferProductFromPrompt(prompt), "待分析商品")
 	category := firstNonEmpty(input.Category, extractPromptMatch(prompt, []string{
 		`(?:商品类目|产品类目|类目|品类|属于)(?:是|为|:|：)?([^，,。；;\n]{2,28})`,
 	}), inferCategory(product))
-	market := firstNonEmpty(input.TargetMarket, extractPromptMatch(prompt, []string{
-		`(?:卖到|出口到|进入|面向|投放到|推广到)([^，,。；;\n]{2,24}?)(?:市场|用户|消费者|，|,|。|；|;|$)`,
-		`(?:目标市场|目标国家|国家|市场)(?:是|为|:|：)?([^，,。；;\n]{2,24})`,
-	}), "马来西亚")
+	market := firstNonEmpty(input.TargetMarket, inferTargetMarketFromPrompt(prompt), "目标市场待补充")
 	platform := firstNonEmpty(input.TargetPlatform, extractKnownPlatform(prompt), "TikTok")
 	audience := firstNonEmpty(input.TargetAudience, extractPromptMatch(prompt, []string{
 		`(?:目标用户|目标人群|受众|面向用户)(?:是|为|:|：)?([^，,。；;\n]{2,44})`,
@@ -907,7 +1166,7 @@ func buildMobileRecognizedInfo(input SilkroadAgentAnalyzeInput) MobileRecognized
 		})})
 	}
 	if len(points) == 0 {
-		points = []string{"便携", "健康", "易清洗"}
+		points = inferSellingPoints(product, category)
 	}
 
 	return MobileRecognizedInfo{
@@ -921,10 +1180,17 @@ func buildMobileRecognizedInfo(input SilkroadAgentAnalyzeInput) MobileRecognized
 }
 
 func fallbackMobileAnalysisParagraphs(info MobileRecognizedInfo) []string {
+	riskFocus := "该商品后续合规分析将重点关注目标市场准入要求、必要认证、禁限售规则和广告敏感表达。\n\n"
+	if isFoodProduct(info.Product, info.Category) {
+		riskFocus = "该商品涉及食品销售场景，后续合规分析将重点关注配料表、过敏原提示、保质期、产地标识、食品准入与平台广告表达边界。\n\n"
+	} else if strings.Contains(info.Category, "食品接触") || strings.Contains(info.Product, "杯") {
+		riskFocus = "该商品涉及食品接触场景，后续合规分析将重点关注材质说明、食品接触认证、电池参数和充电安全描述。\n\n"
+	}
+
 	return []string{
 		"已接收到你的出海需求，正在从自然语言中提取商品、目标市场、平台、人群和核心卖点。\n\n",
-		fmt.Sprintf("识别到商品为%s，属于%s，目标市场为%s，主要投放平台为%s。\n\n", info.Product, info.Category, info.Market, info.Platform),
-		"该商品涉及食品接触场景，后续合规分析将重点关注杯体材质、食品接触认证、电池容量和充电方式。\n\n",
+		fmt.Sprintf("识别到商品为%s，属于%s，%s，主要投放平台为%s。\n\n", info.Product, info.Category, describeTargetMarketForAnalysis(info.Market), info.Platform),
+		riskFocus,
 		"接下来将基于合规边界，生成本地化营销方向、短视频脚本、数字人方案和投放建议。",
 	}
 }
@@ -958,7 +1224,132 @@ func inferCategory(product string) string {
 	if strings.Contains(product, "榨汁杯") || strings.Contains(product, "杯") {
 		return "小家电 / 食品接触用品"
 	}
+	if isFoodProduct(product, "") {
+		return "食品饮料 / 即食食品"
+	}
 	return "跨境电商商品"
+}
+
+func inferProductFromPrompt(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	product := extractPromptMatch(value, []string{
+		`(?:商品准入分析|商品|产品|品名|商品名称|产品名称)\s*[:：]\s*([^，,。；;\n]{1,28})`,
+		`^(?:帮我|请|麻烦)?(?:分析一下|分析|看看|测一下|识别一下|识别)?\s*([^，,。；;\n]{1,28}?)(?:卖到|卖|出口到|进入|面向|投放到|推广到|上架|发布到|做|去|给|给到|$)`,
+		`(?:我有|我们有|这是一款|这款|一款|一个|一种|商品是|产品是)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|想|计划|准备|主打|目标|卖到|出口|做|$)`,
+		`(?:销售|卖)([^，,。；;\n]{2,28}?)(?:，|,|。|；|;|到|去|$)`,
+	})
+	if product != "" {
+		return cleanupProductName(product)
+	}
+	for _, line := range strings.Split(value, "\n") {
+		line = cleanupProductName(line)
+		if line != "" && len([]rune(line)) <= 18 {
+			return line
+		}
+	}
+	return ""
+}
+
+func inferTargetMarketFromPrompt(value string) string {
+	market := extractPromptMatch(value, []string{
+		`(?:卖到|卖|出口到|进入|面向|投放到|推广到|去|给到)([^，,。；;\n]{1,24}?)(?:市场|用户|消费者|，|,|。|；|;|$)`,
+		`(?:目标市场|目标国家|国家|市场)(?:是|为|:|：)?([^，,。；;\n]{2,24})`,
+	})
+	if market != "" {
+		return cleanupTargetMarket(market)
+	}
+
+	markets := []string{
+		"美国", "英国", "加拿大", "澳大利亚", "德国", "法国", "意大利", "西班牙", "荷兰", "日本", "韩国",
+		"马来西亚", "新加坡", "泰国", "越南", "印尼", "印度尼西亚", "菲律宾", "印度", "墨西哥", "巴西",
+		"沙特", "阿联酋", "中东", "欧洲", "东南亚", "北美",
+	}
+	lowerValue := strings.ToLower(value)
+	for _, item := range markets {
+		if strings.Contains(lowerValue, strings.ToLower(item)) {
+			return item
+		}
+	}
+	return ""
+}
+
+func cleanupTargetMarket(value string) string {
+	value = cleanupExtractedChinese(value)
+	for _, platform := range []string{"TikTok", "Instagram Reels", "Instagram", "YouTube Shorts", "YouTube", "Shopee", "Lazada", "Amazon", "Temu", "eBay", "Facebook", "小红书", "抖音"} {
+		value = strings.ReplaceAll(value, platform, "")
+		value = strings.ReplaceAll(value, strings.ToLower(platform), "")
+	}
+	value = strings.TrimSuffix(value, "市场")
+	return cleanupExtractedChinese(value)
+}
+
+func isUnknownTargetMarket(value string) bool {
+	value = cleanupExtractedChinese(value)
+	if value == "" {
+		return true
+	}
+	return strings.Contains(value, "待补充") || strings.Contains(value, "待识别") || strings.Contains(value, "未明确")
+}
+
+func shouldDropImplicitTargetMarket(prompt string, market string) bool {
+	prompt = strings.TrimSpace(prompt)
+	market = cleanupTargetMarket(market)
+	if prompt == "" || market == "" || isUnknownTargetMarket(market) {
+		return false
+	}
+	return inferTargetMarketFromPrompt(prompt) == "" && !strings.Contains(prompt, market)
+}
+
+func describeTargetMarketForAnalysis(market string) string {
+	if isUnknownTargetMarket(market) {
+		return "目标市场暂未明确"
+	}
+	return fmt.Sprintf("目标市场为%s", cleanupTargetMarket(market))
+}
+
+func taskLocalizationDescription(market string) string {
+	if isUnknownTargetMarket(market) {
+		return "根据已明确的目标市场生成内容方向"
+	}
+	return fmt.Sprintf("生成符合%s用户习惯的内容方向", cleanupTargetMarket(market))
+}
+
+func inferSellingPoints(product string, category string) []string {
+	if isFoodProduct(product, category) {
+		return []string{"口味", "便捷", "场景化"}
+	}
+	if strings.Contains(product, "榨汁杯") || strings.Contains(product, "杯") {
+		return []string{"便携", "健康", "易清洗"}
+	}
+	return []string{"实用", "本地化", "易展示"}
+}
+
+func cleanupProductName(value string) string {
+	value = cleanupExtractedChinese(value)
+	value = strings.TrimPrefix(value, "一下")
+	tagPattern := regexp.MustCompile(`(?:生成本地化脚本|数字人口播方案|投放优化建议|商品准入分析)\s*[:：]?`)
+	parts := tagPattern.Split(value, 2)
+	if len(parts) > 0 {
+		value = parts[0]
+	}
+	value = strings.TrimPrefix(value, "分析")
+	value = strings.TrimPrefix(value, "识别")
+	value = strings.TrimPrefix(value, "检测")
+	return cleanupExtractedChinese(value)
+}
+
+func isFoodProduct(product string, category string) bool {
+	value := product + " " + category
+	foodKeywords := []string{"食品", "饮料", "零食", "即食", "餐", "鸡", "鸭", "肉", "鱼", "虾", "糕", "饼", "糖", "茶", "咖啡", "炸", "烤", "卤", "吃"}
+	for _, keyword := range foodKeywords {
+		if strings.Contains(value, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func cleanupExtractedChinese(value string) string {
@@ -972,6 +1363,102 @@ func stripReasoningSensitiveText(value string) string {
 		cleaned = strings.ReplaceAll(cleaned, word, "")
 	}
 	return cleaned
+}
+
+func fillFollowUpDefaults(result SilkroadAgentFollowUpResult, raw string, input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpResult {
+	if strings.TrimSpace(result.Summary) == "" {
+		result.Summary = summarizeFollowUpText(raw)
+	}
+	if strings.TrimSpace(result.Summary) == "" {
+		result.Summary = "已基于当前商品和原方案，整理出适合继续优化的补充建议。"
+	}
+	result.Summary = limitRunes(cleanupFollowUpText(result.Summary), 120)
+
+	result.AffectedModules = cleanStringList(result.AffectedModules)
+	if len(result.AffectedModules) == 0 {
+		result.AffectedModules = inferFollowUpModules(raw + " " + input.Question)
+	}
+
+	if strings.TrimSpace(result.Details.Compliance) == "" {
+		result.Details.Compliance = "继续避免绝对化、医疗化和未经证实的认证表达，并以目标市场实际准入材料为准。"
+	}
+	if strings.TrimSpace(result.Details.ContentStyle) == "" {
+		result.Details.ContentStyle = "内容语气应贴近目标人群日常表达，保留真实体验感，减少夸张承诺。"
+	}
+	if strings.TrimSpace(result.Details.VideoExpression) == "" {
+		result.Details.VideoExpression = "前 3 秒突出核心场景和可见卖点，中段用真实使用画面承接，不做过度功效演绎。"
+	}
+	if strings.TrimSpace(result.Details.Promotion) == "" {
+		result.Details.Promotion = "优先测试当前主平台短视频内容，结合完播率、点击率和评论问题继续迭代素材。"
+	}
+	result.Details.Compliance = limitRunes(cleanupFollowUpText(result.Details.Compliance), 96)
+	result.Details.ContentStyle = limitRunes(cleanupFollowUpText(result.Details.ContentStyle), 96)
+	result.Details.VideoExpression = limitRunes(cleanupFollowUpText(result.Details.VideoExpression), 96)
+	result.Details.Promotion = limitRunes(cleanupFollowUpText(result.Details.Promotion), 96)
+	return result
+}
+
+func inferFollowUpModules(text string) []string {
+	type moduleRule struct {
+		name     string
+		keywords []string
+	}
+	rules := []moduleRule{
+		{name: "市场策略", keywords: []string{"市场", "国家", "印尼", "印度尼西亚", "马来西亚", "东南亚", "中东", "目标用户"}},
+		{name: "内容风格", keywords: []string{"语气", "年轻", "口语", "风格", "内容", "本地化", "Z 世代", "Z世代"}},
+		{name: "投放建议", keywords: []string{"投放", "平台", "TikTok", "Instagram", "Reels", "完播率", "点击率"}},
+		{name: "合规风险", keywords: []string{"合规", "风险", "认证", "准入", "减肥", "治疗", "绝对化", "广告"}},
+	}
+	modules := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		for _, keyword := range rule.keywords {
+			if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
+				modules = append(modules, rule.name)
+				break
+			}
+		}
+	}
+	if len(modules) == 0 {
+		return []string{"市场策略", "内容风格", "投放建议", "合规风险"}
+	}
+	return modules
+}
+
+func summarizeFollowUpText(raw string) string {
+	text := cleanupFollowUpText(raw)
+	if text == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(text, func(r rune) bool {
+		return r == '。' || r == '！' || r == '!' || r == '\n'
+	})
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			return limitRunes(part, 120)
+		}
+	}
+	return limitRunes(text, 120)
+}
+
+func cleanupFollowUpText(value string) string {
+	value = stripReasoningSensitiveText(value)
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "```json")
+	value = strings.TrimPrefix(value, "```")
+	value = strings.TrimSuffix(value, "```")
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.Join(strings.Fields(value), " ")
+	return value
+}
+
+func limitRunes(value string, max int) string {
+	runes := []rune(strings.TrimSpace(value))
+	if max <= 0 || len(runes) <= max {
+		return string(runes)
+	}
+	return string(runes[:max]) + "…"
 }
 
 func waitOrDone(ctx context.Context, duration time.Duration) error {
@@ -1008,7 +1495,9 @@ func fillAgentDefaults(result SilkroadAgentResult, input SilkroadAgentInput, ima
 	if result.RecognizedInfo.Category == "" {
 		result.RecognizedInfo.Category = fallback.RecognizedInfo.Category
 	}
-	if result.RecognizedInfo.TargetMarket == "" {
+	if input.TargetMarket == "" && inferTargetMarketFromPrompt(input.RawPrompt) == "" {
+		result.RecognizedInfo.TargetMarket = fallback.RecognizedInfo.TargetMarket
+	} else if result.RecognizedInfo.TargetMarket == "" {
 		result.RecognizedInfo.TargetMarket = fallback.RecognizedInfo.TargetMarket
 	}
 	if result.RecognizedInfo.TargetPlatform == "" {
@@ -1153,6 +1642,18 @@ func buildFallbackAgentResult(input SilkroadAgentInput, errorMessage string) *Si
 	if input.MaterialSpec != "" {
 		missingInfo = []string{"认证或检测报告", "目标售价区间"}
 	}
+	isFood := isFoodProduct(productName, category)
+	if isFood {
+		missingInfo = []string{"配料表", "过敏原提示", "保质期", "产地/生产信息", "目标市场食品准入材料"}
+	}
+	localizationReason := "在目标市场信息不足时，先聚焦高频生活场景和明确卖点，可降低夸大宣传风险。"
+	localizationKeywords := []string{"portable", "daily use", "easy to use", "lifestyle"}
+	sceneSuggestions := []string{"开箱展示", "日常通勤", "办公室/宿舍", "使用前后对比但不夸大效果"}
+	if isFood {
+		localizationReason = "目标市场用户更容易被真实试吃、风味描述、价格场景和清晰食品标签信息吸引。"
+		localizationKeywords = []string{"taste test", "ready to eat", "snack time", "food review"}
+		sceneSuggestions = []string{"开箱试吃", "朋友聚餐", "夜宵场景", "便利餐食"}
+	}
 
 	return &SilkroadAgentResult{
 		RecognizedInfo: RecognizedInfo{
@@ -1166,14 +1667,14 @@ func buildFallbackAgentResult(input SilkroadAgentInput, errorMessage string) *Si
 		},
 		Overview: AgentOverview{
 			ComplianceRiskLevel:     "中风险",
-			MarketStrategy:          "先用安全表达验证市场兴趣，再逐步补齐认证材料与本地化素材。",
+			MarketStrategy:          ternaryString(isFood, "先补齐食品标签与准入信息，再生成本地化素材。", "先用安全表达验证市场兴趣，再逐步补齐认证材料与本地化素材。"),
 			RecommendedVideoStyle:   "生活场景化竖屏短视频",
 			RecommendedDigitalHuman: "亲和、可信、语速自然的本地化讲解型数字人",
 		},
 		Compliance: CompliancePlan{
 			Title:                "合规分析结果",
-			Summary:              "当前信息仍不足以形成确定结论，建议将页面表达控制在使用场景、材质说明和体验描述上，避免功效承诺、绝对安全、认证暗示等高风险表述。",
-			RiskTags:             []string{"信息缺口", "功效表达", "认证证明"},
+			Summary:              ternaryString(isFood, "当前信息仍不足以形成确定结论，建议补充配料表、过敏原、保质期、产地与食品准入材料，并避免健康功效或绝对化口味承诺。", "当前信息仍不足以形成确定结论，建议将页面表达控制在使用场景、材质说明和体验描述上，避免功效承诺、绝对安全、认证暗示等高风险表述。"),
+			RiskTags:             ternaryStringSlice(isFood, []string{"食品标签", "准入材料", "功效表达"}, []string{"信息缺口", "功效表达", "认证证明"}),
 			MissingInfo:          missingInfo,
 			Suggestions:          []string{"补充材质、规格、容量或成分信息。", "补充面向目标市场的检测报告、认证编号或合规声明。", "广告文案使用“适合/帮助/便于”等边界表达。"},
 			ForbiddenExpressions: []string{"100%安全", "永久有效", "官方认证", "治疗/治愈", "保证通过"},
@@ -1181,16 +1682,16 @@ func buildFallbackAgentResult(input SilkroadAgentInput, errorMessage string) *Si
 		},
 		Localization: Localization{
 			Direction:        "场景化种草 + 实用价值说明",
-			Reason:           "在目标市场信息不足时，先聚焦高频生活场景和明确卖点，可降低夸大宣传风险。",
-			Keywords:         []string{"portable", "daily use", "easy to use", "lifestyle"},
+			Reason:           localizationReason,
+			Keywords:         localizationKeywords,
 			Tone:             "自然、克制、可信",
-			SceneSuggestions: []string{"开箱展示", "日常通勤", "办公室/宿舍", "使用前后对比但不夸大效果"},
+			SceneSuggestions: sceneSuggestions,
 		},
 		Script: VideoScript{
 			Title:    "短视频脚本",
 			Duration: "20-25s",
 			Opening:  ScriptSegment{Time: "0-3s", Content: "用一个真实生活小问题切入，展示目标用户在日常场景中的痛点。"},
-			Middle:   ScriptSegment{Time: "3-20s", Content: "展示商品外观、核心卖点和使用步骤，强调便捷、材质说明和适用场景，避免绝对化承诺。"},
+			Middle:   ScriptSegment{Time: "3-20s", Content: ternaryString(isFood, "展示包装、色泽、口感反馈和食用场景，强调风味与便利性，避免绝对化或健康功效承诺。", "展示商品外观、核心卖点和使用步骤，强调便捷、材质说明和适用场景，避免绝对化承诺。")},
 			Ending:   ScriptSegment{Time: "20-25s", Content: "用温和 CTA 收尾，引导查看详情、收藏或评论提问。"},
 			Storyboard: []StoryboardShot{
 				{Shot: "镜头 1", Visual: "商品与使用场景同框", Voiceover: "日常遇到这个小麻烦吗？", Subtitle: "Make daily routines easier"},
@@ -1228,4 +1729,18 @@ func firstNonBlank(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func ternaryString(condition bool, yes string, no string) string {
+	if condition {
+		return yes
+	}
+	return no
+}
+
+func ternaryStringSlice(condition bool, yes []string, no []string) []string {
+	if condition {
+		return yes
+	}
+	return no
 }

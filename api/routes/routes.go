@@ -33,7 +33,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	aiService := services2.NewAIService(db, log)
 	localStoragePtr := localStorage.(*storage2.LocalStorage)
 	transferService := services2.NewResourceTransferService(db, log)
-	dramaHandler := handlers2.NewDramaHandler(db, cfg, log, nil)
+	notificationService := services2.NewNotificationService(db, log)
+	workbenchService := services2.NewWorkbenchService(db, log)
+	dramaHandler := handlers2.NewDramaHandler(db, cfg, log, nil, notificationService)
 	aiConfigHandler := handlers2.NewAIConfigHandler(db, cfg, log)
 	aiAssistHandler := handlers2.NewAIAssistHandler(db, cfg, log)
 	scriptGenHandler := handlers2.NewScriptGenerationHandler(db, cfg, log)
@@ -69,7 +71,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	socialBindingHandler := handlers2.NewSocialBindingHandler(db, log)
 	distributionService := services2.NewDistributionService(db, cfg, log)
 	distributionHandler := handlers2.NewDistributionHandler(distributionService, log)
-	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log)
+	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log, notificationService)
+	notificationHandler := handlers2.NewNotificationHandler(notificationService, log)
+	workbenchHandler := handlers2.NewWorkbenchHandler(workbenchService, log)
 
 	api := r.Group("/api/v1")
 	{
@@ -109,8 +113,26 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 
 		agent := api.Group("/agent")
 		{
+			agent.POST("/extract", silkroadAgentHandler.Extract)
 			agent.POST("/generate", silkroadAgentHandler.Generate)
 			agent.POST("/analyze", silkroadAgentHandler.Analyze)
+			agent.POST("/follow-up", silkroadAgentHandler.FollowUp)
+		}
+
+		workbench := api.Group("/workbench")
+		{
+			workbench.GET("/summary", workbenchHandler.Summary)
+		}
+
+		notifications := api.Group("/notifications")
+		{
+			notifications.GET("", notificationHandler.List)
+			notifications.POST("", notificationHandler.Create)
+			notifications.GET("/unread-count", notificationHandler.UnreadCount)
+			notifications.GET("/stream", notificationHandler.Stream)
+			notifications.PATCH("/read-all", notificationHandler.MarkAllRead)
+			notifications.PATCH("/:id/read", notificationHandler.MarkRead)
+			notifications.DELETE("/:id", notificationHandler.Dismiss)
 		}
 
 		// 角色库路由
