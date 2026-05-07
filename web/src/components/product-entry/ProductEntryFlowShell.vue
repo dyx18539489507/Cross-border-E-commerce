@@ -5,9 +5,12 @@
         <div class="product-entry-flow-header__left">
           <button type="button" class="product-entry-flow-brand" aria-label="返回首页" @click="router.push('/')">
             <span class="product-entry-flow-brand__mark">
-              <img :src="brandMark" alt="" />
+              <img :src="brandLogo" alt="" />
             </span>
-            <strong>数字丝路</strong>
+            <span class="product-entry-flow-brand__copy">
+              <strong>数字丝路</strong>
+              <small>Digital Silk Road</small>
+            </span>
           </button>
 
           <nav class="product-entry-flow-nav" aria-label="主导航">
@@ -40,6 +43,10 @@
           <section class="product-entry-flow-head">
             <h1 class="product-entry-flow-head__title">商品信息录入</h1>
             <p class="product-entry-flow-head__subtitle">填写商品基本信息，开启智能合规检测与内容生成流程</p>
+          </section>
+
+          <section v-if="hasAgentPrefill" class="product-entry-flow-prefill">
+            已根据丝路 Agent 分析结果预填，您可以继续补充或修改
           </section>
 
           <section class="product-entry-flow-steps" aria-label="步骤进度">
@@ -88,7 +95,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { preloadRouteByPath } from '@/router'
 import NotificationBell from '@/components/common/NotificationBell.vue'
-import brandMark from '@/assets/figma/product-entry/brand-mark.svg'
+import { getProductDraft } from '@/utils/productEntryDraft'
 import stepBasicIcon from '@/assets/figma/product-entry/step-basic.svg'
 import stepCompleteIcon from '@/assets/figma/product-entry/step-complete.svg'
 import stepDetailIcon from '@/assets/figma/product-entry/step-detail.svg'
@@ -101,6 +108,8 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const brandLogo = '/logo_circle.png'
+const hasAgentPrefill = computed(() => getProductDraft()?.source === 'agent')
 
 const navItems = [
   { label: '工作台', path: '/dramas', active: false, width: '66px' },
@@ -191,25 +200,43 @@ const handleNavClick = (path: string) => {
 }
 
 .product-entry-flow-brand__mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0a2463 0%, #06b6d4 50%, #7c3aed 100%);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.34);
 }
 
 .product-entry-flow-brand__mark img {
-  width: 20px;
-  height: 20px;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
   display: block;
 }
 
-.product-entry-flow-brand strong {
+.product-entry-flow-brand__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.product-entry-flow-brand__copy strong {
   font-size: 16px;
   font-weight: 700;
-  line-height: 24px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.product-entry-flow-brand__copy small {
+  color: #62748e;
+  font-size: 11px;
+  line-height: 14px;
   white-space: nowrap;
 }
 
@@ -277,6 +304,7 @@ const handleNavClick = (path: string) => {
 }
 
 .product-entry-flow-head,
+.product-entry-flow-prefill,
 .product-entry-flow-steps {
   width: 960px;
   margin-inline: auto;
@@ -297,6 +325,18 @@ const handleNavClick = (path: string) => {
   font-size: 16px;
   font-weight: 400;
   line-height: 24px;
+}
+
+.product-entry-flow-prefill {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid rgba(6, 182, 212, 0.24);
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1), rgba(124, 58, 237, 0.08));
+  color: #0a2463;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .product-entry-flow-steps {
@@ -411,6 +451,7 @@ const handleNavClick = (path: string) => {
   }
 
   .product-entry-flow-head,
+  .product-entry-flow-prefill,
   .product-entry-flow-steps {
     width: 100%;
   }

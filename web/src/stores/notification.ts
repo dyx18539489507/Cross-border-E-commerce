@@ -32,8 +32,8 @@ export const useNotificationStore = defineStore('notification', () => {
           items.value = response.items || []
           unreadCount.value = Number(response.unreadCount || 0)
         }
-      } catch (error: any) {
-        errorMessage.value = error?.message || '通知加载失败'
+      } catch {
+        errorMessage.value = ''
       } finally {
         loading.value = false
         loadPromise = null
@@ -76,9 +76,8 @@ export const useNotificationStore = defineStore('notification', () => {
 
     try {
       await notificationAPI.markAllRead()
-    } catch (error: any) {
-      errorMessage.value = error?.message || '全部已读同步失败'
-      throw error
+    } catch {
+      errorMessage.value = ''
     }
   }
 

@@ -126,13 +126,9 @@ const form = reactive<ProductEntryTargetMarket>({
 
 const persistDraft = () => {
   writeProductEntryDraft({
-    targetMarket: {
-      marketCode: form.marketCode,
-      marketName: form.marketName,
-      marketEmoji: form.marketEmoji,
-      platform: form.platform,
-      marketingGoals: [...form.marketingGoals]
-    }
+    targetMarket: form.marketName,
+    targetPlatform: form.platform,
+    marketingGoal: [...form.marketingGoals]
   })
 
   const createDraft = buildCreateDramaDraftFromProductEntry()
@@ -168,21 +164,26 @@ const toggleMarketingGoal = (goal: string) => {
 
 const restoreDraft = () => {
   const draft = readProductEntryDraft()
-  const saved = draft.targetMarket
-  const savedMarket = marketOptions.find((market) => market.code === saved.marketCode)
+  const savedMarket = marketOptions.find((market) => {
+    return market.code === draft.targetMarket || market.name === draft.targetMarket
+  })
 
   if (savedMarket) {
     form.marketCode = savedMarket.code
     form.marketName = savedMarket.name
     form.marketEmoji = savedMarket.emoji
+  } else if (draft.targetMarket.trim()) {
+    form.marketCode = draft.targetMarket
+    form.marketName = draft.targetMarket
+    form.marketEmoji = ''
   }
 
-  if (typeof saved.platform === 'string' && saved.platform.trim()) {
-    form.platform = saved.platform
+  if (draft.targetPlatform.trim()) {
+    form.platform = draft.targetPlatform
   }
 
-  if (Array.isArray(saved.marketingGoals)) {
-    form.marketingGoals = saved.marketingGoals.filter((goal): goal is string => typeof goal === 'string')
+  if (Array.isArray(draft.marketingGoal)) {
+    form.marketingGoals = draft.marketingGoal.filter((goal): goal is string => typeof goal === 'string')
   }
 
   persistDraft()

@@ -51,12 +51,9 @@
           </div>
         </article>
 
-        <p v-if="!store.loading && store.visibleItems.length === 0" class="notification-bell__empty">
-          暂无新的消息
-        </p>
         <p v-if="store.loading && store.visibleItems.length === 0" class="notification-bell__empty">正在加载消息...</p>
-        <p v-else-if="store.errorMessage" class="notification-bell__empty notification-bell__empty--error">
-          {{ store.errorMessage }}
+        <p v-else-if="store.visibleItems.length === 0" class="notification-bell__empty">
+          暂无新的消息
         </p>
       </div>
     </section>

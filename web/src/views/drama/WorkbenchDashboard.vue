@@ -59,7 +59,7 @@ const brandLogo = '/logo_circle.png'
 
 const navigationItems: NavItem[] = [
   { label: '工作台', path: '/dramas', width: 66 },
-  { label: '商品录入', path: '/dramas/create', width: 80 },
+  { label: '商品录入', path: '/dramas/create?source=manual', width: 80 },
   { label: '合规分析', path: '/compliance', width: 80 },
   { label: '脚本/分镜', path: '/workspace/script', width: 92 },
   { label: '内容创作', path: '/workspace/content', width: 80 },
@@ -106,7 +106,7 @@ const quickActions: QuickAction[] = [
   {
     label: '录入新商品',
     icon: quickBagIcon,
-    path: '/dramas/create',
+    path: '/dramas/create?source=manual',
     gradient: 'linear-gradient(135deg, #2b7fff 0%, #00b8db 100%)'
   },
   {

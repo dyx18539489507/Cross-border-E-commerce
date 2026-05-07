@@ -45,6 +45,10 @@
             <p class="product-entry-head__subtitle">填写商品基本信息，开启智能合规检测与内容生成流程</p>
           </section>
 
+          <section v-if="hasAgentPrefill" class="product-entry-prefill">
+            已根据丝路 Agent 分析结果预填，您可以继续补充或修改
+          </section>
+
           <section class="product-entry-steps" aria-label="步骤进度">
             <div
               v-for="(step, index) in steps"
@@ -276,13 +280,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { preloadRouteByPath } from '@/router'
 import { notificationAPI } from '@/api/notification'
 import NotificationBell from '@/components/common/NotificationBell.vue'
 import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
-import { PRODUCT_ENTRY_BASIC_DRAFT_KEY, saveProductEntryBasicInfo } from '@/utils/productEntryDraft'
+import {
+  readProductEntryBasicInfo,
+  readProductEntryDraft,
+  saveProductEntryBasicInfo,
+  startManualProductDraft
+} from '@/utils/productEntryDraft'
 import type { CreateDramaRequest } from '@/types/drama'
+import type { ProductEntryBasicInfo } from '@/utils/productEntryDraft'
 import arrowRightIcon from '@/assets/figma/product-entry/arrow-right.svg'
 import chevronDownIcon from '@/assets/figma/product-entry/chevron-down.svg'
 import stepBasicIcon from '@/assets/figma/product-entry/step-basic.svg'
@@ -290,14 +300,6 @@ import stepCompleteIcon from '@/assets/figma/product-entry/step-complete.svg'
 import stepDetailIcon from '@/assets/figma/product-entry/step-detail.svg'
 import stepMarketIcon from '@/assets/figma/product-entry/step-market.svg'
 import uploadIcon from '@/assets/figma/product-entry/upload.svg'
-
-interface ProductEntryDraft {
-  title: string
-  category: string
-  categoryPrimary?: string
-  categorySecondary?: string
-  brand: string
-}
 
 interface CategorySearchResult {
   primary: string
@@ -308,6 +310,7 @@ const MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png'])
 
 const router = useRouter()
+const route = useRoute()
 const brandLogo = '/logo_circle.png'
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const categorySearchInputRef = ref<HTMLInputElement | null>(null)
@@ -317,13 +320,15 @@ const imageName = ref('')
 const isDragOver = ref(false)
 const isCategoryCascaderOpen = ref(false)
 const categorySearchKeyword = ref('')
+const hasAgentPrefill = ref(false)
 
 const form = reactive({
   title: '',
   category: '',
   categoryPrimary: '',
   categorySecondary: '',
-  brand: ''
+  brand: '',
+  productImage: ''
 })
 
 const errors = reactive({
@@ -524,12 +529,13 @@ const persistStepDraft = () => {
     return
   }
 
-  const draft: ProductEntryDraft = {
+  const draft: ProductEntryBasicInfo = {
     title: form.title,
     category: getResolvedCategory(),
     categoryPrimary: form.categoryPrimary,
     categorySecondary: form.categorySecondary,
-    brand: form.brand
+    brand: form.brand,
+    productImage: form.productImage
   }
 
   saveProductEntryBasicInfo(draft)
@@ -541,22 +547,21 @@ const restoreStepDraft = () => {
     return
   }
 
-  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
-  if (!raw) {
-    return
-  }
+  const productDraft = readProductEntryDraft()
+  const draft = readProductEntryBasicInfo()
+  hasAgentPrefill.value = productDraft.source === 'agent'
+  form.title = typeof draft.title === 'string' ? draft.title : ''
+  const savedCategory = typeof draft.category === 'string' ? draft.category : ''
+  const [savedPrimary = '', savedSecondary = ''] = savedCategory.split('/').map((item) => item.trim())
+  form.categoryPrimary = typeof draft.categoryPrimary === 'string' ? draft.categoryPrimary : savedPrimary
+  form.categorySecondary = typeof draft.categorySecondary === 'string' ? draft.categorySecondary : savedSecondary
+  form.category = getResolvedCategory()
+  form.brand = typeof draft.brand === 'string' ? draft.brand : ''
+  form.productImage = typeof draft.productImage === 'string' ? draft.productImage : ''
 
-  try {
-    const draft = JSON.parse(raw) as Partial<ProductEntryDraft>
-    form.title = typeof draft.title === 'string' ? draft.title : ''
-    const savedCategory = typeof draft.category === 'string' ? draft.category : ''
-    const [savedPrimary = '', savedSecondary = ''] = savedCategory.split('/').map((item) => item.trim())
-    form.categoryPrimary = typeof draft.categoryPrimary === 'string' ? draft.categoryPrimary : savedPrimary
-    form.categorySecondary = typeof draft.categorySecondary === 'string' ? draft.categorySecondary : savedSecondary
-    form.category = getResolvedCategory()
-    form.brand = typeof draft.brand === 'string' ? draft.brand : ''
-  } catch {
-    window.sessionStorage.removeItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
+  if (form.productImage) {
+    imagePreviewUrl.value = form.productImage
+    imageName.value = productDraft.source === 'agent' ? 'Agent 商品图片' : '已保存商品图片'
   }
 }
 
@@ -565,7 +570,9 @@ const revokeImagePreview = () => {
     return
   }
 
-  URL.revokeObjectURL(imagePreviewUrl.value)
+  if (imagePreviewUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(imagePreviewUrl.value)
+  }
   imagePreviewUrl.value = ''
 }
 
@@ -627,15 +634,24 @@ const validateVisibleFields = () => {
     valid = false
   }
 
-  if (!form.categoryPrimary.trim() || !form.categorySecondary.trim()) {
-    errors.category = '请选择完整的一级和二级商品品类'
+  if (!getResolvedCategory().trim()) {
+    errors.category = '请选择或确认商品品类'
     valid = false
   }
 
   return valid
 }
 
-const applySelectedFile = (file: File) => {
+const readFileAsDataUrl = (file: File) => {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+const applySelectedFile = async (file: File) => {
   if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
     ElMessage.error('仅支持 JPG、PNG 格式的图片')
     return
@@ -646,9 +662,16 @@ const applySelectedFile = (file: File) => {
     return
   }
 
-  revokeImagePreview()
-  imagePreviewUrl.value = URL.createObjectURL(file)
-  imageName.value = file.name
+  try {
+    const dataUrl = await readFileAsDataUrl(file)
+    revokeImagePreview()
+    imagePreviewUrl.value = dataUrl
+    form.productImage = dataUrl
+    imageName.value = file.name
+    persistStepDraft()
+  } catch {
+    ElMessage.error('图片读取失败，请重新选择')
+  }
 }
 
 const openFileDialog = () => {
@@ -662,7 +685,7 @@ const handleFileChange = (event: Event) => {
     return
   }
 
-  applySelectedFile(file)
+  void applySelectedFile(file)
   target.value = ''
 }
 
@@ -673,12 +696,14 @@ const handleDrop = (event: DragEvent) => {
     return
   }
 
-  applySelectedFile(file)
+  void applySelectedFile(file)
 }
 
 const removeImage = () => {
   imageName.value = ''
+  form.productImage = ''
   revokeImagePreview()
+  persistStepDraft()
 }
 
 const handleNextStep = () => {
@@ -720,6 +745,9 @@ const handleDocumentClick = (event: MouseEvent) => {
 }
 
 onMounted(() => {
+  if (route.query.source === 'manual') {
+    startManualProductDraft()
+  }
   restoreStepDraft()
   document.addEventListener('click', handleDocumentClick)
 })
@@ -1136,6 +1164,19 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 400;
   line-height: 24px;
+}
+
+.product-entry-prefill {
+  width: 960px;
+  margin: 16px auto 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(6, 182, 212, 0.24);
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1), rgba(124, 58, 237, 0.08));
+  color: #0a2463;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .product-entry-steps {
@@ -1704,6 +1745,7 @@ onBeforeUnmount(() => {
   }
 
   .product-entry-head,
+  .product-entry-prefill,
   .product-entry-steps,
   .product-entry-card {
     width: 100%;

@@ -59,6 +59,34 @@
           </div>
         </section>
 
+        <section class="product-context-card">
+          <div class="product-context-card__header">
+            <h3>商品数据源</h3>
+            <span>{{ reportProduct.source === 'agent' ? 'Agent 预填' : '手动录入' }}</span>
+          </div>
+
+          <div class="product-context-grid">
+            <article v-for="item in productContextItems" :key="item.label" class="product-context-item">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </article>
+          </div>
+
+          <div v-if="reportProduct.coreSellingPoints.length" class="product-context-block">
+            <span>核心卖点</span>
+            <div class="product-context-tags">
+              <strong v-for="point in reportProduct.coreSellingPoints" :key="point">{{ point }}</strong>
+            </div>
+          </div>
+
+          <div v-if="agentComplianceHints.length" class="product-context-block">
+            <span>Agent 合规提示</span>
+            <ul class="product-context-hints">
+              <li v-for="hint in agentComplianceHints" :key="hint">{{ hint }}</li>
+            </ul>
+          </div>
+        </section>
+
         <section class="risk-overview-card">
           <div class="risk-overview-card__copy">
             <div class="risk-overview-card__title-row">
@@ -183,15 +211,10 @@ import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import { buildCreateDramaPayload } from '@/utils/compliance'
 import { clearCreateDramaDraft, peekCreateDramaDraft } from '@/utils/createDramaDraft'
 import { buildEpisodeStagePath, saveEpisodeWorkflowContext } from '@/utils/episodeWorkflowContext'
-import { PRODUCT_ENTRY_BASIC_DRAFT_KEY, readProductEntryDraft } from '@/utils/productEntryDraft'
+import { buildCreateDramaDraftFromProductEntry, getProductDraft } from '@/utils/productEntryDraft'
+import type { ProductEntryDraft, ProductEntrySource } from '@/types/product'
 
 type DetailTone = 'warning' | 'success' | 'info'
-
-interface ProductEntryDraft {
-  title: string
-  category: string
-  brand: string
-}
 
 interface ReportSection {
   title: string
@@ -220,50 +243,73 @@ const navItems = [
 ] as const
 
 const reportMeta = reactive({
-  detectedAt: '2026-04-18 14:30',
+  detectedAt: '',
   score: 72
 })
 
 const reportProduct = reactive({
-  title: '智能手表 Pro',
-  category: '电子产品',
-  market: '🇺🇸 美国'
+  source: 'manual' as ProductEntrySource,
+  title: '待录入商品',
+  category: '待补充类目',
+  market: '目标市场待补充',
+  platform: '目标平台待补充',
+  materialSpec: '待补充',
+  usageScenario: '待补充',
+  coreSellingPoints: [] as string[],
+  agentComplianceHints: [] as string[]
 })
 
-const reportSections: ReportSection[] = [
+const productSubtitle = computed(() => {
+  return `${reportProduct.category} · 目标市场: ${reportProduct.market} · 目标平台: ${reportProduct.platform}`
+})
+
+const productContextItems = computed(() => [
+  { label: '商品名称', value: reportProduct.title },
+  { label: '商品类目', value: reportProduct.category },
+  { label: '目标市场', value: reportProduct.market },
+  { label: '目标平台', value: reportProduct.platform },
+  { label: '材质/成分', value: reportProduct.materialSpec },
+  { label: '使用场景', value: reportProduct.usageScenario }
+])
+
+const agentComplianceHints = computed(() => reportProduct.agentComplianceHints.filter(Boolean).slice(0, 6))
+
+const reportSections = computed<ReportSection[]>(() => [
   {
     title: '产品安全认证',
-    riskLevel: '中',
+    riskLevel: reportProduct.source === 'agent' && agentComplianceHints.value.length ? '中' : '待评估',
     badge: '⚠ 需注意',
     tone: 'warning',
     items: [
       {
-        title: 'FCC认证',
-        description: '需要FCC认证，适用于所有无线电子设备',
+        title: '目标市场准入',
+        description: `${reportProduct.title}计划进入${reportProduct.market}，需结合${reportProduct.category}确认当地准入、认证和平台限制。`,
         icon: 'warning'
       },
       {
-        title: 'UL认证',
-        description: '建议获取UL认证以提升产品信誉',
+        title: '平台规则',
+        description: `${reportProduct.platform}内容和上架表达需要与商品材质、卖点及实际证明材料保持一致。`,
         icon: 'info'
       }
     ]
   },
   {
     title: '材料与成分',
-    riskLevel: '低',
-    badge: '✓ 通过',
-    tone: 'success',
+    riskLevel: reportProduct.materialSpec === '待补充' ? '中' : '低',
+    badge: reportProduct.materialSpec === '待补充' ? '⚠ 待补充' : '✓ 已记录',
+    tone: reportProduct.materialSpec === '待补充' ? 'warning' : 'success',
     items: [
       {
-        title: 'RoHS指令',
-        description: '材料符合欧盟RoHS有害物质限制',
-        icon: 'success'
+        title: '材质/成分',
+        description: reportProduct.materialSpec === '待补充' ? '尚未填写材质或成分，建议补充后再生成最终合规结论。' : reportProduct.materialSpec,
+        icon: reportProduct.materialSpec === '待补充' ? 'warning' : 'success'
       },
       {
-        title: 'REACH法规',
-        description: '未检测到REACH高度关注物质',
-        icon: 'success'
+        title: '核心卖点边界',
+        description: reportProduct.coreSellingPoints.length
+          ? `当前卖点：${reportProduct.coreSellingPoints.join('、')}。建议避免绝对化、医疗化或无法证明的承诺。`
+          : '尚未填写核心卖点，建议补充真实、可证明的卖点。',
+        icon: reportProduct.coreSellingPoints.length ? 'info' : 'warning'
       }
     ]
   },
@@ -274,78 +320,65 @@ const reportSections: ReportSection[] = [
     tone: 'warning',
     items: [
       {
-        title: '能效标签',
-        description: '需要添加能效等级标签',
+        title: '标签信息',
+        description: `建议围绕${reportProduct.market}补充包装语言、规格参数、产地和必要警示。`,
         icon: 'warning'
       },
       {
-        title: '警告标识',
-        description: '已包含必要的警告信息',
-        icon: 'success'
+        title: '使用场景',
+        description: reportProduct.usageScenario === '待补充' ? '尚未填写使用场景，后续脚本生成可能缺少稳定上下文。' : reportProduct.usageScenario,
+        icon: reportProduct.usageScenario === '待补充' ? 'warning' : 'success'
       }
     ]
   },
   {
-    title: '知识产权',
-    riskLevel: '低',
-    badge: 'ℹ 建议',
+    title: 'Agent 合规提示',
+    riskLevel: agentComplianceHints.value.length ? '中' : '待补充',
+    badge: agentComplianceHints.value.length ? 'ℹ 已同步' : 'ℹ 无 Agent 提示',
     tone: 'info',
     items: [
       {
-        title: '商标检查',
-        description: '建议进行商标查重以避免侵权风险',
+        title: 'Agent 提示',
+        description: agentComplianceHints.value[0] || '当前商品来自手动录入或暂无 Agent 合规提示。',
         icon: 'info'
       },
       {
-        title: '专利检查',
-        description: '建议检查是否存在相关专利',
+        title: '后续处理',
+        description: '合规分析将优先使用统一商品数据，并通过前端 adapter 转换为现有合规接口字段。',
         icon: 'info'
       }
     ]
   }
-]
+])
 
-const aiSuggestions = [
-  '申请FCC认证，预计费用$2,000-$5,000，周期4-6周',
-  '添加能效标签，可通过我们的合作实验室快速获取',
-  '进行商标查重，避免潜在的知识产权纠纷',
-  '考虑获取UL认证以提升品牌竞争力'
-]
-
-const productSubtitle = computed(() => `${reportProduct.category} · 目标市场: ${reportProduct.market}`)
+const aiSuggestions = computed(() => {
+  const defaults = [
+    `${reportProduct.market}上架前确认${reportProduct.category}的准入、标签和认证要求`,
+    '补充材质/成分、规格、适用人群和证明材料，降低后续内容生成风险',
+    '核心卖点使用可证明表达，避免100%保证、治疗、官方认证等高风险话术',
+    `针对${reportProduct.platform}准备本地化标题、卖点和素材审核清单`
+  ]
+  return [...agentComplianceHints.value, ...defaults].slice(0, 6)
+})
 
 const restoreDraft = () => {
   if (typeof window === 'undefined') {
     return
   }
 
-  const flowDraft = readProductEntryDraft()
-  if (typeof flowDraft.basicInfo.title === 'string' && flowDraft.basicInfo.title.trim()) {
-    reportProduct.title = flowDraft.basicInfo.title.trim()
-  }
-  if (typeof flowDraft.basicInfo.category === 'string' && flowDraft.basicInfo.category.trim()) {
-    reportProduct.category = flowDraft.basicInfo.category.trim()
-  }
-  if (typeof flowDraft.targetMarket.marketName === 'string' && flowDraft.targetMarket.marketName.trim()) {
-    reportProduct.market = `${flowDraft.targetMarket.marketEmoji || ''} ${flowDraft.targetMarket.marketName}`.trim()
-  }
+  const draft = getProductDraft()
+  if (!draft) return
 
-  const raw = window.sessionStorage.getItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
-  if (!raw) {
-    return
-  }
-
-  try {
-    const draft = JSON.parse(raw) as Partial<ProductEntryDraft>
-    if (typeof draft.title === 'string' && draft.title.trim()) {
-      reportProduct.title = draft.title.trim()
-    }
-    if (typeof draft.category === 'string' && draft.category.trim()) {
-      reportProduct.category = draft.category.trim()
-    }
-  } catch {
-    window.sessionStorage.removeItem(PRODUCT_ENTRY_BASIC_DRAFT_KEY)
-  }
+  reportProduct.source = draft.source
+  reportProduct.title = draft.productName || '待录入商品'
+  reportProduct.category = draft.category || '待补充类目'
+  reportProduct.market = draft.targetMarket || '目标市场待补充'
+  reportProduct.platform = draft.targetPlatform || '目标平台待补充'
+  reportProduct.materialSpec = draft.materialSpec || '待补充'
+  reportProduct.usageScenario = draft.usageScenario || '待补充'
+  reportProduct.coreSellingPoints = [...draft.coreSellingPoints]
+  reportProduct.agentComplianceHints = [...(draft.complianceHints || [])]
+  reportMeta.detectedAt = formatDateTime(new Date(draft.updatedAt || Date.now()))
 }
 
 const getItemIcon = (tone: DetailTone) => {
@@ -381,7 +414,8 @@ const formatDateTime = (date: Date) => {
 const handleContinue = async () => {
   if (creatingFlow.value) return
 
-  const draft = peekCreateDramaDraft()
+  const productDraft = getProductDraft()
+  const draft = buildCreateDramaDraftFromProductEntry(productDraft) || peekCreateDramaDraft()
   if (!draft) {
     ElMessage.warning('未找到商品录入信息，请先返回商品录入页完善资料')
     return
@@ -584,8 +618,8 @@ const handleExportPdf = () => {
   const metaFont = `500 20px ${fontFamily}`
 
   ctx.font = bodyFont
-  const suggestionLines = aiSuggestions.map((item) => splitWrappedLines(ctx, item, contentWidth - 36))
-  const sectionLines = reportSections.map((section) => ({
+  const suggestionLines = aiSuggestions.value.map((item) => splitWrappedLines(ctx, item, contentWidth - 36))
+  const sectionLines = reportSections.value.map((section) => ({
     ...section,
     items: section.items.map((item) => ({
       ...item,
@@ -708,6 +742,7 @@ const handleExportPdf = () => {
 }
 
 onMounted(() => {
+  reportMeta.detectedAt = formatDateTime(new Date())
   restoreDraft()
 })
 </script>
@@ -957,6 +992,7 @@ onMounted(() => {
 }
 
 .product-summary-card,
+.product-context-card,
 .detail-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -1050,6 +1086,112 @@ onMounted(() => {
   line-height: 24px;
   font-weight: 500;
   color: #0a2463;
+}
+
+.product-context-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.product-context-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.product-context-card__header h3 {
+  margin: 0;
+  color: #0a2463;
+  font-family: var(--compliance-heading-font);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+.product-context-card__header span {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(6, 182, 212, 0.1);
+  color: #0891b2;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.product-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.product-context-item {
+  min-height: 74px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.product-context-item span,
+.product-context-block > span {
+  color: #62748e;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.product-context-item strong {
+  color: #0a2463;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.product-context-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.product-context-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.product-context-tags strong {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.09);
+  color: #7c3aed;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.product-context-hints {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.product-context-hints li {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #7c2d12;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .risk-overview-card {
@@ -1445,6 +1587,7 @@ onMounted(() => {
 @media (max-width: 920px) {
   .detail-card__header,
   .product-summary-card,
+  .product-context-card__header,
   .risk-overview-card {
     flex-direction: column;
     align-items: flex-start;
@@ -1458,6 +1601,10 @@ onMounted(() => {
   .detail-card__status {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .product-context-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .compliance-actions {
@@ -1502,9 +1649,14 @@ onMounted(() => {
   }
 
   .product-summary-card,
+  .product-context-card,
   .risk-overview-card,
   .ai-advice-card {
     padding: 24px 20px;
+  }
+
+  .product-context-grid {
+    grid-template-columns: 1fr;
   }
 
   .detail-card__header,

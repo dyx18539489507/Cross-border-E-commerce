@@ -152,9 +152,16 @@
                 </button>
               </div>
 
-              <button type="button" class="agent-input-card__action" :disabled="agentStarting" @click="openAgentPage">
+              <button
+                type="button"
+                class="agent-input-card__action"
+                :disabled="agentStarting"
+                @pointerenter="preloadRouteByPath('/agent/transition')"
+                @focus="preloadRouteByPath('/agent/transition')"
+                @click="openAgentPage"
+              >
                 <Lightning class="agent-input-card__action-icon" aria-hidden="true" />
-                <span>{{ agentStarting ? '识别中...' : '启动丝路 Agent' }}</span>
+                <span>{{ agentStarting ? '分析中' : '启动丝路 Agent' }}</span>
                 <ArrowRight class="agent-input-card__action-icon" aria-hidden="true" />
               </button>
             </article>
@@ -261,6 +268,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { preloadRouteByPath } from '@/router'
 import {
   ArrowRight,
   CircleCheck,
@@ -275,7 +283,6 @@ import {
   UploadFilled,
   User
 } from '@element-plus/icons-vue'
-import { agentAPI } from '@/api/agent'
 import { MarketingFooter } from '@/components/common'
 import type { AgentInput } from '@/types/agent'
 import { clearAgentResult, saveAgentInput, saveAgentUserInput } from '@/utils/agentStorage'
@@ -424,7 +431,7 @@ const testimonials = [
 ]
 
 const createProject = () => {
-  router.push('/dramas/create')
+  router.push({ path: '/dramas/create', query: { source: 'manual' } })
 }
 
 const openProductPage = () => {
@@ -449,7 +456,7 @@ const openAgentPage = async () => {
 
   agentStarting.value = true
   const localExtracted = extractAgentInputFromPrompt(agentPrompt.value)
-  const draft: AgentInput = {
+  const input: AgentInput = {
     requestId: createAgentRequestId(),
     ...localExtracted,
     rawPrompt: agentPrompt.value.trim(),
@@ -457,22 +464,11 @@ const openAgentPage = async () => {
   }
 
   try {
-    const extracted = await extractAgentInput(draft)
-    const input = mergeAgentInput(extracted, draft)
-    if (!localExtracted.targetMarket) {
-      input.targetMarket = ''
-    }
-
-    if (!input.productName?.trim()) {
-      agentPromptError.value = '我还没识别到商品名称，请在描述里补充商品名，例如“炸子鸡”。'
-      agentPromptTextarea.value?.focus()
-      return
-    }
-
+    preloadRouteByPath('/agent/transition')
     saveAgentInput(input)
     saveAgentUserInput(input.rawPrompt || defaultAgentUserInput)
     clearAgentResult()
-    router.push('/agent/transition')
+    await router.push('/agent/transition')
   } finally {
     agentStarting.value = false
   }
@@ -486,28 +482,6 @@ const clearAgentPromptError = () => {
     agentPromptError.value = ''
   }
 }
-
-const extractAgentInput = async (draft: AgentInput) => {
-  try {
-    return await agentAPI.extract(draft)
-  } catch {
-    return draft
-  }
-}
-
-const mergeAgentInput = (extracted: AgentInput, draft: AgentInput): AgentInput => ({
-  requestId: draft.requestId || extracted.requestId || createAgentRequestId(),
-  rawPrompt: draft.rawPrompt || extracted.rawPrompt || agentPrompt.value.trim(),
-  imageDataUrl: draft.imageDataUrl || extracted.imageDataUrl || '',
-  productName: extracted.productName || draft.productName || '',
-  category: extracted.category || draft.category || '',
-  targetMarket: extracted.targetMarket || draft.targetMarket || '',
-  targetPlatform: extracted.targetPlatform || draft.targetPlatform || '',
-  targetAudience: extracted.targetAudience || draft.targetAudience || '',
-  coreSellingPoints: extracted.coreSellingPoints?.length ? extracted.coreSellingPoints : draft.coreSellingPoints || [],
-  materialSpec: extracted.materialSpec || draft.materialSpec || '',
-  usageScenario: extracted.usageScenario || draft.usageScenario || ''
-})
 
 const parseAgentSellingPoints = (value: string) => {
   return value

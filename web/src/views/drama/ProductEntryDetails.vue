@@ -26,6 +26,18 @@
           <p v-if="errors.description" class="field-block__error">{{ errors.description }}</p>
         </div>
 
+        <div class="field-block">
+          <label class="field-block__label" for="product-selling-points">核心卖点</label>
+          <input
+            id="product-selling-points"
+            v-model.trim="form.coreSellingPoints"
+            type="text"
+            class="field-block__control"
+            placeholder="例如: 便携、易清洗、适合户外使用"
+            @input="persistDraft"
+          />
+        </div>
+
         <div class="product-entry-grid">
           <div class="field-block">
             <label class="field-block__label" for="product-weight">重量 (kg)</label>
@@ -177,7 +189,7 @@
         <button type="button" class="footer-button footer-button--ghost" @click="goPrevious">上一步</button>
 
         <button type="button" class="footer-button footer-button--primary footer-button--submit" @click="submitEntry">
-          <span>提交</span>
+          <span>开始合规分析</span>
           <img :src="arrowRightIcon" alt="" />
         </button>
       </div>
@@ -211,6 +223,7 @@ const basicSummary = reactive({
 
 const form = reactive<ProductEntryDetails>({
   description: '',
+  coreSellingPoints: '',
   weight: '',
   dimensions: '',
   keywords: '',
@@ -237,21 +250,35 @@ const summaryItems = computed(() => {
 })
 
 const persistDraft = () => {
+  const sellingPointSource = form.coreSellingPoints || form.keywords
+  const patch = {
+    description: form.description,
+    coreSellingPoints: sellingPointSource
+      .split(/[\/,，;；、\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    materialSpec: form.material,
+    targetAudience: form.audience,
+    usageScenario: form.scenarios,
+    budgetPreference: form.priceRange
+  }
+
   writeProductEntryDraft({
-    productDetails: {
-      description: form.description,
-      weight: form.weight,
-      dimensions: form.dimensions,
-      keywords: form.keywords,
-      material: form.material,
-      audience: form.audience,
-      scenarios: form.scenarios,
-      priceRange: form.priceRange,
-      specifications: form.specifications,
-      notes: form.notes,
-      hasSensitiveClaims: form.hasSensitiveClaims,
-      attachmentNames: [...form.attachmentNames]
-    }
+    ...patch,
+    ...(form.notes
+      ? form.notes
+          .split(/[；;\n]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .length
+        ? {
+            complianceHints: form.notes
+              .split(/[；;\n]/)
+              .map((item) => item.trim())
+              .filter(Boolean)
+          }
+        : {}
+      : {})
   })
 
   const createDraft = buildCreateDramaDraftFromProductEntry()
@@ -267,29 +294,24 @@ const handleFieldInput = (field: keyof typeof errors) => {
 
 const restoreDraft = () => {
   const draft = readProductEntryDraft()
-  const details = draft.productDetails
 
-  basicSummary.title = typeof draft.basicInfo.title === 'string' ? draft.basicInfo.title : ''
-  basicSummary.category = typeof draft.basicInfo.category === 'string' ? draft.basicInfo.category : ''
-  basicSummary.market =
-    typeof draft.targetMarket.marketName === 'string' && draft.targetMarket.marketName
-      ? `${draft.targetMarket.marketEmoji || ''} ${draft.targetMarket.marketName}`.trim()
-      : ''
+  basicSummary.title = draft.productName
+  basicSummary.category = draft.category
+  basicSummary.market = draft.targetMarket
 
-  form.description = typeof details.description === 'string' ? details.description : ''
-  form.weight = typeof details.weight === 'string' ? details.weight : ''
-  form.dimensions = typeof details.dimensions === 'string' ? details.dimensions : ''
-  form.keywords = typeof details.keywords === 'string' ? details.keywords : ''
-  form.material = typeof details.material === 'string' ? details.material : ''
-  form.audience = typeof details.audience === 'string' ? details.audience : ''
-  form.scenarios = typeof details.scenarios === 'string' ? details.scenarios : ''
-  form.priceRange = typeof details.priceRange === 'string' ? details.priceRange : ''
-  form.specifications = typeof details.specifications === 'string' ? details.specifications : ''
-  form.notes = typeof details.notes === 'string' ? details.notes : ''
-  form.hasSensitiveClaims = Boolean(details.hasSensitiveClaims)
-  form.attachmentNames = Array.isArray(details.attachmentNames)
-    ? details.attachmentNames.filter((name): name is string => typeof name === 'string')
-    : []
+  form.description = draft.description
+  form.coreSellingPoints = draft.coreSellingPoints.join('、')
+  form.weight = ''
+  form.dimensions = ''
+  form.keywords = ''
+  form.material = draft.materialSpec
+  form.audience = draft.targetAudience
+  form.scenarios = draft.usageScenario
+  form.priceRange = draft.budgetPreference
+  form.specifications = ''
+  form.notes = (draft.complianceHints || []).join('；')
+  form.hasSensitiveClaims = false
+  form.attachmentNames = []
 }
 
 const validateStep = () => {
@@ -340,7 +362,7 @@ const submitEntry = () => {
       content: basicSummary.title
         ? `「${basicSummary.title}」的商品信息已录入完成。`
         : '商品信息已录入完成。',
-      path: '/product-entry/complete',
+      path: '/compliance',
       metadata: {
         market: basicSummary.market,
         category: basicSummary.category
@@ -348,7 +370,7 @@ const submitEntry = () => {
     })
     .catch(() => {})
 
-  router.push('/product-entry/complete')
+  router.push('/compliance')
 }
 
 onMounted(restoreDraft)

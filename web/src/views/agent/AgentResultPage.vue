@@ -60,6 +60,17 @@
         </div>
       </section>
 
+      <section class="agent-card agent-next-card" aria-label="沉淀 Agent 商品信息">
+        <div>
+          <strong>将本次分析沉淀为商品资料</strong>
+          <p>Agent 已识别的商品、市场、平台、卖点和合规提示会自动预填到商品录入页。</p>
+        </div>
+        <button type="button" class="agent-button agent-button--primary" @click="continueProductEntryFromAgent">
+          <span>继续完善商品信息</span>
+          <ArrowRight class="agent-button__icon" aria-hidden="true" />
+        </button>
+      </section>
+
       <section class="agent-result-grid" aria-label="Agent 详细结果">
         <div class="agent-result-grid__main">
           <article class="agent-card compliance-result-card">
@@ -398,7 +409,8 @@ import {
   WarningFilled
 } from '@element-plus/icons-vue'
 import type { AgentResult } from '@/types/agent'
-import { readAgentResult } from '@/utils/agentStorage'
+import { readAgentInput, readAgentResult } from '@/utils/agentStorage'
+import { saveAgentResultAsProductDraft } from '@/utils/productEntryDraft'
 
 defineOptions({
   name: 'AgentResultPage'
@@ -610,6 +622,12 @@ const toOverviewSnippet = (value: string | undefined, fallback: string, maxLengt
 
 const goHome = () => {
   router.push('/')
+}
+
+const continueProductEntryFromAgent = () => {
+  if (!storedResult.value) return
+  saveAgentResultAsProductDraft(storedResult.value, readAgentInput())
+  router.push({ path: '/dramas/create', query: { source: 'agent' } })
 }
 
 const markReminderAction = (action: string) => {
@@ -1423,6 +1441,28 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.agent-next-card {
+  margin-top: 16px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.agent-next-card strong {
+  color: #0a2463;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.agent-next-card p {
+  margin: 4px 0 0;
+  color: #45556c;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .agent-result-grid {
@@ -2604,6 +2644,11 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
+  .agent-next-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .agent-result-grid {
     grid-template-columns: 1fr;
   }
@@ -2709,6 +2754,7 @@ onBeforeUnmount(() => {
 
   .agent-summary-card,
   .agent-overview-card,
+  .agent-next-card,
   .compliance-result-card,
   .video-script-card,
   .localization-card,
