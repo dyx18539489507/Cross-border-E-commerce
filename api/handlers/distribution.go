@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路分发接口控制器。
+ * 业务场景：前端需要管理社媒授权目标，并把生成的图文/视频提交到多平台异步分发。
+ * 核心职责：按设备身份隔离目标与任务，绑定请求参数，并把业务错误转成前端可理解的响应。
+ */
 package handlers
 
 import (
@@ -25,6 +30,11 @@ func NewDistributionHandler(service *services2.DistributionService, log *logger.
 	}
 }
 
+/**
+ * 功能：查询当前设备的分发账号和目标。
+ * 参数：c 为 Gin 请求上下文，设备 ID 从中间件读取。
+ * 返回：targets 包含 Upload-Post profile、Pinterest board、Reddit subreddit 和 Discord webhook。
+ */
 func (h *DistributionHandler) ListTargets(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 
@@ -37,6 +47,11 @@ func (h *DistributionHandler) ListTargets(c *gin.Context) {
 	response.Success(c, gin.H{"targets": targets})
 }
 
+/**
+ * 功能：创建或确认 Upload-Post profile。
+ * 参数：c 为 Gin 请求上下文。
+ * 返回：profile；Pinterest/Reddit 授权链接依赖它建立外部账号归属。
+ */
 func (h *DistributionHandler) EnsureUploadPostProfile(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 
@@ -49,6 +64,11 @@ func (h *DistributionHandler) EnsureUploadPostProfile(c *gin.Context) {
 	response.Success(c, gin.H{"profile": profile})
 }
 
+/**
+ * 功能：生成第三方平台授权连接链接。
+ * 参数：c 为 Gin 请求上下文。
+ * 返回：profile 与 access_url，前端打开 access_url 完成 Pinterest/Reddit 授权。
+ */
 func (h *DistributionHandler) GenerateUploadPostConnectLink(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 
@@ -157,6 +177,11 @@ func (h *DistributionHandler) DeleteTarget(c *gin.Context) {
 	response.Success(c, gin.H{"message": "target 已删除"})
 }
 
+/**
+ * 功能：创建一次异步分发任务。
+ * 参数：c 为 Gin 请求上下文，Body 包含内容、媒体、平台、目标和发布时间。
+ * 返回：job，包含每个平台结果的初始状态。
+ */
 func (h *DistributionHandler) CreateDistribution(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 
@@ -228,6 +253,11 @@ func (h *DistributionHandler) RetryDistribution(c *gin.Context) {
 	response.Success(c, gin.H{"job": job})
 }
 
+/**
+ * 功能：统一分发业务错误响应。
+ * 参数：c 为 Gin 请求上下文；err 为服务层错误。
+ * 返回：无返回值；可修复的配置/参数问题返回 400，未知错误返回 500。
+ */
 func (h *DistributionHandler) respondError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):

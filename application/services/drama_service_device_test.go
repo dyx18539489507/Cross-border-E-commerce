@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/drama-generator/backend/domain/models"
@@ -8,6 +9,10 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func stringPointer(value string) *string {
+	return &value
+}
 
 func newDramaServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -134,5 +139,57 @@ func TestDramaServiceCreatesWithPrecheckedComplianceToken(t *testing.T) {
 	}
 	if drama.ComplianceScore != expected.Score {
 		t.Fatalf("expected stored compliance score %d, got %d", expected.Score, drama.ComplianceScore)
+	}
+}
+
+func TestDramaServiceSaveEpisodesPreservesExistingEpisodeID(t *testing.T) {
+	db := newDramaServiceTestDB(t)
+	svc := NewDramaService(db, logger.NewLogger(false), nil)
+
+	drama := &models.Drama{DeviceID: "dev_save_browser_123456", Title: "商品项目", Status: "draft", TargetCountry: "US", ComplianceLevel: "green"}
+	if err := db.Create(drama).Error; err != nil {
+		t.Fatalf("create drama: %v", err)
+	}
+
+	episode := &models.Episode{
+		DramaID:       drama.ID,
+		EpisodeNum:    1,
+		Title:         "第1集",
+		Description:   stringPointer("旧描述"),
+		ScriptContent: stringPointer("旧脚本"),
+		Duration:      10,
+		Status:        "draft",
+	}
+	if err := db.Create(episode).Error; err != nil {
+		t.Fatalf("create episode: %v", err)
+	}
+
+	err := svc.SaveEpisodes(strconv.Itoa(int(drama.ID)), &SaveEpisodesRequest{
+		Episodes: []models.Episode{
+			{
+				EpisodeNum:    1,
+				Title:         "第1集 · 新脚本",
+				Description:   stringPointer("新描述"),
+				ScriptContent: stringPointer("新脚本"),
+				Duration:      45,
+			},
+		},
+	}, drama.DeviceID)
+	if err != nil {
+		t.Fatalf("save episodes: %v", err)
+	}
+
+	var episodes []models.Episode
+	if err := db.Where("drama_id = ?", drama.ID).Find(&episodes).Error; err != nil {
+		t.Fatalf("load episodes: %v", err)
+	}
+	if len(episodes) != 1 {
+		t.Fatalf("expected one episode, got %d", len(episodes))
+	}
+	if episodes[0].ID != episode.ID {
+		t.Fatalf("expected episode ID %d to be preserved, got %d", episode.ID, episodes[0].ID)
+	}
+	if episodes[0].Title != "第1集 · 新脚本" || episodes[0].ScriptContent == nil || *episodes[0].ScriptContent != "新脚本" {
+		t.Fatalf("episode was not updated correctly: %+v", episodes[0])
 	}
 }

@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路商品录入第二步。
+ * 业务场景：商品基础信息确定后，需要选择目标国家/市场、销售平台和营销目标。
+ * 核心职责：把市场与平台写入统一商品草稿，为后续合规检查和本地化内容生成提供关键上下文。
+ */
+-->
 <template>
   <ProductEntryFlowShell active-step="market">
     <section class="product-entry-card product-entry-card--market">
@@ -125,6 +132,7 @@ const form = reactive<ProductEntryTargetMarket>({
 })
 
 const persistDraft = () => {
+  // 目标市场会影响准入法规和内容表达，必须在每次选择后立即沉淀，避免返回上一步时丢失。
   writeProductEntryDraft({
     targetMarket: form.marketName,
     targetPlatform: form.platform,
@@ -164,6 +172,7 @@ const toggleMarketingGoal = (goal: string) => {
 
 const restoreDraft = () => {
   const draft = readProductEntryDraft()
+  // Agent 可能返回“东南亚/印尼”等不在快捷选项里的市场，此时保留原始文本而不是强行映射。
   const savedMarket = marketOptions.find((market) => {
     return market.code === draft.targetMarket || market.name === draft.targetMarket
   })

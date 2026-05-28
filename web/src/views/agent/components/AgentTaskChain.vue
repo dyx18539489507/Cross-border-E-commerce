@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：丝路 Agent 自动任务链展示组件。
+ * 业务场景：用户需要理解 Agent 从商品理解到投放优化的拆解顺序，而不只是等待一个最终结果。
+ * 核心职责：根据完成节点数展示六个业务任务的进度，并在失败或进行中状态下给出稳定视觉反馈。
+ */
+-->
 <template>
   <section class="task-section" aria-labelledby="task-chain-title">
     <div class="task-section__header">

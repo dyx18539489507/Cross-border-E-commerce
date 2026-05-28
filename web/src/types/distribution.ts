@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路分发业务类型定义。
+ * 业务场景：内容创作完成后，需要把图文或视频分发到 Pinterest、Reddit、Discord 并追踪结果。
+ * 核心职责：定义平台、目标、任务、执行结果和创建请求的前后端数据合同。
+ */
 export type DistributionPlatform = 'pinterest' | 'reddit' | 'discord'
 export type DistributionContentType = 'text' | 'image' | 'video'
 export type DistributionPublishMode = 'immediate' | 'schedule'
@@ -22,6 +27,7 @@ export interface UploadPostProfile {
   updated_at: string
 }
 
+// DistributionTarget 表示一个可发布目的地，例如 Pinterest board、Reddit subreddit 或 Discord webhook。
 export interface DistributionTarget {
   id: number
   platform: DistributionPlatform
@@ -87,6 +93,7 @@ export interface DistributionJob {
   results: DistributionResult[]
 }
 
+// CreateDistributionRequest 是前端提交分发任务的业务请求，平台特有参数放在 platformOptions 中隔离。
 export interface CreateDistributionRequest {
   sourceType?: string
   sourceRef?: string

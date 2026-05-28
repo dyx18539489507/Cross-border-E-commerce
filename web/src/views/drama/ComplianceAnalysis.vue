@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路合规分析页。
+ * 业务场景：商品录入或 Agent 预填后，需要围绕目标市场展示风险项、AI 建议，并决定能否继续生成脚本/分镜。
+ * 核心职责：读取统一商品草稿，调用合规预检接口，使用 compliance_token 创建后续项目流程。
+ */
+-->
 <template>
   <div class="page-container compliance-analysis-page">
     <header class="compliance-header">
@@ -177,7 +184,7 @@
             :disabled="creatingFlow"
             @click="handleContinue"
           >
-            <span>{{ creatingFlow ? '正在创建项目...' : '继续生成脚本与分镜' }}</span>
+            <span>{{ continueButtonText }}</span>
             <img :src="ctaArrowIcon" alt="" />
           </button>
 
@@ -230,6 +237,7 @@ interface ReportSection {
 
 const router = useRouter()
 const creatingFlow = ref(false)
+const creatingStage = ref<'idle' | 'checking' | 'creating' | 'episode' | 'routing'>('idle')
 const brandLogo = '/logo_circle.png'
 
 const navItems = [
@@ -273,6 +281,19 @@ const productContextItems = computed(() => [
 ])
 
 const agentComplianceHints = computed(() => reportProduct.agentComplianceHints.filter(Boolean).slice(0, 6))
+const continueButtonText = computed(() => {
+  if (!creatingFlow.value) {
+    return '继续生成脚本与分镜'
+  }
+  const labels = {
+    checking: '正在合规预检...',
+    creating: '正在创建项目...',
+    episode: '正在准备章节...',
+    routing: '正在进入脚本与分镜...',
+    idle: '正在处理...'
+  }
+  return labels[creatingStage.value]
+})
 
 const reportSections = computed<ReportSection[]>(() => [
   {
@@ -369,6 +390,7 @@ const restoreDraft = () => {
   const draft = getProductDraft()
   if (!draft) return
 
+  // 合规页只消费统一商品草稿，不关心它来自手动录入还是 Agent；来源只影响提示文案和信息完整度。
   reportProduct.source = draft.source
   reportProduct.title = draft.productName || '待录入商品'
   reportProduct.category = draft.category || '待补充类目'
@@ -422,8 +444,10 @@ const handleContinue = async () => {
   }
 
   creatingFlow.value = true
+  creatingStage.value = 'checking'
   try {
     const payload = buildCreateDramaPayload(draft)
+    // 先预检再创建，是为了把红色风险拦在项目生成前，同时拿到短期有效的 compliance_token。
     const complianceResult = await dramaAPI.checkCompliance(payload)
 
     reportMeta.score = complianceResult.compliance.score
@@ -434,12 +458,15 @@ const handleContinue = async () => {
       return
     }
 
+    // 创建项目时带上同一次预检 token，后端会校验商品内容未变化，避免绕过合规预检。
+    creatingStage.value = 'creating'
     const created = await dramaAPI.create({
       ...payload,
       compliance_token: complianceResult.compliance_token
     })
 
     const dramaId = String(created.drama.id)
+    creatingStage.value = 'episode'
     await dramaAPI.saveEpisodes(dramaId, [
       {
         episode_number: 1,
@@ -463,6 +490,7 @@ const handleContinue = async () => {
     })
     clearCreateDramaDraft()
 
+    creatingStage.value = 'routing'
     ElMessage.success('项目已创建，正在进入脚本与分镜阶段')
     await router.push(
       buildEpisodeStagePath('script', {
@@ -475,6 +503,7 @@ const handleContinue = async () => {
     ElMessage.error(error?.message || '创建业务流程失败，请稍后重试')
   } finally {
     creatingFlow.value = false
+    creatingStage.value = 'idle'
   }
 }
 
@@ -618,6 +647,7 @@ const handleExportPdf = () => {
   const metaFont = `500 20px ${fontFamily}`
 
   ctx.font = bodyFont
+  // PDF 导出不依赖后端文件服务，直接把当前合规视图绘制到 canvas 后封装成单页 PDF。
   const suggestionLines = aiSuggestions.value.map((item) => splitWrappedLines(ctx, item, contentWidth - 36))
   const sectionLines = reportSections.value.map((section) => ({
     ...section,

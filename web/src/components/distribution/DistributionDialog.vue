@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路一键分发弹窗。
+ * 业务场景：用户完成图片、视频或文本内容后，选择社媒账号和目标渠道提交发布任务。
+ * 核心职责：读取账号绑定状态、构造平台参数、提交分发任务，并轮询展示各平台发布结果。
+ */
+-->
 <template>
   <el-dialog
     v-model="visible"
@@ -532,6 +539,7 @@ const filteredJobs = computed(() => {
 })
 
 const initializeForm = () => {
+  // 默认勾选当前已具备发布条件的平台，减少用户每次打开弹窗时重复选择。
   form.selectedPlatforms = platformOptions.value
     .filter(item => item.enabled)
     .map(item => item.value)
@@ -640,6 +648,7 @@ const submitDistribution = async () => {
     return
   }
 
+  // 平台差异集中放进 platformOptions，后端可以为不同渠道分别解析，不影响通用任务字段。
   const payload: CreateDistributionRequest = {
     sourceType: props.sourceType,
     sourceRef: sourceRefValue.value || undefined,
@@ -704,6 +713,7 @@ const startPolling = () => {
     return
   }
 
+  // 分发由后端异步执行，前端轮询最新 job 状态即可展示成功、失败和外部链接。
   pollingTimer = window.setInterval(async () => {
     if (!currentJobId.value) {
       stopPolling()

@@ -1,3 +1,8 @@
+/**
+ * 模块说明：后端 HTTP 路由注册。
+ * 业务场景：数字丝路前端通过 /api/v1 访问 Agent、商品合规、数字人和分发等能力。
+ * 核心职责：组装服务与 handler，注册数字丝路相关接口，同时保留旧业务接口的兼容路由。
+ */
 package routes
 
 import (
@@ -35,6 +40,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	transferService := services2.NewResourceTransferService(db, log)
 	notificationService := services2.NewNotificationService(db, log)
 	workbenchService := services2.NewWorkbenchService(db, log)
+	analyticsService := services2.NewAnalyticsService(db, log)
 	dramaHandler := handlers2.NewDramaHandler(db, cfg, log, nil, notificationService)
 	aiConfigHandler := handlers2.NewAIConfigHandler(db, cfg, log)
 	aiAssistHandler := handlers2.NewAIAssistHandler(db, cfg, log)
@@ -71,9 +77,12 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	socialBindingHandler := handlers2.NewSocialBindingHandler(db, log)
 	distributionService := services2.NewDistributionService(db, cfg, log)
 	distributionHandler := handlers2.NewDistributionHandler(distributionService, log)
-	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log, notificationService)
+	silkroadAgentHistoryService := services2.NewSilkroadAgentHistoryService(db, log)
+	// 丝路 Agent 独立于旧短剧生成服务，专门处理商品出海分析、追问和结果通知。
+	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log, notificationService, silkroadAgentHistoryService)
 	notificationHandler := handlers2.NewNotificationHandler(notificationService, log)
 	workbenchHandler := handlers2.NewWorkbenchHandler(workbenchService, log)
+	analyticsHandler := handlers2.NewAnalyticsHandler(analyticsService, log)
 
 	api := r.Group("/api/v1")
 	{
@@ -82,6 +91,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		dramas := api.Group("/dramas")
 		{
 			dramas.GET("", dramaHandler.ListDramas)
+			// 商品录入完成后先走合规预检，返回 compliance_token，再由创建接口校验同一份商品内容。
 			dramas.POST("/compliance-check", dramaHandler.CheckCompliance)
 			dramas.POST("", dramaHandler.CreateDrama)
 			dramas.GET("/stats", dramaHandler.GetDramaStats)
@@ -113,15 +123,23 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 
 		agent := api.Group("/agent")
 		{
+			// /extract 用于轻量识别，/analyze 用于过渡页流式展示，/generate 生成最终结果页 JSON。
 			agent.POST("/extract", silkroadAgentHandler.Extract)
 			agent.POST("/generate", silkroadAgentHandler.Generate)
 			agent.POST("/analyze", silkroadAgentHandler.Analyze)
 			agent.POST("/follow-up", silkroadAgentHandler.FollowUp)
+			agent.GET("/history", silkroadAgentHandler.ListHistory)
+			agent.GET("/history/:id", silkroadAgentHandler.GetHistory)
 		}
 
 		workbench := api.Group("/workbench")
 		{
 			workbench.GET("/summary", workbenchHandler.Summary)
+		}
+
+		analytics := api.Group("/analytics")
+		{
+			analytics.GET("/summary", analyticsHandler.Summary)
 		}
 
 		notifications := api.Group("/notifications")
@@ -161,11 +179,13 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		upload := api.Group("/upload")
 		{
 			upload.POST("/image", uploadHandler.UploadImage)
+			upload.POST("/file", uploadHandler.UploadFile)
 		}
 
 		// 数字人生成
 		digitalHumans := api.Group("/digital-humans")
 		{
+			// 数字丝路内容创作阶段使用该接口把角色图和口播音频生成数字人视频素材。
 			digitalHumans.POST("", digitalHumanHandler.Generate)
 		}
 
@@ -238,6 +258,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 
 		distributions := api.Group("/distributions")
 		{
+			// 分发接口按“账号/目标配置”和“发布任务”分层，前端可以先校验账号状态再提交任务。
 			distributions.GET("/targets", distributionHandler.ListTargets)
 			distributions.PUT("/targets/:id/default", distributionHandler.SetDefaultTarget)
 			distributions.PUT("/targets/reddit/default", distributionHandler.SaveRedditDefaultTarget)

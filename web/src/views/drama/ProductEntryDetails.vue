@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路商品录入第三步。
+ * 业务场景：在市场平台确定后，补充商品描述、材质、卖点、人群、场景和敏感功效信息。
+ * 核心职责：把合规分析需要的细节写入商品草稿，并在提交后进入合规分析页。
+ */
+-->
 <template>
   <ProductEntryFlowShell active-step="details">
     <section class="product-entry-card product-entry-card--details">
@@ -175,12 +182,12 @@
           <button type="button" class="upload-zone" @click="openFileDialog">
             <img :src="uploadIcon" alt="" class="upload-zone__icon" />
             <span class="upload-zone__copy">
-              <strong>上传商品图片或素材</strong>
-              <small>可先保留为本地文件名，后续接入 API 时替换为真实上传</small>
+              <strong>{{ isUploadingAttachments ? '素材上传中...' : '上传商品图片或素材' }}</strong>
+              <small>上传后保存为后端素材 URL，供合规分析和内容生成继续复用</small>
             </span>
           </button>
-          <div v-if="form.attachmentNames.length" class="attachment-list">
-            <span v-for="name in form.attachmentNames" :key="name">{{ name }}</span>
+          <div v-if="attachmentDisplayItems.length" class="attachment-list">
+            <span v-for="item in attachmentDisplayItems" :key="item.key">{{ item.label }}</span>
           </div>
         </div>
       </div>
@@ -205,6 +212,7 @@ import ProductEntryFlowShell from '@/components/product-entry/ProductEntryFlowSh
 import arrowRightIcon from '@/assets/figma/product-entry/arrow-right.svg'
 import uploadIcon from '@/assets/figma/product-entry/upload.svg'
 import { notificationAPI } from '@/api/notification'
+import { uploadAPI } from '@/api/upload'
 import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
 import {
   buildCreateDramaDraftFromProductEntry,
@@ -212,9 +220,11 @@ import {
   writeProductEntryDraft
 } from '@/utils/productEntryDraft'
 import type { ProductEntryDetails } from '@/utils/productEntryDraft'
+import type { ProductAttachment } from '@/types/product'
 
 const router = useRouter()
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const isUploadingAttachments = ref(false)
 const basicSummary = reactive({
   title: '',
   category: '',
@@ -234,7 +244,8 @@ const form = reactive<ProductEntryDetails>({
   specifications: '',
   notes: '',
   hasSensitiveClaims: false,
-  attachmentNames: []
+  attachmentNames: [],
+  attachments: []
 })
 
 const errors = reactive({
@@ -249,8 +260,23 @@ const summaryItems = computed(() => {
   ].filter((item) => item.value)
 })
 
+const attachmentDisplayItems = computed(() => {
+  if (form.attachments.length) {
+    return form.attachments.map((item) => ({
+      key: item.url,
+      label: item.name
+    }))
+  }
+
+  return form.attachmentNames.map((name) => ({
+    key: name,
+    label: name
+  }))
+})
+
 const persistDraft = () => {
   const sellingPointSource = form.coreSellingPoints || form.keywords
+  // 详情页字段会直接影响合规风险和脚本内容，按输入实时写入草稿，减少用户离开页面后的信息损失。
   const patch = {
     description: form.description,
     coreSellingPoints: sellingPointSource
@@ -260,7 +286,8 @@ const persistDraft = () => {
     materialSpec: form.material,
     targetAudience: form.audience,
     usageScenario: form.scenarios,
-    budgetPreference: form.priceRange
+    budgetPreference: form.priceRange,
+    attachments: [...form.attachments]
   }
 
   writeProductEntryDraft({
@@ -295,6 +322,7 @@ const handleFieldInput = (field: keyof typeof errors) => {
 const restoreDraft = () => {
   const draft = readProductEntryDraft()
 
+  // 顶部摘要只展示前两步关键上下文，帮助用户确认当前详情是补给哪个商品和市场。
   basicSummary.title = draft.productName
   basicSummary.category = draft.category
   basicSummary.market = draft.targetMarket
@@ -311,7 +339,8 @@ const restoreDraft = () => {
   form.specifications = ''
   form.notes = (draft.complianceHints || []).join('；')
   form.hasSensitiveClaims = false
-  form.attachmentNames = []
+  form.attachments = [...(draft.attachments || [])]
+  form.attachmentNames = form.attachments.map((item) => item.name)
 }
 
 const validateStep = () => {
@@ -329,16 +358,57 @@ const openFileDialog = () => {
   fileInputRef.value?.click()
 }
 
+const normalizeUploadedAttachment = (file: File, uploaded: Awaited<ReturnType<typeof uploadAPI.uploadFile>>): ProductAttachment => ({
+  name: uploaded.filename || file.name,
+  url: uploaded.url,
+  size: uploaded.size || file.size,
+  mimeType: uploaded.content_type || file.type,
+  type: uploaded.asset_type || 'image',
+  category: uploaded.category
+})
+
+const uploadAttachments = async (files: File[]) => {
+  if (files.length === 0 || isUploadingAttachments.value) return
+
+  isUploadingAttachments.value = true
+  try {
+    const availableSlots = Math.max(0, 8 - form.attachments.length)
+    const nextFiles = files.slice(0, availableSlots)
+    if (nextFiles.length < files.length) {
+      ElMessage.warning('最多保留 8 个补充素材')
+    }
+
+    const results = await Promise.allSettled(
+      nextFiles.map(async (file) => normalizeUploadedAttachment(
+        file,
+        await uploadAPI.uploadFile(file, { category: 'product-attachments' })
+      ))
+    )
+    const uploaded = results
+      .filter((item): item is PromiseFulfilledResult<ProductAttachment> => item.status === 'fulfilled')
+      .map((item) => item.value)
+
+    if (uploaded.length) {
+      const byUrl = new Map<string, ProductAttachment>()
+      ;[...form.attachments, ...uploaded].forEach((item) => byUrl.set(item.url, item))
+      form.attachments = Array.from(byUrl.values()).slice(0, 8)
+      form.attachmentNames = form.attachments.map((item) => item.name)
+      persistDraft()
+      ElMessage.success(`已上传 ${uploaded.length} 个素材`)
+    }
+
+    if (uploaded.length < nextFiles.length) {
+      ElMessage.warning('部分素材上传失败，请检查文件类型或大小后重试')
+    }
+  } finally {
+    isUploadingAttachments.value = false
+  }
+}
+
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
-  const names = Array.from(target.files || [])
-    .map((file) => file.name)
-    .filter(Boolean)
-
-  if (names.length > 0) {
-    form.attachmentNames = Array.from(new Set([...form.attachmentNames, ...names])).slice(0, 8)
-    persistDraft()
-  }
+  const files = Array.from(target.files || [])
+  void uploadAttachments(files)
 
   target.value = ''
 }
@@ -355,6 +425,7 @@ const submitEntry = () => {
   }
 
   persistDraft()
+  // 录入完成通知用于工作台提示，不作为合规分析前置条件，避免通知服务异常阻断主流程。
   void notificationAPI
     .create({
       type: 'product_entry_submitted',

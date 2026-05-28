@@ -43,6 +43,18 @@
           <p>AI生成商品图片、短视频片段、数字人口播，自由组合输出成片</p>
         </section>
 
+        <section v-if="contentIntent" class="agent-intent-panel" aria-label="Agent 内容创作上下文">
+          <div class="agent-intent-panel__main">
+            <span class="agent-intent-panel__eyebrow">已接入丝路 Agent 方案</span>
+            <h2>{{ intentTitle }}</h2>
+            <p>{{ intentDescription }}</p>
+          </div>
+
+          <div class="agent-intent-panel__meta">
+            <span v-for="item in intentMetaItems" :key="item" class="agent-intent-chip">{{ item }}</span>
+          </div>
+        </section>
+
         <section class="creation-mode-row" aria-label="创作模式">
           <button
             v-for="mode in creationModes"
@@ -280,6 +292,12 @@ import {
   saveEpisodeWorkflowContext,
   type EpisodeWorkflowContext
 } from '@/utils/episodeWorkflowContext'
+import {
+  readContentWorkflowIntent,
+  saveContentWorkflowIntent,
+  type ContentWorkflowFormat,
+  type ContentWorkflowIntent
+} from '@/utils/contentWorkflowIntent'
 
 type CreationMode = 'combo' | 'image' | 'video' | 'avatar'
 type FormatKey = 'image' | 'video' | 'avatar'
@@ -313,7 +331,7 @@ const creationModes: CreationModeItem[] = [
   { key: 'avatar', label: '数字人', description: '口播讲解/品牌表达' }
 ]
 
-const planSteps: PlanStep[] = [
+const defaultPlanSteps: PlanStep[] = [
   {
     index: 1,
     title: '开场问候与品牌介绍',
@@ -350,6 +368,7 @@ const route = useRoute()
 const router = useRouter()
 const brandLogo = '/logo_circle.png'
 const flowContext = ref<EpisodeWorkflowContext | null>(null)
+const contentIntent = ref<ContentWorkflowIntent | null>(null)
 const remoteImageCount = ref(0)
 const remoteVideoCount = ref(0)
 
@@ -388,7 +407,91 @@ const previewVideoCount = computed(() => {
   return selectedFormats.value.includes('video') ? 2 : 0
 })
 const hasAvatar = computed(() => selectedFormats.value.includes('avatar'))
-const totalDuration = computed(() => '45秒')
+const totalDuration = computed(() => contentIntent.value ? '45-60秒' : '45秒')
+
+const intentTitle = computed(() => {
+  const productName = contentIntent.value?.productName || '当前商品'
+  const target = contentIntent.value?.target
+  if (target === 'avatar') return `为「${productName}」制作数字人口播`
+  if (target === 'video') return `为「${productName}」生成短视频素材`
+  if (target === 'image') return `为「${productName}」生成营销图片`
+  if (target === 'promotion') return `为「${productName}」生成投放素材`
+  return `为「${productName}」生成组合营销内容`
+})
+
+const intentDescription = computed(() => {
+  const intent = contentIntent.value
+  if (!intent) return ''
+
+  const market = intent.targetMarket || '目标市场'
+  const platform = intent.targetPlatform || '目标平台'
+  const script = intent.scriptSummary.split(/\n/).map((item) => item.trim()).find(Boolean)
+  return script
+    ? `将围绕${market}、${platform}和 Agent 脚本建议继续生成：${script}`
+    : `将围绕${market}、${platform}和 Agent 推荐卖点继续生成内容素材。`
+})
+
+const intentMetaItems = computed(() => {
+  const intent = contentIntent.value
+  if (!intent) return []
+
+  return [
+    intent.targetMarket ? `市场：${intent.targetMarket}` : '',
+    intent.targetPlatform ? `平台：${intent.targetPlatform}` : '',
+    intent.complianceRiskLevel ? `合规：${intent.complianceRiskLevel}` : '',
+    intent.selectedFormats.length ? `形式：${intent.selectedFormats.map(getFormatLabel).join(' / ')}` : ''
+  ].filter(Boolean)
+})
+
+const planSteps = computed<PlanStep[]>(() => {
+  const intent = contentIntent.value
+  if (!intent) return defaultPlanSteps
+
+  const steps: Omit<PlanStep, 'index'>[] = []
+  const firstSellingPoint = intent.sellingPoints[0] || intent.promotionTags[0] || '核心卖点'
+  const firstScriptLine = intent.scriptSummary.split(/\n/).map((item) => item.trim()).find(Boolean)
+
+  if (selectedFormats.value.includes('avatar')) {
+    steps.push({
+      title: '数字人口播开场',
+      duration: '5s',
+      tag: '数字人',
+      detail: intent.digitalHumanPersona || intent.digitalHumanTone || '按 Agent 推荐人设生成',
+      highlight: true
+    })
+  }
+
+  if (selectedFormats.value.includes('image')) {
+    steps.push({
+      title: '商品场景图片',
+      duration: '8s',
+      tag: '图片',
+      detail: firstSellingPoint
+    })
+  }
+
+  if (selectedFormats.value.includes('video')) {
+    steps.push({
+      title: '产品展示短视频',
+      duration: '20s',
+      tag: '视频',
+      detail: firstScriptLine || intent.promotionAdvice || '按 Agent 脚本生成镜头'
+    })
+  }
+
+  steps.push({
+    title: '平台投放 CTA',
+    duration: '8s',
+    tag: '投放',
+    detail: intent.promotionPlatforms.join(' / ') || intent.targetPlatform || '目标平台',
+    highlight: true
+  })
+
+  return steps.map((step, index) => ({
+    ...step,
+    index: index + 1
+  }))
+})
 
 const persistWorkspace = () => {
   if (typeof window === 'undefined') return
@@ -422,6 +525,52 @@ const restoreWorkspace = () => {
   }
 }
 
+const firstQueryValue = (value: unknown) => {
+  if (Array.isArray(value)) return String(value[0] || '')
+  return String(value || '')
+}
+
+const normalizeMode = (value: unknown): CreationMode => {
+  const mode = firstQueryValue(value)
+  return ['combo', 'image', 'video', 'avatar'].includes(mode) ? mode as CreationMode : 'combo'
+}
+
+const normalizeFormats = (formats: unknown): FormatKey[] => {
+  const items = Array.isArray(formats) ? formats : []
+  const validItems = items.filter((item): item is ContentWorkflowFormat =>
+    ['image', 'video', 'avatar'].includes(String(item))
+  )
+  return validItems.length ? validItems : ['image', 'video', 'avatar']
+}
+
+const applyContentIntent = () => {
+  const intent = readContentWorkflowIntent()
+  if (!intent) return
+
+  contentIntent.value = intent
+  const queryFocus = firstQueryValue(route.query.focus)
+  const nextMode = normalizeMode(queryFocus || intent.selectedMode)
+  selectedMode.value = nextMode
+  selectedFormats.value = normalizeFormats(intent.selectedFormats)
+
+  if (queryFocus === 'promotion') {
+    selectedMode.value = 'combo'
+    selectedFormats.value = ['image', 'video']
+  }
+
+  persistWorkspace()
+}
+
+const syncContentIntentWorkspace = () => {
+  if (!contentIntent.value) return
+
+  saveContentWorkflowIntent({
+    ...contentIntent.value,
+    selectedMode: selectedMode.value,
+    selectedFormats: [...selectedFormats.value]
+  })
+}
+
 const handleNavClick = (path: string) => {
   if (!path || path === router.currentRoute.value.path) return
   preloadRouteByPath(path)
@@ -442,6 +591,7 @@ const handleSelectMode = (mode: CreationMode) => {
   }
 
   persistWorkspace()
+  syncContentIntentWorkspace()
 }
 
 const toggleFormat = (format: FormatKey) => {
@@ -468,18 +618,43 @@ const toggleFormat = (format: FormatKey) => {
   }
 
   persistWorkspace()
+  syncContentIntentWorkspace()
 }
 
 const handleOptimizePlan = () => {
+  if (contentIntent.value) {
+    ElMessage.success('已按 Agent 方案重排内容组合')
+    return
+  }
   ElMessage.success('AI 已按当前组合方案完成镜头节奏优化')
 }
 
 const handleGenerateAll = () => {
   persistWorkspace()
+  syncContentIntentWorkspace()
 
   if (flowContext.value) {
-    router.push(buildProfessionalEditorPath(flowContext.value))
+    router.push({
+      path: buildProfessionalEditorPath(flowContext.value),
+      query: {
+        source: contentIntent.value?.source || 'content',
+        focus: contentIntent.value?.target || selectedMode.value,
+        formats: selectedFormats.value.join(',')
+      }
+    })
     ElMessage.success('已进入专业制作台，可继续生成图片、视频与数字人素材')
+    return
+  }
+
+  if (contentIntent.value) {
+    router.push({
+      path: '/compliance',
+      query: {
+        source: contentIntent.value.source,
+        next: 'content'
+      }
+    })
+    ElMessage.info('已带入 Agent 方案，请先完成合规校验并创建项目')
     return
   }
 
@@ -488,6 +663,18 @@ const handleGenerateAll = () => {
 
 const handleEnterTimeline = () => {
   if (!flowContext.value) {
+    if (contentIntent.value) {
+      router.push({
+        path: '/compliance',
+        query: {
+          source: contentIntent.value.source,
+          next: 'timeline'
+        }
+      })
+      ElMessage.info('已带入 Agent 方案，请先完成合规校验并创建项目')
+      return
+    }
+
     ElMessage.info('尚未绑定剧集上下文，请先从脚本与分镜阶段进入')
     return
   }
@@ -497,7 +684,14 @@ const handleEnterTimeline = () => {
 
 const handleSaveConfig = () => {
   persistWorkspace()
+  syncContentIntentWorkspace()
   ElMessage.success('内容创作配置已保存')
+}
+
+const getFormatLabel = (format: FormatKey) => {
+  if (format === 'image') return '图片'
+  if (format === 'video') return '视频'
+  return '数字人'
 }
 
 const loadRemoteCounts = async () => {
@@ -539,6 +733,7 @@ onMounted(async () => {
   }
 
   restoreWorkspace()
+  applyContentIntent()
   persistWorkspace()
 })
 </script>
@@ -766,6 +961,70 @@ onMounted(async () => {
   font-size: 16px;
   line-height: 24px;
   color: #45556c;
+}
+
+.agent-intent-panel {
+  margin-bottom: 24px;
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 16px;
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(135deg, rgba(236, 254, 255, 0.95), rgba(255, 255, 255, 0.94));
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+}
+
+.agent-intent-panel__main {
+  min-width: 0;
+}
+
+.agent-intent-panel__eyebrow {
+  display: inline-flex;
+  margin-bottom: 6px;
+  color: #0891b2;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 800;
+}
+
+.agent-intent-panel h2 {
+  margin: 0;
+  color: #0a2463;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 800;
+}
+
+.agent-intent-panel p {
+  max-width: 820px;
+  margin: 6px 0 0;
+  color: #45556c;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.agent-intent-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agent-intent-chip {
+  min-height: 28px;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  padding: 6px 11px;
+  display: inline-flex;
+  align-items: center;
+  background: #ffffff;
+  color: #0f4c81;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .creation-mode-row {
@@ -1397,6 +1656,14 @@ onMounted(async () => {
 }
 
 @media (max-width: 920px) {
+  .agent-intent-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-intent-panel__meta {
+    justify-content: flex-start;
+  }
+
   .creation-mode-row,
   .content-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

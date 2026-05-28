@@ -1,3 +1,6 @@
+# 模块说明：数字丝路示例配置。
+# 业务场景：开发者复制该文件后，为合规分析、视觉理解、数字人和分发服务补充自己的第三方服务参数。
+# 核心职责：展示配置字段含义，不提供真实密钥。
 app:
   name: "Huobao Drama API"
   version: "1.0.0"
@@ -35,6 +38,7 @@ ai:
   default_video_provider: "doubao"
 
 compliance:
+  # DeepSeek/火山方舟走 OpenAI 兼容接口，合规服务只关心 base_url、endpoint、model 和 api_key。
   enabled: true
   base_url: "https://ark.cn-beijing.volces.com/api/v3"
   endpoint: "/chat/completions"
@@ -42,6 +46,7 @@ compliance:
   model: "deepseek-v3-2-251201"
 
 distribution:
+  # Upload-Post 用于 Pinterest/Reddit 等社媒账号授权和发布任务，前端分发弹窗会读取这些默认展示配置。
   upload_post_base_url: "https://api.upload-post.com/api"
   upload_post_connect_title: "Connect Pinterest / Reddit"
   upload_post_connect_description: "Connect your own Pinterest and Reddit accounts before distributing content."
@@ -53,6 +58,7 @@ distribution:
   history_lookback_pages: 3
 
 volcengine:
+  # 视觉模型服务商品图片理解，语音配置服务数字人口播视频生成；密钥请在本地配置或环境变量中填写。
   access_key_id: ""
   secret_access_key: ""
   region: "cn-north-1"

@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路数字人生成 HTTP 入口。
+ * 业务场景：内容创作阶段把商品讲解图片、口播文本或音频转换成数字人视频素材。
+ * 核心职责：校验上传图片/音频、解析音色、必要时先做 TTS，再调用数字人服务并映射平台错误。
+ */
 package handlers
 
 import (
@@ -47,6 +52,11 @@ func NewDigitalHumanHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger)
 	}, nil
 }
 
+/**
+ * 功能：提交数字人生成任务。
+ * 参数：c 为 Gin 请求上下文，multipart 表单包含 image、audio 或 speech_text/voice_type 等字段。
+ * 返回：DigitalHumanResult，包含任务 ID、视频 URL 和主体检测状态。
+ */
 func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 	imageFile, imageHeader, err := c.Request.FormFile("image")
 	if err != nil {
@@ -131,6 +141,7 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 	}
 
 	if audioErr != nil && audioURL == "" && voiceID != "" && h.voiceLibraryService != nil {
+		// 用户选择自定义音色时，先解析训练完成的 voiceType/resourceID，再交给 TTS 生成口播音频。
 		customVoice, isCustom, resolveErr := h.voiceLibraryService.ResolveCustomVoiceByPublicID(c.Request.Context(), voiceID)
 		if resolveErr != nil {
 			h.log.Errorw("Failed to resolve custom voice", "voice_id", voiceID, "error", resolveErr)
@@ -186,6 +197,7 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 	}
 
 	if audioURL == "" && speechText != "" && voiceType != "" && h.speechTTSService.IsConfigured() {
+		// 优先在后端生成可访问音频 URL，避免数字人上游接口因内置文本配音权限不足而失败。
 		ttsAudioURL, ttsErr := h.speechTTSService.SynthesizeToURLWithResource(c.Request.Context(), speechText, voiceType, ttsResourceID)
 		if ttsErr != nil {
 			h.log.Errorw("Failed to synthesize speech from text", "error", ttsErr)
@@ -223,6 +235,7 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 	if err != nil {
 		h.log.Errorw("Failed to generate digital human video", "error", err)
 		msg := err.Error()
+		// 上游视觉/语音服务错误较细碎，这里转换成前端可执行的提示：换图、换音频、稍后重试或补充配置。
 		switch {
 		case strings.Contains(msg, "audio_url or speech_text is required"):
 			response.BadRequest(c, "请先选择音色或上传音频")

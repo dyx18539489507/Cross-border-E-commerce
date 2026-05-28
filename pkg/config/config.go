@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路后端配置加载。
+ * 业务场景：合规分析、丝路 Agent、视觉理解、数字人和一键分发需要从 YAML 与环境变量组合读取模型及第三方服务配置。
+ * 核心职责：加载基础配置，并允许敏感密钥通过环境变量覆盖，避免业务代码直接依赖硬编码配置。
+ */
 package config
 
 import (
@@ -66,6 +71,7 @@ type AIConfig struct {
 	DefaultVideoProvider string `mapstructure:"default_video_provider"`
 }
 
+// 火山引擎配置同时服务视觉模型与数字人链路，丝路 Agent 的图片理解会优先读取对应环境变量再回落到这里的默认接入信息。
 type VolcengineConfig struct {
 	AccessKeyID     string                 `mapstructure:"access_key_id"`
 	SecretAccessKey string                 `mapstructure:"secret_access_key"`
@@ -90,6 +96,7 @@ type VolcengineSpeechConfig struct {
 	CloneProjectName    string `mapstructure:"clone_project_name"`
 }
 
+// 合规分析使用 OpenAI 兼容协议调用 DeepSeek/火山方舟模型，字段命名保持通用以便切换模型供应商。
 type ComplianceConfig struct {
 	Enabled  bool   `mapstructure:"enabled"`
 	BaseURL  string `mapstructure:"base_url"`
@@ -98,6 +105,7 @@ type ComplianceConfig struct {
 	Model    string `mapstructure:"model"`
 }
 
+// 分发配置描述 Upload-Post 账号绑定与 Discord 展示信息，真正的用户账号状态仍保存在数据库目标表中。
 type DistributionConfig struct {
 	UploadPostBaseURL        string `mapstructure:"upload_post_base_url"`
 	UploadPostConnectTitle   string `mapstructure:"upload_post_connect_title"`
@@ -110,6 +118,11 @@ type DistributionConfig struct {
 	HistoryLookbackPages     int    `mapstructure:"history_lookback_pages"`
 }
 
+/**
+ * 功能：加载 YAML、.env 与环境变量组合后的运行配置。
+ * 参数：无。
+ * 返回：完整 Config；配置文件缺失或解析失败时返回错误。
+ */
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -128,7 +141,8 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// 合规校验配置支持通过环境变量注入，避免在配置文件硬编码敏感信息
+	// 合规校验配置支持通过环境变量注入，避免在配置文件硬编码敏感信息。
+	// DeepSeek 与火山方舟均兼容 chat/completions，因此这里只保存协议层配置。
 	if config.Compliance.BaseURL == "" {
 		config.Compliance.BaseURL = firstNonEmpty(os.Getenv("COMPLIANCE_BASE_URL"), "https://ark.cn-beijing.volces.com/api/v3")
 	}
@@ -150,6 +164,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if config.Distribution.UploadPostBaseURL == "" {
+		// 分发账号绑定依赖外部 Upload-Post 服务，缺省值让本地演示环境无需额外 YAML 字段即可启动。
 		config.Distribution.UploadPostBaseURL = firstNonEmpty(os.Getenv("UPLOAD_POST_BASE_URL"), "https://api.upload-post.com/api")
 	}
 	if config.Distribution.UploadPostConnectTitle == "" {
@@ -195,6 +210,11 @@ func (c *DatabaseConfig) DSN() string {
 	)
 }
 
+/**
+ * 功能：按优先级选出第一个非空配置值。
+ * 参数：values 通常按“环境变量、本地配置、默认值”的顺序传入。
+ * 返回：第一个非空字符串；全部为空时返回空字符串。
+ */
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if v != "" {
@@ -204,6 +224,11 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+/**
+ * 功能：读取整型环境变量。
+ * 参数：key 为环境变量名，fallback 为缺省值。
+ * 返回：合法整数；缺失或格式错误时返回 fallback，保证分发轮询等后台任务可继续启动。
+ */
 func readIntEnv(key string, fallback int) int {
 	raw := os.Getenv(key)
 	if raw == "" {

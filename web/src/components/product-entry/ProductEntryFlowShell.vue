@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路商品录入流程外壳。
+ * 业务场景：基础信息、目标市场、商品详情、完成页需要共享同一套顶部导航、步骤条和 Agent 预填提示。
+ * 核心职责：展示多步骤进度并预加载工作区页面，不直接修改商品数据。
+ */
+-->
 <template>
   <div class="product-entry-flow-page">
     <header class="product-entry-flow-header">
@@ -133,6 +140,11 @@ const activeStepIndex = computed(() => {
   return index >= 0 ? index : 0
 })
 
+/**
+ * 功能：处理商品录入流程内的主导航跳转。
+ * 参数：path 为目标业务页面路径。
+ * 返回：无返回值；跳转前预加载页面，减少合规/内容生产页面首次打开等待。
+ */
 const handleNavClick = (path: string) => {
   if (!path || path === router.currentRoute.value.path) {
     return

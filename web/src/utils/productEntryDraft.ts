@@ -1,6 +1,11 @@
+/**
+ * 模块说明：数字丝路商品录入草稿状态。
+ * 业务场景：商品信息来自手动录入或丝路 Agent 结果，需要跨多步骤页面持续传递到合规分析和项目创建接口。
+ * 核心职责：维护统一 ProductEntryDraft，同时兼容旧创建项目草稿字段，保证新旧页面能读取同一份商品上下文。
+ */
 import type { AgentInput, AgentResult } from '@/types/agent'
 import type { CreateDramaRequest } from '@/types/drama'
-import type { ProductEntryDraft, ProductEntrySource } from '@/types/product'
+import type { ProductAttachment, ProductEntryDraft, ProductEntrySource } from '@/types/product'
 
 export type { ProductContext, ProductEntryDraft, ProductEntrySource } from '@/types/product'
 
@@ -35,6 +40,7 @@ export interface ProductEntryDetails {
   notes: string
   hasSensitiveClaims: boolean
   attachmentNames: string[]
+  attachments: ProductAttachment[]
 }
 
 type LegacyProductEntryFlowDraft = {
@@ -78,6 +84,7 @@ const writeJSON = (key: string, value: unknown) => {
     window.sessionStorage.setItem(key, JSON.stringify(value))
   } catch {
     if (key === PRODUCT_ENTRY_DRAFT_KEY && value && typeof value === 'object') {
+      // 商品图片可能是较大的 Data URL，超出 sessionStorage 限制时先保留文本字段，避免录入流程整体丢失。
       const fallback = { ...(value as ProductEntryDraft), productImage: '' }
       window.sessionStorage.setItem(key, JSON.stringify(fallback))
     }
@@ -117,6 +124,30 @@ const compactSentenceList = (items: unknown[]) => {
   return items.map(toText).filter(Boolean)
 }
 
+const normalizeAttachments = (value: unknown): ProductAttachment[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((item): ProductAttachment | null => {
+      const raw = item && typeof item === 'object' ? item as Partial<ProductAttachment> : null
+      if (!raw) return null
+      const name = toText(raw.name)
+      const url = toText(raw.url)
+      if (!name || !url) return null
+      return {
+        name,
+        url,
+        size: Number(raw.size || 0),
+        mimeType: toText(raw.mimeType),
+        type: toText(raw.type),
+        category: toText(raw.category) || undefined
+      }
+    })
+    .filter((item): item is ProductAttachment => item !== null)
+}
+
 const parseCategoryParts = (category: string) => {
   const [categoryPrimary = '', categorySecondary = ''] = category.split('/').map((item) => item.trim())
   return { categoryPrimary, categorySecondary }
@@ -139,7 +170,8 @@ const hasDraftContent = (draft: ProductEntryDraft) => {
       draft.budgetPreference ||
       draft.agentSummary ||
       draft.complianceHints?.length ||
-      draft.localizationHints?.length
+      draft.localizationHints?.length ||
+      draft.attachments?.length
   )
 }
 
@@ -163,11 +195,17 @@ export const createEmptyProductDraft = (source: ProductEntrySource = 'manual'): 
     agentSummary: '',
     complianceHints: [],
     localizationHints: [],
+    attachments: [],
     createdAt: timestamp,
     updatedAt: timestamp
   }
 }
 
+/**
+ * 功能：把任意历史草稿或当前草稿归一成 ProductEntryDraft。
+ * 参数：value 可能是新版商品草稿、旧 basicInfo/targetMarket/productDetails 草稿或局部 patch。
+ * 返回：可被商品录入、合规分析和项目创建共用的统一草稿；无法识别时返回 null。
+ */
 const normalizeProductDraft = (value: unknown): ProductEntryDraft | null => {
   if (!value || typeof value !== 'object') {
     return null
@@ -218,6 +256,7 @@ const normalizeProductDraft = (value: unknown): ProductEntryDraft | null => {
     agentSummary: toText(raw.agentSummary),
     complianceHints: toStringList(raw.complianceHints),
     localizationHints: toStringList(raw.localizationHints),
+    attachments: normalizeAttachments(raw.attachments),
     createdAt: toText(raw.createdAt) || timestamp,
     updatedAt: toText(raw.updatedAt) || timestamp
   }
@@ -240,6 +279,7 @@ const getLegacyProductDraft = (): ProductEntryDraft | null => {
 }
 
 const persistLegacyDrafts = (draft: ProductEntryDraft) => {
+  // 旧页面仍读取 basic/flow 两份草稿，写回它们可以让数字丝路新录入流和旧创建流保持兼容。
   const { categoryPrimary, categorySecondary } = parseCategoryParts(draft.category)
   const basicInfo: ProductEntryBasicInfo = {
     title: draft.productName,
@@ -269,7 +309,8 @@ const persistLegacyDrafts = (draft: ProductEntryDraft) => {
     specifications: '',
     notes: [...(draft.complianceHints || []), ...(draft.localizationHints || [])].join('；'),
     hasSensitiveClaims: false,
-    attachmentNames: []
+    attachmentNames: draft.attachments.map((item) => item.name),
+    attachments: [...draft.attachments]
   }
 
   writeJSON(PRODUCT_ENTRY_BASIC_DRAFT_KEY, basicInfo)
@@ -304,6 +345,7 @@ const legacyPatchToProductPatch = (patch: ProductEntryDraftPatch): Partial<Produ
     next.usageScenario = patch.productDetails.scenarios ?? next.usageScenario
     next.budgetPreference = patch.productDetails.priceRange ?? next.budgetPreference
     next.coreSellingPoints = toStringList(patch.productDetails.coreSellingPoints || patch.productDetails.keywords)
+    next.attachments = patch.productDetails.attachments ?? next.attachments
   }
 
   delete (next as ProductEntryDraftPatch).basicInfo
@@ -385,6 +427,11 @@ export const writeProductEntryDraft = (patch: ProductEntryDraftPatch) => {
   return saveProductDraft(patch)
 }
 
+/**
+ * 功能：把丝路 Agent 结果转换为商品录入草稿。
+ * 参数：result 为 Agent 完整方案；input 为用户启动 Agent 时的原始商品和图片上下文。
+ * 返回：source=agent 的 ProductEntryDraft，携带合规提示、本地化提示和后续合规分析所需字段。
+ */
 export const agentResultToProductDraft = (result: AgentResult, input?: AgentInput | null): ProductEntryDraft => {
   const recognized = (result.recognizedInfo || {}) as Partial<AgentResult['recognizedInfo']>
   const overview = (result.overview || {}) as Partial<AgentResult['overview']>
@@ -394,6 +441,7 @@ export const agentResultToProductDraft = (result: AgentResult, input?: AgentInpu
   const agentMessage = (result.agentMessage || {}) as Partial<AgentResult['agentMessage']>
   const timestamp = nowIso()
 
+  // Agent 的合规模块不直接等同最终合规结论，这里只沉淀为“提示”，交由合规页再次基于目标市场校验。
   const complianceHints = uniqueList([
     compliance.summary,
     compliance.riskTags,
@@ -442,6 +490,7 @@ export const agentResultToProductDraft = (result: AgentResult, input?: AgentInpu
     ]),
     complianceHints,
     localizationHints,
+    attachments: [],
     createdAt: timestamp,
     updatedAt: timestamp
   }
@@ -452,6 +501,11 @@ export const saveAgentResultAsProductDraft = (result: AgentResult, input?: Agent
   return saveProductDraft(agentResultToProductDraft(result, input))
 }
 
+/**
+ * 功能：把商品录入草稿适配为后端现有项目创建/合规预检请求。
+ * 参数：draft 默认为当前商品草稿，也可传入指定草稿。
+ * 返回：CreateDramaRequest；商品名缺失时返回 null，避免创建无业务主体的合规任务。
+ */
 export const buildCreateDramaDraftFromProductEntry = (
   draft: ProductEntryDraft | null = getProductDraft()
 ): CreateDramaRequest | null => {
@@ -464,6 +518,7 @@ export const buildCreateDramaDraftFromProductEntry = (
     draft.usageScenario ? `使用场景: ${draft.usageScenario}` : '',
     draft.targetAudience ? `目标人群: ${draft.targetAudience}` : '',
     draft.targetPlatform ? `目标平台: ${draft.targetPlatform}` : '',
+    draft.attachments.length ? `已上传素材: ${draft.attachments.map((item) => `${item.name} ${item.url}`).join('；')}` : '',
     draft.agentSummary ? `Agent 摘要: ${draft.agentSummary}` : ''
   ])
   const sellingPoints = draft.coreSellingPoints.length

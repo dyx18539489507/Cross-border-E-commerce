@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路数字人视频生成服务。
+ * 业务场景：把商品口播角色图和音频/文本口播提交给火山视觉模型，生成可用于跨境营销的视频素材。
+ * 核心职责：组装视觉模型任务、轮询任务结果、解析视频地址，并把上游失败原因转成业务错误。
+ */
 package services
 
 import (
@@ -76,6 +81,11 @@ func NewDigitalHumanService(cfg *config.Config, log *logger.Logger) *DigitalHuma
 	}
 }
 
+/**
+ * 功能：生成数字人视频。
+ * 参数：ctx 控制任务生命周期；req 包含图片、音频或文本口播、音色和动作提示。
+ * 返回：DigitalHumanResult；包含上游任务 ID 和生成视频 URL。
+ */
 func (s *DigitalHumanService) Generate(ctx context.Context, req *DigitalHumanRequest) (*DigitalHumanResult, error) {
 	if req.ImageURL == "" && strings.TrimSpace(req.ImageBase64) == "" {
 		return nil, fmt.Errorf("image is required")
@@ -96,6 +106,7 @@ func (s *DigitalHumanService) Generate(ctx context.Context, req *DigitalHumanReq
 
 	prompt := buildPrompt(req.MotionText)
 
+	// 数字人视频依赖“角色图 + 音频驱动”，文本口播会在 handler 层尽量先转成音频 URL。
 	videoTaskID, err := s.submitVideoTask(ctx, req.ImageURL, req.ImageBase64, audioURL, voiceType, speechText, nil, prompt)
 	if err != nil {
 		return nil, err
@@ -113,6 +124,11 @@ func (s *DigitalHumanService) Generate(ctx context.Context, req *DigitalHumanReq
 	}, nil
 }
 
+/**
+ * 功能：提交火山视觉数字人任务。
+ * 参数：ctx 控制请求；imageURL/imageBase64 为角色图；audioURL/voiceType/speechText 为口播驱动；prompt 为动作约束。
+ * 返回：上游 taskID。
+ */
 func (s *DigitalHumanService) submitVideoTask(ctx context.Context, imageURL, imageBase64, audioURL, voiceType, speechText string, maskURLs []string, prompt string) (string, error) {
 	payload := map[string]any{
 		"req_key":           reqKeyVideoGeneration,
@@ -143,6 +159,11 @@ func (s *DigitalHumanService) submitVideoTask(ctx context.Context, imageURL, ima
 	return s.submitTask(ctx, reqKeyVideoGeneration, payload)
 }
 
+/**
+ * 功能：等待数字人视频生成完成。
+ * 参数：ctx 控制整体超时；taskID 为上游任务 ID。
+ * 返回：生成视频 URL；任务失败时带出上游失败原因。
+ */
 func (s *DigitalHumanService) waitForVideo(ctx context.Context, taskID string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancel()
@@ -233,6 +254,7 @@ func (s *DigitalHumanService) getTaskResult(ctx context.Context, reqKey, taskID 
 
 func buildPrompt(motionText string) string {
 	parts := []string{
+		// 数字丝路数字人强调“同一商品讲解者”，prompt 先锁定人物一致性，再附加动作要求。
 		"严格以上传角色为唯一主角，保持同一张脸、五官、发型、肤色和服饰，不替换人物，不改变性别年龄，不新增第二人物",
 		"优先保持参考图原始景别与构图，自然说话并保持口型同步，避免生成与参考图不一致的新人物",
 	}
@@ -246,6 +268,11 @@ func buildPrompt(motionText string) string {
 	return strings.Join(parts, "；")
 }
 
+/**
+ * 功能：从火山视觉任务结果中解析视频地址。
+ * 参数：result 为上游查询结果，视频地址可能在 video_url 或嵌套 resp_data 中。
+ * 返回：第一个可用的视频 URL，未找到时返回空字符串。
+ */
 func resolveDigitalHumanVideoURL(result *getResultData) string {
 	if result == nil {
 		return ""

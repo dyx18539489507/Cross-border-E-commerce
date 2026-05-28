@@ -7,6 +7,9 @@ import (
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/drama-generator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
+	"mime"
+	"path/filepath"
+	"strings"
 )
 
 type UploadHandler struct {
@@ -79,6 +82,51 @@ func (h *UploadHandler) UploadImage(c *gin.Context) {
 	})
 }
 
+// UploadFile 上传数字丝路商品素材
+func (h *UploadHandler) UploadFile(c *gin.Context) {
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "请选择文件")
+		return
+	}
+	defer file.Close()
+
+	contentType := resolveUploadContentType(header.Header.Get("Content-Type"), header.Filename)
+	if !isAllowedMaterialContentType(contentType) {
+		response.BadRequest(c, "暂不支持该文件类型")
+		return
+	}
+
+	if header.Size > 100*1024*1024 {
+		response.BadRequest(c, "文件大小不能超过100MB")
+		return
+	}
+
+	category := sanitizeUploadCategory(c.PostForm("category"))
+	if category == "" {
+		category = sanitizeUploadCategory(c.Query("category"))
+	}
+	if category == "" {
+		category = "materials"
+	}
+
+	fileURL, err := h.uploadService.UploadFile(file, header.Filename, contentType, category)
+	if err != nil {
+		h.log.Errorw("Failed to upload material", "error", err, "category", category)
+		response.InternalError(c, "上传失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"url":          fileURL,
+		"filename":     header.Filename,
+		"size":         header.Size,
+		"content_type": contentType,
+		"category":     category,
+		"asset_type":   inferMaterialAssetType(contentType),
+	})
+}
+
 // UploadCharacterImage 上传角色图片（带角色ID）
 func (h *UploadHandler) UploadCharacterImage(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
@@ -141,4 +189,63 @@ func (h *UploadHandler) UploadCharacterImage(c *gin.Context) {
 		"filename": header.Filename,
 		"size":     header.Size,
 	})
+}
+
+func resolveUploadContentType(contentType string, filename string) string {
+	contentType = strings.TrimSpace(strings.ToLower(contentType))
+	if contentType != "" && contentType != "application/octet-stream" {
+		return contentType
+	}
+
+	if inferred := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); inferred != "" {
+		return strings.Split(inferred, ";")[0]
+	}
+	return "application/octet-stream"
+}
+
+func sanitizeUploadCategory(category string) string {
+	category = strings.TrimSpace(strings.ToLower(category))
+	if category == "" {
+		return ""
+	}
+
+	var builder strings.Builder
+	for _, r := range category {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			builder.WriteRune(r)
+		}
+	}
+	return strings.Trim(builder.String(), "-_")
+}
+
+func isAllowedMaterialContentType(contentType string) bool {
+	if strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/") {
+		return true
+	}
+
+	switch contentType {
+	case "application/pdf",
+		"text/plain",
+		"text/csv",
+		"application/json",
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.ms-excel",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/zip":
+		return true
+	default:
+		return false
+	}
+}
+
+func inferMaterialAssetType(contentType string) string {
+	switch {
+	case strings.HasPrefix(contentType, "video/"):
+		return "video"
+	case strings.HasPrefix(contentType, "audio/"):
+		return "audio"
+	default:
+		return "image"
+	}
 }

@@ -293,13 +293,24 @@
             </section>
 
             <section class="stage-actions">
-              <button type="button" class="stage-actions__primary" @click="handleBeginCreation">
-                <span>开始创作内容（图片/视频/数字人）</span>
-                <img :src="ctaArrowIcon" alt="" />
+              <button
+                type="button"
+                class="stage-actions__primary"
+                :disabled="isStartingCreation"
+                :aria-busy="isStartingCreation ? 'true' : 'false'"
+                @click="handleBeginCreation"
+              >
+                <span>{{ isStartingCreation ? '正在进入内容创作...' : '开始创作内容（图片/视频/数字人）' }}</span>
+                <img v-if="!isStartingCreation" :src="ctaArrowIcon" alt="" />
               </button>
 
-              <button type="button" class="stage-actions__secondary" @click="handleSaveDraft">
-                保存草稿
+              <button
+                type="button"
+                class="stage-actions__secondary"
+                :disabled="isSavingDraft || isStartingCreation"
+                @click="handleSaveDraft"
+              >
+                {{ isSavingDraft ? '保存中...' : '保存草稿' }}
               </button>
 
               <button type="button" class="stage-actions__ghost" @click="router.push('/dramas')">
@@ -476,6 +487,8 @@ const route = useRoute()
 const brandLogo = '/logo_circle.png'
 const flowContext = ref<EpisodeWorkflowContext | null>(null)
 const dramaRecord = ref<Drama | null>(null)
+const isSavingDraft = ref(false)
+const isStartingCreation = ref(false)
 
 const episodeId = computed(() => flowContext.value?.episodeId || String(route.params.id || route.query.id || ''))
 const workspaceStorageKey = computed(
@@ -879,26 +892,50 @@ const handleGenerateMoreLanguages = () => {
 }
 
 const handleSaveDraft = async () => {
-  persistWorkspace()
-  const result = await persistEpisodeScript()
-  ElMessage.success(
-    result === 'synced'
-      ? '脚本与分镜草稿已保存并同步到项目'
-      : '脚本与分镜草稿已保存，当前项目将继续使用本地阶段草稿'
-  )
+  if (isSavingDraft.value) return
+
+  isSavingDraft.value = true
+  try {
+    persistWorkspace()
+    const result = await persistEpisodeScript()
+    ElMessage.success(
+      result === 'synced'
+        ? '脚本与分镜草稿已保存并同步到项目'
+        : '脚本与分镜草稿已保存，当前项目将继续使用本地阶段草稿'
+    )
+  } finally {
+    isSavingDraft.value = false
+  }
 }
 
 const handleBeginCreation = async () => {
-  persistWorkspace()
-  await persistEpisodeScript()
+  if (isStartingCreation.value) return
 
-  const context = await ensureEpisodeContext()
-  if (context) {
-    router.push(buildEpisodeStagePath('generation', context))
-    return
+  isStartingCreation.value = true
+  try {
+    persistWorkspace()
+
+    const existingContext =
+      flowContext.value ||
+      resolveEpisodeWorkflowContext({
+        episodeId: route.params.id,
+        dramaId: route.query.dramaId,
+        episodeNumber: route.query.episodeNumber
+      })
+    const context = existingContext || await ensureEpisodeContext()
+
+    if (context) {
+      flowContext.value = context
+      saveEpisodeWorkflowContext(context)
+      void persistEpisodeScript()
+      await router.push(buildEpisodeStagePath('generation', context))
+      return
+    }
+
+    ElMessage.info('内容创作流程将在剧集上下文接入后自动跳转，当前先保留页面与草稿状态。')
+  } finally {
+    isStartingCreation.value = false
   }
-
-  ElMessage.info('内容创作流程将在剧集上下文接入后自动跳转，当前先保留页面与草稿状态。')
 }
 
 onMounted(async () => {
@@ -1754,6 +1791,16 @@ onMounted(async () => {
 
 .stage-actions button:hover {
   transform: translateY(-1px);
+}
+
+.stage-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+  transform: none;
+}
+
+.stage-actions button:disabled:hover {
+  transform: none;
 }
 
 .stage-actions__primary {

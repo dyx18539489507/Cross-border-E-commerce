@@ -1,3 +1,8 @@
+/**
+ * 模块说明：项目创建与合规预检 HTTP 处理器。
+ * 业务场景：数字丝路商品录入完成后，需要通过合规预检 token 约束创建流程；文件中其余旧短剧接口不在本次注释范围。
+ * 核心职责：本次注释只覆盖商品创建、合规预检和相关通知，不扩展旧短剧业务说明。
+ */
 package handlers
 
 import (
@@ -22,6 +27,11 @@ type DramaHandler struct {
 	log                 *logger.Logger
 }
 
+/**
+ * 功能：初始化项目处理器并注入合规服务。
+ * 参数：db/cfg/log/transferService/notificationService 为数据库、配置、日志、资源转移与通知依赖。
+ * 返回：包含数字丝路合规预检能力的 DramaHandler。
+ */
 func NewDramaHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger, transferService *services.ResourceTransferService, notificationService *services.NotificationService) *DramaHandler {
 	complianceService := services.NewComplianceService(cfg.Compliance, log)
 	return &DramaHandler{
@@ -33,6 +43,11 @@ func NewDramaHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger, transf
 	}
 }
 
+/**
+ * 功能：创建数字丝路商品项目。
+ * 参数：c 为 Gin 请求上下文，Body 中包含商品录入适配出的创建请求和可选 compliance_token。
+ * 返回：创建后的项目与合规结果；红色风险或预检失效时返回业务错误。
+ */
 func (h *DramaHandler) CreateDrama(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 
@@ -49,6 +64,7 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, services.ErrCompliancePrecheckInvalid) {
+			// 商品内容变化后必须重新预检，避免用户拿旧 token 绕过新的合规风险。
 			response.Error(c, 400, "COMPLIANCE_PRECHECK_REQUIRED", "合规预检已失效或内容已变化，请重新校验后再继续")
 			return
 		}
@@ -84,6 +100,11 @@ func (h *DramaHandler) CreateDrama(c *gin.Context) {
 	})
 }
 
+/**
+ * 功能：执行数字丝路商品合规预检。
+ * 参数：c 为 Gin 请求上下文，Body 中包含商品标题、描述、目标国家、材质和营销卖点。
+ * 返回：合规评分、风险等级、整改建议和短期 compliance_token。
+ */
 func (h *DramaHandler) CheckCompliance(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 

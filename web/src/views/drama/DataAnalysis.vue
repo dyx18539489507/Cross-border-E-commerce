@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路数据分析展示页。
+ * 业务场景：商品出海内容发布后，运营人员需要查看曝光、点击、转化、市场分布和 AI 优化建议。
+ * 核心职责：提供前端数据看板原型与导航承接，当前数据为静态示例，后续可接入真实投放指标。
+ */
+-->
 <template>
   <div class="data-analysis-page">
     <header class="data-analysis-header">
@@ -115,7 +122,7 @@
                     <polyline
                       v-for="series in trendSeries"
                       :key="series.name"
-                      :points="trendPoints"
+                      :points="seriesPoints(series)"
                       fill="none"
                       :stroke="series.color"
                       :stroke-width="series.width"
@@ -123,7 +130,7 @@
                       stroke-linejoin="round"
                       :opacity="series.opacity"
                     />
-                    <g v-for="point in trendPointNodes" :key="point.x">
+                    <g v-for="point in trendPointNodes" :key="point.key">
                       <circle :cx="point.x" :cy="point.y" r="5" fill="#ffffff" stroke="#ff7a18" stroke-width="2.25" />
                       <circle :cx="point.x" :cy="point.y" r="2.2" fill="#ff7a18" />
                     </g>
@@ -185,11 +192,11 @@
                     <div class="bar-chart__pair">
                       <span
                         class="bar-chart__bar bar-chart__bar--view"
-                        :style="{ height: `${getChartHeight(item.views, 60000)}px` }"
+                        :style="{ height: `${getChartHeight(item.views, videoChartMax)}px` }"
                       ></span>
                       <span
                         class="bar-chart__bar bar-chart__bar--conversion"
-                        :style="{ height: `${getChartHeight(item.conversions, 60000)}px` }"
+                        :style="{ height: `${getChartHeight(item.conversions, videoChartMax)}px` }"
                       ></span>
                     </div>
                     <span class="bar-chart__label">{{ item.name }}</span>
@@ -272,13 +279,19 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { analyticsAPI } from '@/api/analytics'
 import { preloadRouteByPath } from '@/router'
 import NotificationBell from '@/components/common/NotificationBell.vue'
-
-type MetricIcon = 'eye' | 'spark' | 'cart' | 'coin'
-type InsightIcon = 'growth' | 'audience' | 'video'
-type AccentTone = 'blue' | 'purple' | 'orange' | 'green'
+import type {
+  AnalyticsInsight,
+  AnalyticsMarketShare,
+  AnalyticsMetricCard,
+  AnalyticsRecommendation,
+  AnalyticsTrendSeries,
+  AnalyticsVideoBar
+} from '@/types/analytics'
 
 const router = useRouter()
 const brandLogo = '/logo_circle.png'
@@ -293,59 +306,59 @@ const navItems = [
   { label: '数据分析', path: '/analytics', active: true, width: '80px' }
 ] as const
 
-const metricCards: ReadonlyArray<{
-  icon: MetricIcon
-  label: string
-  value: string
-  trend: string
-  tone: AccentTone
-}> = [
+const metricCards = ref<AnalyticsMetricCard[]>([
   { icon: 'eye', label: '总曝光量', value: '125.4K', trend: '+24.5%', tone: 'blue' },
   { icon: 'spark', label: '点击率', value: '8.7%', trend: '+12.3%', tone: 'purple' },
   { icon: 'cart', label: '转化率', value: '4.2%', trend: '+18.7%', tone: 'orange' },
   { icon: 'coin', label: 'ROI', value: '3.8x', trend: '+25.4%', tone: 'green' }
-]
+])
 
-const trendYAxis = ['26000', '19500', '13000', '6500', '0'] as const
-const trendXAxis = ['04-12', '04-13', '04-14', '04-15', '04-16', '04-17', '04-18'] as const
-const trendSeries = [
-  { name: '曝光', color: '#19b9dc', width: 2.3, opacity: 0.7 },
-  { name: '点击', color: '#7c3aed', width: 2.6, opacity: 0.72 },
-  { name: '转化', color: '#ff7a18', width: 3.1, opacity: 1 }
-] as const
-const trendPointNodes = [
-  { x: 0, y: 94.4 },
-  { x: 61.67, y: 65.35 },
-  { x: 123.33, y: 79.88 },
-  { x: 185, y: 37.22 },
-  { x: 246.67, y: 58.09 },
-  { x: 308.33, y: 25.42 },
-  { x: 370, y: 0 }
-] as const
-const trendPoints = trendPointNodes.map((point) => `${point.x},${point.y}`).join(' ')
+const trendXAxis = ref(['04-12', '04-13', '04-14', '04-15', '04-16', '04-17', '04-18'])
+const trendSeries = ref<AnalyticsTrendSeries[]>([
+  { name: '曝光', color: '#19b9dc', width: 2.3, opacity: 0.7, data: [15600, 18800, 17200, 22100, 19600, 23800, 26000] },
+  { name: '点击', color: '#7c3aed', width: 2.6, opacity: 0.72, data: [1200, 1420, 1380, 1780, 1620, 1920, 2260] },
+  { name: '转化', color: '#ff7a18', width: 3.1, opacity: 1, data: [45, 72, 60, 96, 83, 118, 132] }
+])
 
-const marketShare = [
+const trendMax = computed(() => {
+  const values = trendSeries.value.flatMap((series) => series.data)
+  return Math.max(1, ...values)
+})
+
+const trendYAxis = computed(() => {
+  const max = Math.ceil(trendMax.value / 4) * 4
+  return [max, max * 0.75, max * 0.5, max * 0.25, 0].map((value) => String(Math.round(value)))
+})
+
+const marketShare = ref<AnalyticsMarketShare[]>([
   { name: '美国', value: '42%', color: '#18b5d5' },
   { name: '德国', value: '18%', color: '#7a3fe8' },
   { name: '日本', value: '15%', color: '#ff7a18' },
   { name: '英国', value: '12%', color: '#14b97f' },
   { name: '其他', value: '13%', color: '#64748b' }
-] as const
+])
 
-const videoYAxis = ['60000', '45000', '30000', '15000', '0'] as const
-const videoBars = [
+const videoBars = ref<AnalyticsVideoBar[]>([
   { name: '视频A', views: 47000, conversions: 45000 },
   { name: '视频B', views: 40500, conversions: 39000 },
   { name: '视频C', views: 33000, conversions: 32000 },
   { name: '视频D', views: 29500, conversions: 29000 }
-] as const
+])
 
-const insights: ReadonlyArray<{
-  icon: InsightIcon
-  tone: AccentTone
-  title: string
-  description: string
-}> = [
+const videoChartMax = computed(() => {
+  const values = videoBars.value.flatMap((item) => [item.views, item.conversions])
+  return Math.max(1, Math.ceil(Math.max(...values, 1) / 1000) * 1000)
+})
+
+const videoYAxis = computed(() => [
+  String(videoChartMax.value),
+  String(Math.round(videoChartMax.value * 0.75)),
+  String(Math.round(videoChartMax.value * 0.5)),
+  String(Math.round(videoChartMax.value * 0.25)),
+  '0'
+])
+
+const insights = ref<AnalyticsInsight[]>([
   {
     icon: 'growth',
     tone: 'green',
@@ -364,18 +377,41 @@ const insights: ReadonlyArray<{
     title: '视频完播率待提升',
     description: '平均完播率62%，建议优化视频前3秒内容以提升留存'
   }
-] as const
+])
 
-const recommendations = [
+const recommendations = ref<AnalyticsRecommendation[]>([
   {
-    title: '📊 投放策略优化',
+    title: '投放策略优化',
     description: '建议在美国市场增加30%预算，同时优化德国市场的内容本地化以提升转化率'
   },
   {
-    title: '🎬 内容创意优化',
+    title: '内容创意优化',
     description: '视频A表现最佳，建议制作相似风格的变体版本，并在前3秒突出核心卖点'
   }
-] as const
+])
+
+const mapTrendPoint = (value: number, index: number, total: number) => {
+  const x = total <= 1 ? 0 : Number(((index / (total - 1)) * 370).toFixed(2))
+  const y = Number((236 - (value / trendMax.value) * 236).toFixed(2))
+  return { key: `${index}-${x}-${y}`, x, y }
+}
+
+const seriesPoints = (series: AnalyticsTrendSeries) => {
+  return series.data
+    .map((value, index) => {
+      const point = mapTrendPoint(value, index, series.data.length)
+      return `${point.x},${point.y}`
+    })
+    .join(' ')
+}
+
+const trendPointNodes = computed(() => {
+  const highlightSeries = trendSeries.value[trendSeries.value.length - 1]
+  if (!highlightSeries) {
+    return []
+  }
+  return highlightSeries.data.map((value, index) => mapTrendPoint(value, index, highlightSeries.data.length))
+})
 
 const handleNavClick = (path: string) => {
   if (!path || path === router.currentRoute.value.path) {
@@ -386,7 +422,31 @@ const handleNavClick = (path: string) => {
   router.push(path)
 }
 
+/**
+ * 功能：把指标值映射为图表柱高。
+ * 参数：value 为当前指标；max 为图表刻度上限。
+ * 返回：按 236px 画布高度计算出的柱状图高度。
+ */
 const getChartHeight = (value: number, max: number) => Number(((value / max) * 236).toFixed(2))
+
+const loadAnalytics = async () => {
+  try {
+    const summary = await analyticsAPI.summary()
+    metricCards.value = summary.metricCards
+    trendXAxis.value = summary.trendXAxis
+    trendSeries.value = summary.trendSeries
+    marketShare.value = summary.marketShare
+    videoBars.value = summary.videoBars
+    insights.value = summary.insights
+    recommendations.value = summary.recommendations
+  } catch (error) {
+    console.warn('Failed to load analytics summary, fallback demo data is used.', error)
+  }
+}
+
+onMounted(() => {
+  void loadAnalytics()
+})
 </script>
 
 <style scoped>

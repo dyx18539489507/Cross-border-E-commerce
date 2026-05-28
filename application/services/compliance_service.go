@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路商品合规分析服务。
+ * 业务场景：商品录入完成后，需要结合目标国家、材质、卖点和描述判断准入与营销表达风险。
+ * 核心职责：调用 DeepSeek/OpenAI 兼容模型生成合规评估，并在模型不可用时用规则引擎初筛兜底。
+ */
 package services
 
 import (
@@ -5,12 +10,15 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/drama-generator/backend/pkg/ai"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/drama-generator/backend/pkg/utils"
 )
+
+const complianceAITimeout = 6 * time.Second
 
 type ComplianceRiskLevel string
 
@@ -70,12 +78,18 @@ func NewComplianceService(cfg config.ComplianceConfig, log *logger.Logger) *Comp
 	return svc
 }
 
+/**
+ * 功能：评估商品合规风险。
+ * 参数：req 包含商品标题、描述、目标国家、材质成分和营销卖点。
+ * 返回：ComplianceResult；模型不可用或返回异常时返回规则引擎结果而不是中断流程。
+ */
 func (s *ComplianceService) Evaluate(req ComplianceRequest) (*ComplianceResult, error) {
 	sanitized := sanitizeComplianceRequest(req)
 	if !s.enabled {
 		return s.ruleBasedFallback(sanitized, "合规服务已禁用，使用规则引擎初筛"), nil
 	}
 	if s.apiKey == "" || s.baseURL == "" {
+		// 合规 API Key 缺失时仍允许用户继续看到初筛结果，避免配置问题阻塞商品录入演示链路。
 		return s.ruleBasedFallback(sanitized, "未配置合规 API Key，使用规则引擎初筛"), nil
 	}
 
@@ -122,6 +136,7 @@ func (s *ComplianceService) Evaluate(req ComplianceRequest) (*ComplianceResult, 
 	content := strings.TrimSpace(resp.Choices[0].Message.Content)
 	var raw complianceRawResult
 	if err := utils.SafeParseAIJSON(content, &raw); err != nil {
+		// 模型偶尔返回 Markdown 或解释文本，解析失败时降级，避免把不可控格式透给前端。
 		s.log.Warnw("Compliance AI JSON parse failed, fallback to rule-based", "error", err)
 		return s.ruleBasedFallback(sanitized, "AI 返回格式异常，已切换规则引擎初筛"), nil
 	}
@@ -141,6 +156,11 @@ func (s *ComplianceService) Evaluate(req ComplianceRequest) (*ComplianceResult, 
 	return result, nil
 }
 
+/**
+ * 功能：清洗合规请求。
+ * 参数：req 为前端提交的商品合规上下文。
+ * 返回：去空格、去重并规范国家码后的 ComplianceRequest。
+ */
 func sanitizeComplianceRequest(req ComplianceRequest) ComplianceRequest {
 	return ComplianceRequest{
 		Title:                  strings.TrimSpace(req.Title),
@@ -151,6 +171,11 @@ func sanitizeComplianceRequest(req ComplianceRequest) ComplianceRequest {
 	}
 }
 
+/**
+ * 功能：用规则引擎做合规初筛兜底。
+ * 参数：req 为已清洗商品请求；reason 为触发兜底的业务原因。
+ * 返回：基于禁限售关键词和目标市场监管强度生成的 ComplianceResult。
+ */
 func (s *ComplianceService) ruleBasedFallback(req ComplianceRequest, reason string) *ComplianceResult {
 	score := 18
 	nonCompliancePoints := make([]string, 0)
@@ -209,6 +234,7 @@ func (s *ComplianceService) ruleBasedFallback(req ComplianceRequest, reason stri
 
 	for _, rule := range rules {
 		if rule.pattern.MatchString(fullText) {
+			// 命中高危规则时直接拉高分数，普通风险则累加，贴近“多项风险叠加”的合规判断方式。
 			nonCompliancePoints = append(nonCompliancePoints, rule.issue)
 			rectificationSuggestions = append(rectificationSuggestions, rule.rectification)
 			if rule.scoreDelta >= 80 {
@@ -227,6 +253,7 @@ func (s *ComplianceService) ruleBasedFallback(req ComplianceRequest, reason stri
 	}
 	for _, country := range req.TargetCountry {
 		if _, ok := highRegulationMarkets[country]; ok {
+			// 欧美市场标签、认证和广告表达监管更严格，初筛时额外提醒用户补充证明材料。
 			score += 8
 			rectificationSuggestions = append(rectificationSuggestions, "欧美市场监管较严格，建议补充英文标签、原产地和合规声明。")
 			break
@@ -370,6 +397,11 @@ func normalizeCountryCodes(countries []string) []string {
 	return out
 }
 
+/**
+ * 功能：按候选模型顺序调用合规模型。
+ * 参数：messages 为 OpenAI 兼容对话消息。
+ * 返回：首个成功模型的响应和模型名；模型无权限时继续尝试下一个候选。
+ */
 func (s *ComplianceService) chatCompletionWithFallbackModels(messages []ai.ChatMessage) (*ai.ChatCompletionResponse, string, error) {
 	var lastErr error
 	models := s.candidateModels
@@ -379,6 +411,8 @@ func (s *ComplianceService) chatCompletionWithFallbackModels(messages []ai.ChatM
 
 	for _, model := range models {
 		client := ai.NewOpenAIClient(s.baseURL, s.apiKey, model, s.endpoint)
+		// 合规预检处在“继续生成脚本/分镜”的同步链路上，外部模型不可用时必须快速降级到规则引擎，避免按钮长时间停在创建中。
+		client.HTTPClient.Timeout = complianceAITimeout
 		resp, err := client.ChatCompletion(messages, ai.WithTemperature(0.1), ai.WithMaxTokens(900))
 		if err == nil {
 			return resp, model, nil

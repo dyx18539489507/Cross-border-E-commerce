@@ -100,6 +100,7 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// 任务管理
 		&models.AsyncTask{},
+		&models.SilkroadAgentSession{},
 
 		// 通知中心
 		&models.Notification{},

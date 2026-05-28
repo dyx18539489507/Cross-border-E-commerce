@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路官网首页与丝路 Agent 启动入口。
+ * 业务场景：用户在首页用自然语言描述商品、目标市场、平台、人群和卖点，并可附加商品图片。
+ * 核心职责：先在前端做轻量字段抽取并缓存输入，再跳转到 Agent 过渡页发起后端流式分析。
+ */
+-->
 <template>
   <div class="landing-page">
     <header class="landing-header">
@@ -268,6 +275,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { agentAPI } from '@/api/agent'
 import { preloadRouteByPath } from '@/router'
 import {
   ArrowRight,
@@ -455,8 +463,9 @@ const openAgentPage = async () => {
   }
 
   agentStarting.value = true
+  // 首页先做一次轻量抽取，是为了让过渡页立刻有商品/市场等可展示字段，后端模型稍后再给出更完整判断。
   const localExtracted = extractAgentInputFromPrompt(agentPrompt.value)
-  const input: AgentInput = {
+  const baseInput: AgentInput = {
     requestId: createAgentRequestId(),
     ...localExtracted,
     rawPrompt: agentPrompt.value.trim(),
@@ -464,13 +473,33 @@ const openAgentPage = async () => {
   }
 
   try {
+    const remoteExtracted = await extractAgentInputWithBackend(baseInput)
+    const input: AgentInput = {
+      ...baseInput,
+      ...remoteExtracted,
+      requestId: baseInput.requestId,
+      rawPrompt: baseInput.rawPrompt,
+      imageDataUrl: baseInput.imageDataUrl
+    }
+
     preloadRouteByPath('/agent/transition')
+    // Agent 输入和原话分开存储：结构化字段服务分析，原话服务用户可见摘要和信息缺口判断。
     saveAgentInput(input)
     saveAgentUserInput(input.rawPrompt || defaultAgentUserInput)
     clearAgentResult()
     await router.push('/agent/transition')
   } finally {
     agentStarting.value = false
+  }
+}
+
+const extractAgentInputWithBackend = async (input: AgentInput) => {
+  try {
+    // 后端抽取和正式 Agent 使用同一套规则，首页提前调用可以避免前后端识别口径不一致。
+    return await agentAPI.extract(input)
+  } catch (error) {
+    console.warn('Silkroad Agent extract fallback to local parser.', error)
+    return input
   }
 }
 
@@ -490,6 +519,11 @@ const parseAgentSellingPoints = (value: string) => {
     .filter(Boolean)
 }
 
+/**
+ * 功能：从首页自然语言里提取 Agent 初始上下文。
+ * 参数：value 为用户输入的商品描述，可能包含商品、国家、平台、人群、卖点和材质信息。
+ * 返回：AgentInput 的部分字段；缺失字段保留为空，交由后端 Agent 在信息缺口中提示。
+ */
 const extractAgentInputFromPrompt = (value: string): AgentInput => {
   const prompt = value.trim()
   if (!prompt) return {}
@@ -686,6 +720,7 @@ const handleAgentImageChange = (event: Event) => {
     return
   }
 
+  // 图片以 Data URL 暂存到会话中，过渡页和后端视觉模型可以在不依赖正式上传接口的情况下直接读取。
   const reader = new FileReader()
   reader.onload = () => {
     agentImageDataUrl.value = typeof reader.result === 'string' ? reader.result : ''

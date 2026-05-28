@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：丝路 Agent 完成提示组件。
+ * 业务场景：任务链全部完成后，需要给用户明确反馈并承接自动进入结果页的等待时间。
+ * 核心职责：以轻量提示展示“已完成 + 跳转中”状态，不参与任何业务数据修改。
+ */
+-->
 <template>
   <section class="complete-notice" aria-live="polite">
     <div class="complete-notice__message">

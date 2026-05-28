@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路多平台分发服务。
+ * 业务场景：商品素材生成后，需要通过用户自己的 Pinterest、Reddit 和 Discord 账号发布并追踪结果。
+ * 核心职责：维护分发目标、同步外部授权状态、创建分发任务、解析媒体来源并异步执行发布。
+ */
 package services
 
 import (
@@ -118,6 +123,11 @@ func NewDistributionService(db *gorm.DB, cfg *config.Config, log *logger.Logger)
 	}
 }
 
+/**
+ * 功能：列出当前设备的分发账号和目标。
+ * 参数：deviceID 为匿名设备身份。
+ * 返回：Upload-Post profile 与所有未过滤的分发目标，用于前端判断可发布平台。
+ */
 func (s *DistributionService) ListTargets(deviceID string) (*DistributionTargetsView, error) {
 	var profile models.UploadPostProfile
 	var profilePtr *models.UploadPostProfile
@@ -142,6 +152,11 @@ func (s *DistributionService) ListTargets(deviceID string) (*DistributionTargets
 	}, nil
 }
 
+/**
+ * 功能：确保 Upload-Post profile 存在并同步远端状态。
+ * 参数：ctx 控制外部请求生命周期；deviceID 绑定本地 profile。
+ * 返回：最新 UploadPostProfile；外部 API 未配置或失败时返回错误。
+ */
 func (s *DistributionService) EnsureUploadPostProfile(ctx context.Context, deviceID string) (*models.UploadPostProfile, error) {
 	if !s.uploadPost.IsConfigured() {
 		return nil, fmt.Errorf("UPLOAD_POST_API_KEY 未配置")
@@ -208,6 +223,11 @@ func (s *DistributionService) GenerateUploadPostConnectLink(ctx context.Context,
 	return profile, resp.AccessURL, nil
 }
 
+/**
+ * 功能：拉取 Pinterest boards 并同步为可选分发目标。
+ * 参数：ctx 控制外部请求生命周期；deviceID 用于隔离用户数据。
+ * 返回：当前可用的 Pinterest board 目标列表。
+ */
 func (s *DistributionService) ListPinterestBoards(ctx context.Context, deviceID string) ([]models.DistributionTarget, error) {
 	profile, err := s.SyncUploadPostProfile(ctx, deviceID)
 	if err != nil {
@@ -224,6 +244,7 @@ func (s *DistributionService) ListPinterestBoards(ctx context.Context, deviceID 
 
 	now := time.Now()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// 先禁用旧 board，再按远端结果恢复有效目标，避免用户选择已删除或失效的 board。
 		if err := tx.Model(&models.DistributionTarget{}).
 			Where("device_id = ? AND platform = ? AND target_type = ?", deviceID, models.DistributionPlatformPinterest, models.DistributionTargetTypePinterestBoard).
 			Update("status", models.DistributionTargetStatusDisabled).Error; err != nil {
@@ -451,6 +472,7 @@ func (s *DistributionService) UpsertDiscordTarget(ctx context.Context, deviceID 
 	})
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Discord webhook 是敏感发布凭据，只保存加密值；列表接口只暴露 webhook 元数据。
 		if req.IsDefault {
 			if err := tx.Model(&models.DistributionTarget{}).
 				Where("device_id = ? AND platform = ? AND target_type = ?", deviceID, models.DistributionPlatformDiscord, models.DistributionTargetTypeDiscordWebhook).
@@ -589,6 +611,7 @@ func (s *DistributionService) applyUploadPostProfileSnapshot(deviceID string, pr
 			if containsString(connectedPlatforms, string(platform)) && !needsRebind[string(platform)] {
 				targetStatus = models.DistributionTargetStatusActive
 			}
+			// 外部授权状态会直接影响前端是否允许勾选平台，因此同步 profile 时一并更新目标状态。
 			if err := tx.Model(&models.DistributionTarget{}).
 				Where("device_id = ? AND platform = ?", deviceID, platform).
 				Update("status", targetStatus).Error; err != nil {
@@ -622,6 +645,7 @@ func (s *DistributionService) countTargets(deviceID string, platform models.Dist
 
 func uploadPostUsernameForDevice(deviceID string) string {
 	sum := sha1.Sum([]byte(deviceID))
+	// 用设备 ID 派生稳定用户名，既能复用外部授权，又不需要用户注册登录。
 	return "drama_" + hex.EncodeToString(sum[:12])
 }
 
@@ -723,6 +747,11 @@ func resolveFileName(pathOrURL string) string {
 	return base
 }
 
+/**
+ * 功能：创建数字丝路内容分发任务。
+ * 参数：ctx 控制外部同步；deviceID 隔离设备数据；req 包含内容、媒体、平台和排期。
+ * 返回：DistributionJob；任务创建后会异步处理各平台发布结果。
+ */
 func (s *DistributionService) CreateDistribution(ctx context.Context, deviceID string, req *CreateDistributionRequest) (*models.DistributionJob, error) {
 	if req == nil {
 		return nil, fmt.Errorf("请求不能为空")
@@ -778,6 +807,7 @@ func (s *DistributionService) CreateDistribution(ctx context.Context, deviceID s
 
 	var profile *models.UploadPostProfile
 	if includesUploadPostPlatform(platforms) {
+		// Pinterest/Reddit 依赖 Upload-Post 授权，创建任务前先同步 profile，避免提交后才发现授权失效。
 		profile, err = s.SyncUploadPostProfile(ctx, deviceID)
 		if err != nil {
 			return nil, err
@@ -794,6 +824,7 @@ func (s *DistributionService) CreateDistribution(ctx context.Context, deviceID s
 
 	prepared := make([]preparedResult, 0, len(platforms))
 	for _, platform := range platforms {
+		// 每个平台提前生成 target/request 快照，后续异步执行时即使用户修改默认目标，也能复现本次提交意图。
 		targetID, targetSnapshot, requestPayload, initialStatus, err := s.prepareDistributionResult(ctx, deviceID, profile, platform, contentType, publishMode, req, &media, title, body)
 		if err != nil {
 			return nil, err
@@ -870,6 +901,7 @@ func (s *DistributionService) CreateDistribution(ctx context.Context, deviceID s
 		return nil, fmt.Errorf("create distribution job failed: %w", err)
 	}
 
+	// 创建接口立即返回任务，真实发布在后台执行，前端通过轮询 job 状态展示进度。
 	go s.processJobAsync(job.ID)
 
 	return s.GetDistributionJob(deviceID, job.ID)
@@ -936,6 +968,7 @@ func (s *DistributionService) RetryDistribution(ctx context.Context, deviceID st
 		return job, nil
 	}
 
+	// 重试只重置失败的 result，已成功平台保持原状态，避免重复发布到同一渠道。
 	if err := s.db.Model(&models.DistributionResult{}).
 		Where("device_id = ? AND id IN ?", deviceID, resultIDs).
 		Updates(map[string]interface{}{
@@ -966,6 +999,11 @@ func (s *DistributionService) RetryDistribution(ctx context.Context, deviceID st
 	return s.GetDistributionJob(deviceID, jobID)
 }
 
+/**
+ * 功能：处理待执行或待重试的分发结果。
+ * 参数：ctx 控制批处理生命周期；limit 限制单次扫描数量。
+ * 返回：错误；单个 result 失败只记录日志，不中断其他任务处理。
+ */
 func (s *DistributionService) ProcessPendingWork(ctx context.Context, limit int) error {
 	if limit <= 0 {
 		limit = 50
@@ -1094,6 +1132,11 @@ func (s *DistributionService) findDiscordTarget(deviceID string, targetID *uint)
 	return &target, nil
 }
 
+/**
+ * 功能：解析分发任务所需媒体资源。
+ * 参数：req 为创建任务请求；contentType 决定是否需要媒体。
+ * 返回：媒体 URL、本地路径、文件名和来源引用；文本任务返回空媒体。
+ */
 func (s *DistributionService) resolveDistributionMedia(req *CreateDistributionRequest, contentType models.DistributionContentType) (distributionResolvedMedia, error) {
 	if contentType == models.DistributionContentTypeText {
 		return distributionResolvedMedia{}, nil
@@ -1101,6 +1144,7 @@ func (s *DistributionService) resolveDistributionMedia(req *CreateDistributionRe
 
 	mediaURL := strings.TrimSpace(req.MediaURL)
 	if mediaURL != "" {
+		// 前端已传可访问 URL 时直接使用，同时尽量解析本地路径供需要上传文件的渠道复用。
 		resolved := distributionResolvedMedia{
 			URL:       mediaURL,
 			LocalPath: s.resolveLocalStoragePath(mediaURL),

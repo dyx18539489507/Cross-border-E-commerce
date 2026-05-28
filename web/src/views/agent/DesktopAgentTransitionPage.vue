@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：丝路 Agent 桌面端流式过渡页。
+ * 业务场景：用户启动 Agent 后，需要看到商品识别、分析摘要、任务链编排和自动跳转的完整过程。
+ * 核心职责：消费 /agent/analyze 的 SSE 流、并行生成最终结果、在模型不可用时提供本地兜底展示。
+ */
+-->
 <template>
   <main class="desktop-agent-transition" aria-labelledby="desktop-agent-title">
     <div class="desktop-agent-transition__ambient desktop-agent-transition__ambient--cyan" aria-hidden="true"></div>
@@ -349,6 +356,11 @@ const isUsableAgentImage = (value: string) => {
   return value.trim().toLowerCase().startsWith('data:image/')
 }
 
+/**
+ * 功能：构造桌面过渡页的流式分析请求体。
+ * 参数：无；读取会话缓存中的 AgentInput 与用户原话。
+ * 返回：包含页面场景、商品字段、目标市场、卖点和可选图片的分析上下文。
+ */
 const buildAnalyzePayload = () => {
   const input = storedAgentInput.value
   return {
@@ -377,6 +389,11 @@ const startRecognizedReveal = () => {
   })
 }
 
+/**
+ * 功能：启动最终结果生成请求。
+ * 参数：无；内部复用当前 AgentInput 或本地兜底输入。
+ * 返回：Promise；成功时保存后端 AgentResult，失败时保存本地兜底结果，保证结果页有可展示结构。
+ */
 const startResultGeneration = async () => {
   const input = storedAgentInput.value || buildFallbackInput()
   resultFallbackTimer = schedule(() => {
@@ -400,6 +417,11 @@ const startResultGeneration = async () => {
   }
 }
 
+/**
+ * 功能：消费后端 Agent 流式分析。
+ * 参数：无；通过 AbortController 绑定当前页面生命周期。
+ * 返回：Promise；按 SSE 事件更新分析摘要、识别信息和任务链状态。
+ */
 const startStreamingAnalysis = async () => {
   abortController = new AbortController()
   try {
@@ -488,6 +510,7 @@ const appendSummary = (text: string) => {
   const cleanText = sanitizeSummaryText(text)
   if (!cleanText) return
   summaryText.value += cleanText
+  // 摘要每出现一段就逐步释放更多识别字段，让用户感知“先理解需求，再拆解任务”的 Agent 节奏。
   const paragraphCount = summaryText.value.split(/\n+/).filter((item) => item.trim()).length
   visibleInfoCount.value = Math.max(visibleInfoCount.value, Math.min(paragraphCount + 1, recognizedItems.value.length))
 }
@@ -522,6 +545,7 @@ const runLocalFallbackFlow = async () => {
   if (allDone.value) return
   fallbackNotice.value = '网络波动，已切换为本地演示流程'
   const info = currentRecognizedInfo()
+  // 本地兜底只做可解释的轻量推断，不伪造具体认证或法律结论，避免把演示结果当成真实合规判断。
   const paragraphs = [
     '已接收到你的出海需求，正在从自然语言中提取商品、目标市场、平台、人群和核心卖点。\n\n',
     `识别到商品为${info.product}，属于${info.category}，${describeTargetMarketForSummary(info.market)}，主要投放平台为${info.platform}。\n\n`,
@@ -545,6 +569,11 @@ const typeSummary = async (text: string) => {
   }
 }
 
+/**
+ * 功能：补足本地任务链进度。
+ * 参数：无。
+ * 返回：Promise；在流式服务不可用或中断时，按固定节点完成视觉进度并触发结果页跳转。
+ */
 const runTaskFallback = async () => {
   if (!analysisDone.value) {
     markAnalysisDone()
@@ -571,6 +600,7 @@ const completeAllTasks = () => {
 const tryRedirect = () => {
   if (!allDone.value || hasRedirected.value) return
   if (!generationReady.value) {
+    // 任务链完成不代表结果 JSON 已经返回，短暂等待后再兜底，避免结果页读取到空状态。
     schedule(() => {
       if (!generationReady.value) {
         const input = storedAgentInput.value || buildFallbackInput()

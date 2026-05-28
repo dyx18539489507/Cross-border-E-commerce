@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路商品录入第一步。
+ * 业务场景：用户手动创建商品资料，或从 Agent 结果页带入已识别的商品基础信息。
+ * 核心职责：采集商品名称、品类、品牌和图片，写入统一商品草稿并进入目标市场步骤。
+ */
+-->
 <template>
   <div class="product-entry-page">
     <header class="product-entry-header">
@@ -235,7 +242,7 @@
                       <img :src="imagePreviewUrl" alt="商品预览" class="upload-zone__preview-image" />
                       <div class="upload-zone__preview-copy">
                         <strong>{{ imageName || '已选择商品图片' }}</strong>
-                        <span>已完成图片上传，可点击替换或移除当前图片</span>
+                        <span>{{ isUploadingImage ? '正在上传商品图片...' : '已完成图片上传，可点击替换或移除当前图片' }}</span>
                         <div class="upload-zone__preview-actions">
                           <span class="upload-zone__preview-link">点击替换</span>
                           <span
@@ -283,6 +290,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { preloadRouteByPath } from '@/router'
 import { notificationAPI } from '@/api/notification'
+import { uploadAPI } from '@/api/upload'
 import NotificationBell from '@/components/common/NotificationBell.vue'
 import { saveCreateDramaDraft } from '@/utils/createDramaDraft'
 import {
@@ -317,6 +325,7 @@ const categorySearchInputRef = ref<HTMLInputElement | null>(null)
 const categoryCascaderRef = ref<HTMLElement | null>(null)
 const imagePreviewUrl = ref('')
 const imageName = ref('')
+const isUploadingImage = ref(false)
 const isDragOver = ref(false)
 const isCategoryCascaderOpen = ref(false)
 const categorySearchKeyword = ref('')
@@ -529,6 +538,7 @@ const persistStepDraft = () => {
     return
   }
 
+  // 第一页只负责基础资料，但会同步旧创建草稿，让后续合规页可以继续复用现有后端接口。
   const draft: ProductEntryBasicInfo = {
     title: form.title,
     category: getResolvedCategory(),
@@ -560,6 +570,7 @@ const restoreStepDraft = () => {
   form.productImage = typeof draft.productImage === 'string' ? draft.productImage : ''
 
   if (form.productImage) {
+    // Agent 带来的图片或用户上传图片都用同一个预览入口展示，避免后续步骤区分来源。
     imagePreviewUrl.value = form.productImage
     imageName.value = productDraft.source === 'agent' ? 'Agent 商品图片' : '已保存商品图片'
   }
@@ -642,15 +653,6 @@ const validateVisibleFields = () => {
   return valid
 }
 
-const readFileAsDataUrl = (file: File) => {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-}
-
 const applySelectedFile = async (file: File) => {
   if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
     ElMessage.error('仅支持 JPG、PNG 格式的图片')
@@ -662,15 +664,33 @@ const applySelectedFile = async (file: File) => {
     return
   }
 
+  if (isUploadingImage.value) {
+    ElMessage.info('图片正在上传，请稍候')
+    return
+  }
+
   try {
-    const dataUrl = await readFileAsDataUrl(file)
+    isUploadingImage.value = true
+    const localPreview = URL.createObjectURL(file)
     revokeImagePreview()
-    imagePreviewUrl.value = dataUrl
-    form.productImage = dataUrl
+    imagePreviewUrl.value = localPreview
     imageName.value = file.name
+    const uploaded = await uploadAPI.uploadFile(file, { category: 'product-images' })
+    // 商品主图保存后端 URL，而不是浏览器 Data URL，后续合规、内容生成和剪辑页都能跨页面复用同一份素材。
+    revokeImagePreview()
+    imagePreviewUrl.value = uploaded.url
+    form.productImage = uploaded.url
+    imageName.value = uploaded.filename || file.name
     persistStepDraft()
+    ElMessage.success('商品图片已上传')
   } catch {
-    ElMessage.error('图片读取失败，请重新选择')
+    revokeImagePreview()
+    form.productImage = ''
+    imageName.value = ''
+    persistStepDraft()
+    ElMessage.error('图片上传失败，请重新选择')
+  } finally {
+    isUploadingImage.value = false
   }
 }
 
@@ -713,6 +733,7 @@ const handleNextStep = () => {
   }
 
   persistStepDraft()
+  // 保存成功通知只作为工作台提醒，不阻塞进入下一步；失败时也不影响核心录入流程。
   void notificationAPI.create({
     type: 'product_entry_basic_saved',
     title: '商品基础信息已保存',

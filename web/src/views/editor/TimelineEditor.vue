@@ -189,8 +189,16 @@
                 </button>
               </div>
 
+              <input
+                ref="materialInputRef"
+                type="file"
+                class="upload-input"
+                accept="image/*,video/*,audio/*"
+                multiple
+                @change="handleMaterialFileChange"
+              />
               <button type="button" class="upload-material-button" @click="handleUploadMaterial">
-                + 上传素材
+                {{ uploadingMaterial ? '上传中...' : '+ 上传素材' }}
               </button>
             </article>
 
@@ -374,6 +382,8 @@ import { preloadRouteByPath } from '@/router'
 import NotificationBell from '@/components/common/NotificationBell.vue'
 import { assetAPI } from '@/api/asset'
 import { dramaAPI } from '@/api/drama'
+import { musicAPI } from '@/api/music'
+import { uploadAPI } from '@/api/upload'
 import ctaArrowIcon from '@/assets/product-entry/arrow-right.svg'
 import VideoTimelineEditor from '@/components/editor/VideoTimelineEditor.vue'
 import type { Asset } from '@/types/asset'
@@ -385,10 +395,11 @@ import {
   saveEpisodeWorkflowContext,
   type EpisodeWorkflowContext
 } from '@/utils/episodeWorkflowContext'
+import { readContentWorkflowIntent } from '@/utils/contentWorkflowIntent'
 
 type TemplateId = 'minimal' | 'dynamic' | 'lifestyle' | 'future'
-type MusicId = 'corporate' | 'innovation' | 'jazz'
-type MaterialId = 'm1' | 'm2' | 'm3' | 'm4'
+type MusicId = string
+type MaterialId = string
 type ToolId = 'palette' | 'subtitle' | 'transition' | 'balance'
 type SegmentId = 'intro' | 'main' | 'showcase' | 'cta'
 
@@ -404,6 +415,8 @@ interface MusicTrack {
   title: string
   subtitle: string
   duration: string
+  url?: string
+  source?: string
 }
 
 interface MaterialTile {
@@ -445,13 +458,13 @@ const templates: TemplateItem[] = [
   { id: 'future', emoji: '🚀', title: '科技未来', subtitle: '科技、创新' }
 ]
 
-const musicTracks: MusicTrack[] = [
+const fallbackMusicTracks: MusicTrack[] = [
   { id: 'corporate', title: 'Upbeat Corporate', subtitle: '积极、专业', duration: '2:30' },
   { id: 'innovation', title: 'Tech Innovation', subtitle: '科技、未来', duration: '2:45' },
   { id: 'jazz', title: 'Smooth Jazz', subtitle: '轻松、优雅', duration: '3:00' }
 ]
 
-const materials: MaterialTile[] = [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }, { id: 'm4' }]
+const fallbackMaterials: MaterialTile[] = [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }, { id: 'm4' }]
 
 const aiTools: AiTool[] = [
   { id: 'palette', label: '🎨 智能配色' },
@@ -479,6 +492,10 @@ const liveLoading = ref(false)
 const liveTimelineError = ref('')
 const liveStoryboards = ref<Storyboard[]>([])
 const videoAssets = ref<Asset[]>([])
+const materialInputRef = ref<HTMLInputElement | null>(null)
+const uploadingMaterial = ref(false)
+const remoteMusicTracks = ref<MusicTrack[]>([])
+const uploadedMaterials = ref<MaterialTile[]>([])
 
 const episodeId = computed(() => String(route.params.id || 'draft'))
 const workspaceStorageKey = computed(() => `${WORKSPACE_STORAGE_PREFIX}${episodeId.value}`)
@@ -497,6 +514,8 @@ const isPlaying = ref(true)
 const hasLiveTimeline = computed(
   () => Boolean(flowContext.value?.dramaId && flowContext.value?.episodeId && flowContext.value?.episodeNumber)
 )
+const musicTracks = computed(() => remoteMusicTracks.value.length ? remoteMusicTracks.value : fallbackMusicTracks)
+const materials = computed(() => uploadedMaterials.value.length ? uploadedMaterials.value : fallbackMaterials)
 
 const navItems = computed(() => [
   { label: '工作台', path: '/dramas', active: false, width: '66px' },
@@ -647,7 +666,49 @@ const handleSelectSegment = (id: SegmentId) => {
 }
 
 const handleUploadMaterial = () => {
-  ElMessage.info('素材上传入口将在媒体工作流接通后启用，当前先保留高保真界面')
+  if (hasLiveTimeline.value) {
+    goToProfessionalEditor()
+    return
+  }
+  materialInputRef.value?.click()
+}
+
+const handleMaterialFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const files = Array.from(target.files || [])
+  void uploadTimelineMaterials(files)
+  target.value = ''
+}
+
+const uploadTimelineMaterials = async (files: File[]) => {
+  if (!files.length || uploadingMaterial.value) return
+
+  uploadingMaterial.value = true
+  try {
+    const results = await Promise.allSettled(
+      files.slice(0, 8).map((file) => uploadAPI.uploadFile(file, { category: 'timeline-materials' }))
+    )
+    const uploaded = results
+      .filter((item): item is PromiseFulfilledResult<Awaited<ReturnType<typeof uploadAPI.uploadFile>>> => item.status === 'fulfilled')
+      .map((item) => item.value)
+
+    uploadedMaterials.value = [
+      ...uploadedMaterials.value,
+      ...uploaded.map((item, index) => ({ id: `uploaded-${Date.now()}-${index}-${item.filename}` }))
+    ].slice(0, 12)
+
+    if (uploaded.length) {
+      selectedMaterialId.value = uploadedMaterials.value[uploadedMaterials.value.length - 1]?.id || ''
+      persistWorkspace()
+      ElMessage.success(`已上传 ${uploaded.length} 个剪辑素材`)
+    }
+
+    if (uploaded.length < files.length) {
+      ElMessage.warning('部分素材上传失败，请稍后重试')
+    }
+  } finally {
+    uploadingMaterial.value = false
+  }
 }
 
 const togglePlayback = () => {
@@ -690,11 +751,39 @@ const cycleQuality = () => {
 
 const handleExportVideo = () => {
   persistWorkspace()
-  ElMessage.success('导出任务已提交，当前先保留高保真页面与配置状态')
+  if (flowContext.value) {
+    goToProfessionalEditor()
+    ElMessage.info('已进入专业制作台，请在真实时间线中提交导出合成')
+    return
+  }
+
+  const intent = readContentWorkflowIntent()
+  if (intent) {
+    router.push({ path: '/compliance', query: { source: intent.source, next: 'timeline' } })
+    ElMessage.info('已带入 Agent 方案，请先完成合规校验并创建项目')
+    return
+  }
+
+  router.push('/workspace/content')
+  ElMessage.info('请先生成内容素材，再进入真实时间线导出')
 }
 
 const handlePublish = () => {
-  ElMessage.info('发布与数据链路将在成片工作流接通后启用')
+  if (flowContext.value) {
+    goToProfessionalEditor()
+    ElMessage.info('已进入专业制作台，可在“视频合成”中选择成片并一键分发')
+    return
+  }
+
+  const intent = readContentWorkflowIntent()
+  if (intent) {
+    router.push({ path: '/compliance', query: { source: intent.source, next: 'publish' } })
+    ElMessage.info('已带入 Agent 方案，请先完成合规校验并创建项目')
+    return
+  }
+
+  router.push('/workspace/content')
+  ElMessage.info('请先完成内容生成和成片导出，再发布查看数据')
 }
 
 const handleSaveProject = () => {
@@ -705,6 +794,37 @@ const handleSaveProject = () => {
 const handleLiveMergeCompleted = async () => {
   ElMessage.success('时间线合成任务已提交')
   await loadLiveTimelineData()
+}
+
+const formatDuration = (value: unknown) => {
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds) || seconds <= 0) return '试听'
+  const minutes = Math.floor(seconds / 60)
+  const rest = Math.round(seconds % 60)
+  return `${minutes}:${String(rest).padStart(2, '0')}`
+}
+
+const loadMusicTracks = async () => {
+  try {
+    const intent = readContentWorkflowIntent()
+    const keyword = intent?.promotionTags[0] || intent?.targetMarket || '跨境电商 upbeat'
+    const response = await musicAPI.searchMusic({
+      keywords: keyword,
+      page: 1,
+      page_size: 6
+    })
+    const songs = response.items || response.songs || []
+    remoteMusicTracks.value = songs.slice(0, 3).map((song, index) => ({
+      id: `${song.source || 'music'}-${song.id || song.mid || song.hash || index}`,
+      title: song.title || song.name || `推荐配乐 ${index + 1}`,
+      subtitle: [song.artist || song.singer || song.source || '音乐库', song.source].filter(Boolean).join(' / '),
+      duration: formatDuration(song.duration),
+      url: song.url || song.song_url,
+      source: song.source
+    }))
+  } catch {
+    remoteMusicTracks.value = []
+  }
 }
 
 onMounted(async () => {
@@ -721,6 +841,7 @@ onMounted(async () => {
   }
 
   restoreWorkspace()
+  await loadMusicTracks()
   persistWorkspace()
 })
 </script>
@@ -1115,6 +1236,10 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.upload-input {
+  display: none;
 }
 
 .template-card,

@@ -1,3 +1,8 @@
+/**
+ * 模块说明：项目创建与合规预检服务。
+ * 业务场景：数字丝路商品录入完成后，需要先完成目标市场合规校验，再允许生成工作区项目记录。
+ * 核心职责：本文件仍包含旧短剧项目服务；本次注释仅覆盖商品创建、合规缓存与 compliance_token 校验链路。
+ */
 package services
 
 import (
@@ -128,6 +133,11 @@ type preparedCreateDramaInput struct {
 	marketingSellingPoints string
 }
 
+/**
+ * 功能：把前端商品录入请求归一化为合规与创建共用的业务输入。
+ * 参数：req 为商品标题、描述、目标市场、材质和卖点等录入字段。
+ * 返回：去空格、目标国家规范化后的输入；目标市场缺失时返回业务错误。
+ */
 func prepareCreateDramaInput(req *CreateDramaRequest) (*preparedCreateDramaInput, error) {
 	title := strings.TrimSpace(req.Title)
 	description := strings.TrimSpace(req.Description)
@@ -146,6 +156,11 @@ func prepareCreateDramaInput(req *CreateDramaRequest) (*preparedCreateDramaInput
 	}, nil
 }
 
+/**
+ * 功能：复制合规结果，避免缓存对象被调用方意外修改。
+ * 参数：result 为模型或规则引擎产生的合规评分、风险点和建议。
+ * 返回：字段值相同但切片独立的新结果。
+ */
 func cloneComplianceResult(result *ComplianceResult) *ComplianceResult {
 	if result == nil {
 		return nil
@@ -162,6 +177,11 @@ func cloneComplianceResult(result *ComplianceResult) *ComplianceResult {
 	}
 }
 
+/**
+ * 功能：为一次商品合规预检生成内容指纹。
+ * 参数：input 为商品业务字段，deviceID 为前端设备标识。
+ * 返回：用于缓存和 token 绑定的哈希 key。
+ */
 func buildComplianceCacheKey(input *preparedCreateDramaInput, deviceID string) string {
 	payload := struct {
 		DeviceID               string   `json:"device_id"`
@@ -179,11 +199,17 @@ func buildComplianceCacheKey(input *preparedCreateDramaInput, deviceID string) s
 		MarketingSellingPoints: input.marketingSellingPoints,
 	}
 
+	// 将设备 ID 纳入指纹，避免不同用户在同一商品文本下复用彼此的预检 token。
 	raw, _ := json.Marshal(payload)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
 
+/**
+ * 功能：生成短期合规预检 token。
+ * 参数：无。
+ * 返回：随机 token；系统熵不可用时用时间戳哈希兜底，保证流程不中断。
+ */
 func generateComplianceToken() string {
 	randomBytes := make([]byte, 18)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -193,6 +219,11 @@ func generateComplianceToken() string {
 	return hex.EncodeToString(randomBytes)
 }
 
+/**
+ * 功能：读取同一商品内容的短期合规缓存。
+ * 参数：cacheKey 为商品字段和设备 ID 生成的内容指纹。
+ * 返回：未过期的合规结果副本；不存在或过期时返回 nil。
+ */
 func (s *DramaService) getCachedComplianceResult(cacheKey string) *ComplianceResult {
 	if cacheKey == "" {
 		return nil
@@ -208,6 +239,7 @@ func (s *DramaService) getCachedComplianceResult(cacheKey string) *ComplianceRes
 	}
 
 	if now.After(entry.expiresAt) {
+		// 过期数据即时清理，避免用户修改商品后仍看到旧市场风险判断。
 		s.complianceCacheMu.Lock()
 		current, exists := s.complianceCache[cacheKey]
 		if exists && now.After(current.expiresAt) {
@@ -220,6 +252,11 @@ func (s *DramaService) getCachedComplianceResult(cacheKey string) *ComplianceRes
 	return cloneComplianceResult(entry.result)
 }
 
+/**
+ * 功能：写入短期合规缓存。
+ * 参数：cacheKey 为商品内容指纹，result 为合规模型或规则兜底的评估结果。
+ * 返回：无。
+ */
 func (s *DramaService) setCachedComplianceResult(cacheKey string, result *ComplianceResult) {
 	if cacheKey == "" || result == nil {
 		return
@@ -233,6 +270,11 @@ func (s *DramaService) setCachedComplianceResult(cacheKey string, result *Compli
 	s.complianceCacheMu.Unlock()
 }
 
+/**
+ * 功能：签发合规预检通过后的短期 token。
+ * 参数：cacheKey 绑定商品内容，deviceID 绑定当前设备，result 用于后续创建时复用。
+ * 返回：创建接口可携带的 compliance_token。
+ */
 func (s *DramaService) issueComplianceToken(cacheKey, deviceID string, result *ComplianceResult) string {
 	if cacheKey == "" || result == nil {
 		return ""
@@ -250,6 +292,11 @@ func (s *DramaService) issueComplianceToken(cacheKey, deviceID string, result *C
 	return token
 }
 
+/**
+ * 功能：校验创建请求携带的合规 token，并取回对应结果。
+ * 参数：token 来自预检接口，input 是当前创建内容，deviceID 是前端设备标识。
+ * 返回：与当前内容完全匹配的合规结果；token 过期、串设备或内容变化时返回错误。
+ */
 func (s *DramaService) getComplianceResultByToken(token string, input *preparedCreateDramaInput, deviceID string) (*ComplianceResult, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -265,6 +312,7 @@ func (s *DramaService) getComplianceResultByToken(token string, input *preparedC
 	}
 
 	if now.After(entry.expiresAt) {
+		// token 只作为“同内容已预检”的短期凭证，过期后必须重新评估目标市场风险。
 		s.complianceTokensMu.Lock()
 		current, exists := s.complianceTokens[token]
 		if exists && now.After(current.expiresAt) {
@@ -276,11 +324,13 @@ func (s *DramaService) getComplianceResultByToken(token string, input *preparedC
 
 	normalizedDeviceID := strings.TrimSpace(deviceID)
 	if entry.deviceID != normalizedDeviceID {
+		// 设备维度校验让前端无需登录也能防止不同浏览器互相复用预检结果。
 		return nil, ErrCompliancePrecheckInvalid
 	}
 
 	expectedCacheKey := buildComplianceCacheKey(input, normalizedDeviceID)
 	if entry.cacheKey != expectedCacheKey {
+		// 商品标题、目标市场、材质或卖点变化后，原合规判断不能直接用于创建。
 		return nil, ErrCompliancePrecheckInvalid
 	}
 
@@ -296,6 +346,11 @@ func (s *DramaService) getComplianceResultByToken(token string, input *preparedC
 	return cloneComplianceResult(entry.result), nil
 }
 
+/**
+ * 功能：执行或复用一次商品合规评估。
+ * 参数：input 为归一化商品录入信息，deviceID 用于隔离缓存。
+ * 返回：合规评分、风险等级、整改建议和推荐品类；模型不可用时返回可继续展示的默认结果。
+ */
 func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput, deviceID string) *ComplianceResult {
 	cacheKey := buildComplianceCacheKey(input, deviceID)
 	if cached := s.getCachedComplianceResult(cacheKey); cached != nil {
@@ -312,6 +367,7 @@ func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput, devic
 		SuggestedCategories:      []string{},
 	}
 	if s.complianceService != nil {
+		// 合规服务根据商品信息和目标市场调用 DeepSeek 兼容模型；失败时不阻断预检页展示。
 		if evaluated, err := s.complianceService.Evaluate(ComplianceRequest{
 			Title:                  input.title,
 			Description:            input.description,
@@ -329,6 +385,11 @@ func (s *DramaService) evaluateCompliance(input *preparedCreateDramaInput, devic
 	return complianceResult
 }
 
+/**
+ * 功能：供前端合规预检接口调用，返回结果和后续创建凭证。
+ * 参数：req 为商品录入内容，deviceIDs 为请求头中的匿名设备标识。
+ * 返回：合规结果、compliance_token 和可能的输入校验错误。
+ */
 func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest, deviceIDs ...string) (*ComplianceResult, string, error) {
 	input, err := prepareCreateDramaInput(req)
 	if err != nil {
@@ -342,6 +403,11 @@ func (s *DramaService) EvaluateCompliance(req *CreateDramaRequest, deviceIDs ...
 	return complianceResult, complianceToken, nil
 }
 
+/**
+ * 功能：创建数字丝路商品项目，并把合规结论固化到项目记录。
+ * 参数：req 为商品创建请求，可携带 compliance_token；deviceIDs 用于校验同设备预检。
+ * 返回：创建后的项目、合规结果；红色风险或 token 失效时返回业务错误。
+ */
 func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string) (*models.Drama, *ComplianceResult, error) {
 	deviceID := firstDramaDeviceID(deviceIDs)
 	input, err := prepareCreateDramaInput(req)
@@ -351,6 +417,7 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string)
 
 	var complianceResult *ComplianceResult
 	if strings.TrimSpace(req.ComplianceToken) != "" {
+		// 前端先预检再创建时，复用同内容合规结果，避免用户确认后再次等待模型调用。
 		complianceResult, err = s.getComplianceResultByToken(req.ComplianceToken, input, deviceID)
 		if err != nil {
 			return nil, nil, err
@@ -360,6 +427,7 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string)
 	}
 
 	if complianceResult.Level == ComplianceRiskRed {
+		// 红色风险代表目标市场准入或广告表达风险过高，后端必须拦截创建而不能只依赖前端按钮状态。
 		s.log.Warnw(
 			"Drama creation blocked by compliance red risk",
 			"title", input.title,
@@ -919,32 +987,97 @@ func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest, de
 		return err
 	}
 
-	// 删除旧剧集
-	if err := s.db.Where("drama_id = ?", dramaIDUint).Delete(&models.Episode{}).Error; err != nil {
-		s.log.Errorw("Failed to delete old episodes", "error", err)
+	now := time.Now()
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var existingEpisodes []models.Episode
+		if err := tx.Where("drama_id = ?", dramaIDUint).Find(&existingEpisodes).Error; err != nil {
+			s.log.Errorw("Failed to load existing episodes", "error", err)
+			return err
+		}
+
+		existingByNumber := make(map[int]models.Episode, len(existingEpisodes))
+		for _, episode := range existingEpisodes {
+			existingByNumber[episode.EpisodeNum] = episode
+		}
+
+		seenEpisodeNumbers := make(map[int]struct{}, len(req.Episodes))
+		for index, ep := range req.Episodes {
+			episodeNumber := ep.EpisodeNum
+			if episodeNumber <= 0 {
+				episodeNumber = index + 1
+			}
+			if _, exists := seenEpisodeNumbers[episodeNumber]; exists {
+				return fmt.Errorf("duplicate episode number: %d", episodeNumber)
+			}
+			seenEpisodeNumbers[episodeNumber] = struct{}{}
+
+			title := strings.TrimSpace(ep.Title)
+			if title == "" {
+				title = fmt.Sprintf("第%d集", episodeNumber)
+			}
+
+			status := strings.TrimSpace(ep.Status)
+			if status == "" {
+				status = "draft"
+			}
+
+			if existing, exists := existingByNumber[episodeNumber]; exists {
+				updates := map[string]interface{}{
+					"title":          title,
+					"description":    ep.Description,
+					"script_content": ep.ScriptContent,
+					"duration":       ep.Duration,
+					"status":         status,
+					"updated_at":     now,
+				}
+				if err := tx.Model(&models.Episode{}).
+					Where("id = ? AND drama_id = ?", existing.ID, dramaIDUint).
+					Updates(updates).Error; err != nil {
+					s.log.Errorw("Failed to update episode", "error", err, "episode", episodeNumber)
+					return err
+				}
+				continue
+			}
+
+			episode := models.Episode{
+				DramaID:       dramaIDUint,
+				EpisodeNum:    episodeNumber,
+				Title:         title,
+				Description:   ep.Description,
+				ScriptContent: ep.ScriptContent,
+				Duration:      ep.Duration,
+				Status:        status,
+			}
+
+			if err := tx.Create(&episode).Error; err != nil {
+				s.log.Errorw("Failed to create episode", "error", err, "episode", episodeNumber)
+				return err
+			}
+		}
+
+		for _, existing := range existingEpisodes {
+			if _, keep := seenEpisodeNumbers[existing.EpisodeNum]; keep {
+				continue
+			}
+			if err := tx.Delete(&existing).Error; err != nil {
+				s.log.Errorw("Failed to delete removed episode", "error", err, "episode", existing.EpisodeNum)
+				return err
+			}
+		}
+
+		if err := tx.Model(&models.Drama{}).
+			Where("id = ?", dramaIDUint).
+			Updates(map[string]interface{}{
+				"total_episodes": len(req.Episodes),
+				"updated_at":     now,
+			}).Error; err != nil {
+			s.log.Errorw("Failed to update drama episode metadata", "error", err)
+			return err
+		}
+
+		return nil
+	}); err != nil {
 		return err
-	}
-
-	// 创建新剧集（不包含场景，场景由后续步骤生成）
-	for _, ep := range req.Episodes {
-		episode := models.Episode{
-			DramaID:       dramaIDUint,
-			EpisodeNum:    ep.EpisodeNum,
-			Title:         ep.Title,
-			Description:   ep.Description,
-			ScriptContent: ep.ScriptContent,
-			Duration:      ep.Duration,
-			Status:        "draft",
-		}
-
-		if err := s.db.Create(&episode).Error; err != nil {
-			s.log.Errorw("Failed to create episode", "error", err, "episode", ep.EpisodeNum)
-			continue
-		}
-	}
-
-	if err := s.db.Model(&drama).Update("updated_at", time.Now()).Error; err != nil {
-		s.log.Errorw("Failed to update drama timestamp", "error", err)
 	}
 
 	s.log.Infow("Episodes saved", "drama_id", dramaID, "count", len(req.Episodes))

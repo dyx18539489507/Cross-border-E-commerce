@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：丝路 Agent 结果页与追问编排页。
+ * 业务场景：展示一次 Agent 分析的合规、本地化、脚本、数字人和投放结论，并允许用户继续追问。
+ * 核心职责：读取会话中的 AgentResult，处理追问 SSE 返回，把可应用的增量更新同步回当前方案和商品录入草稿。
+ */
+-->
 <template>
   <main class="agent-result-page" aria-labelledby="agent-result-title">
     <div class="agent-result-page__ambient agent-result-page__ambient--cyan" aria-hidden="true"></div>
@@ -33,8 +40,8 @@
           <WarningFilled class="agent-section-title__loose-icon agent-section-title__loose-icon--violet" aria-hidden="true" />
           <h2>没有找到本次 Agent 结果</h2>
         </div>
-        <p>请返回首页重新填写商品信息并启动丝路 Agent。生成结果会临时保存在当前浏览器会话中，刷新结果页不会丢失。</p>
-        <button type="button" class="agent-button agent-button--primary" @click="goHome">
+        <p>{{ missingResultMessage }}</p>
+        <button v-if="!isHistoryRestoring" type="button" class="agent-button agent-button--primary" @click="goHome">
           <span>返回首页</span>
           <ArrowRight class="agent-button__icon" aria-hidden="true" />
         </button>
@@ -144,6 +151,16 @@
                 <span>{{ shot.subtitle || shot.voiceover }}</span>
               </article>
             </div>
+
+            <div class="agent-card-action-row">
+              <button type="button" class="agent-card-action-button agent-card-action-button--primary" @click="startContentWorkflow('video')">
+                <span>生成短视频素材</span>
+                <ArrowRight class="agent-card-action-button__icon" aria-hidden="true" />
+              </button>
+              <button type="button" class="agent-card-action-button" @click="startContentWorkflow('combo')">
+                <span>进入组合创作</span>
+              </button>
+            </div>
           </article>
         </div>
 
@@ -186,6 +203,13 @@
                 <dd>{{ row.value }}</dd>
               </div>
             </dl>
+
+            <div class="agent-card-action-row agent-card-action-row--compact">
+              <button type="button" class="agent-card-action-button agent-card-action-button--pink" @click="startContentWorkflow('avatar')">
+                <span>制作数字人口播</span>
+                <ArrowRight class="agent-card-action-button__icon" aria-hidden="true" />
+              </button>
+            </div>
           </article>
 
           <article class="agent-card launch-suggestion-card">
@@ -224,6 +248,13 @@
               <span>优化建议</span>
               <p>{{ result.promotion.optimizationAdvice }}</p>
             </div>
+
+            <div class="agent-card-action-row agent-card-action-row--compact">
+              <button type="button" class="agent-card-action-button agent-card-action-button--green" @click="startContentWorkflow('promotion')">
+                <span>生成投放素材</span>
+                <ArrowRight class="agent-card-action-button__icon" aria-hidden="true" />
+              </button>
+            </div>
           </article>
         </aside>
       </section>
@@ -234,7 +265,6 @@
             <ChatDotRound class="agent-section-title__loose-icon agent-section-title__loose-icon--violet" aria-hidden="true" />
             <h2 id="agent-reminder-title">与丝路 Agent 对话</h2>
           </div>
-          <span class="agent-reminder-card__time">最近一次回复 · 刚刚</span>
         </div>
 
         <div ref="followUpChatRef" class="follow-up-chat" aria-live="polite">
@@ -289,7 +319,7 @@
                 <div v-if="message.type === 'thinking'" class="agent-thinking-card">
                   <div class="agent-thinking-card__header">
                     <span class="agent-thinking-card__pulse" aria-hidden="true"></span>
-                    <strong>丝路 Agent 正在增量分析</strong>
+                    <strong>{{ message.regenerating ? '丝路 Agent 正在重新编排当前方案' : '丝路 Agent 正在增量分析' }}</strong>
                   </div>
                   <ul class="agent-thinking-card__steps">
                     <li
@@ -317,34 +347,27 @@
                   </div>
                   <p class="agent-follow-up-card__summary">{{ message.summary }}</p>
                   <div class="agent-follow-up-card__tags">
+                    <span v-if="message.intent">{{ getFollowUpIntentLabel(message.intent) }}</span>
                     <span v-for="tag in message.tags" :key="tag">{{ tag }}</span>
                   </div>
-                  <div class="agent-follow-up-details">
-                    <article>
-                      <strong>合规变化</strong>
-                      <p>{{ message.details?.compliance }}</p>
-                    </article>
-                    <article>
-                      <strong>内容风格变化</strong>
-                      <p>{{ message.details?.contentStyle }}</p>
-                    </article>
-                    <article>
-                      <strong>视频表达建议</strong>
-                      <p>{{ message.details?.videoExpression }}</p>
-                    </article>
-                    <article>
-                      <strong>投放建议</strong>
-                      <p>{{ message.details?.promotion }}</p>
+                  <div v-if="message.missingFields?.length" class="agent-follow-up-missing">
+                    <strong>还需要补充</strong>
+                    <span v-for="field in message.missingFields" :key="field">{{ field }}</span>
+                  </div>
+                  <div v-if="getFollowUpDetailCards(message).length" class="agent-follow-up-details">
+                    <article v-for="detail in getFollowUpDetailCards(message)" :key="detail.key">
+                      <strong>{{ detail.title }}</strong>
+                      <p>{{ detail.value }}</p>
                     </article>
                   </div>
                   <div class="agent-follow-up-card__actions">
                     <button
                       type="button"
                       class="agent-follow-up-card__button agent-follow-up-card__button--primary"
-                      :disabled="message.applied"
+                      :disabled="message.applied || isPlanRegenerating"
                       @click="applyFollowUp(message)"
                     >
-                      {{ message.applied ? '已应用' : '应用到当前方案' }}
+                      {{ getFollowUpActionLabel(message) }}
                     </button>
                   </div>
                 </div>
@@ -368,13 +391,13 @@
             type="text"
             aria-label="继续告诉丝路 Agent"
             placeholder="输入补充要求，例如换成印尼市场、语气更年轻一点……"
-            :disabled="isFollowUpLoading"
+            :disabled="isFollowUpLoading || isPlanRegenerating"
             @keyup.enter="sendAgentMessage"
           />
           <button
             type="button"
             class="agent-reminder-input__button"
-            :disabled="isFollowUpLoading || !agentMessage.trim()"
+            :disabled="isFollowUpLoading || isPlanRegenerating || !agentMessage.trim()"
             @click="sendAgentMessage"
           >
             <Promotion class="agent-reminder-input__icon" aria-hidden="true" />
@@ -389,8 +412,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { Component } from 'vue'
 import {
   ArrowLeft,
@@ -408,9 +431,19 @@ import {
   VideoCamera,
   WarningFilled
 } from '@element-plus/icons-vue'
-import type { AgentResult } from '@/types/agent'
-import { readAgentInput, readAgentResult } from '@/utils/agentStorage'
-import { saveAgentResultAsProductDraft } from '@/utils/productEntryDraft'
+import type { AgentInput, AgentResult } from '@/types/agent'
+import { readAgentInput, readAgentResult, saveAgentInput, saveAgentResult } from '@/utils/agentStorage'
+import {
+  getProductDraft,
+  saveAgentResultAsProductDraft,
+  saveProductDraft
+} from '@/utils/productEntryDraft'
+import {
+  buildContentWorkflowIntentFromAgent,
+  saveContentWorkflowIntent,
+  type ContentWorkflowTarget
+} from '@/utils/contentWorkflowIntent'
+import { agentAPI } from '@/api/agent'
 
 defineOptions({
   name: 'AgentResultPage'
@@ -428,6 +461,8 @@ type FollowUpMessage = {
   role: 'user' | 'agent'
   type: 'text' | 'thinking' | 'summary' | 'error'
   content: string
+  intent?: string
+  regenerating?: boolean
   thinkingSteps?: string[]
   visibleThinkingSteps?: string[]
   summary?: string
@@ -435,6 +470,9 @@ type FollowUpMessage = {
   detailExpanded?: boolean
   applied?: boolean
   details?: FollowUpDetails
+  cards?: FollowUpDynamicCard[]
+  updatedFields?: FollowUpUpdatedFields
+  missingFields?: string[]
 }
 
 type FollowUpDetails = {
@@ -444,18 +482,68 @@ type FollowUpDetails = {
   promotion: string
 }
 
+type FollowUpDetailKey = keyof FollowUpDetails
+
+type FollowUpDetailDefinition = {
+  key: FollowUpDetailKey
+  title: string
+  moduleKeywords: string[]
+  queryKeywords: string[]
+}
+
+type FollowUpDetailCard = {
+  key: string
+  title: string
+  value: string
+  type?: string
+}
+
+type FollowUpDynamicCard = {
+  key: string
+  type: string
+  title: string
+  value: string
+}
+
+type FollowUpFieldValue = string | string[]
+type FollowUpUpdatedFields = Partial<Record<
+  | 'productName'
+  | 'category'
+  | 'targetMarket'
+  | 'targetPlatform'
+  | 'targetAudience'
+  | 'coreSellingPoints'
+  | 'materialSpec'
+  | 'usageScenario'
+  | 'marketingGoal'
+  | 'budgetPreference'
+  | 'complianceHints'
+  | 'localizationHints'
+  | 'description',
+  FollowUpFieldValue
+>>
+
 type FollowUpResult = {
   summary: string
+  intent: string
   affectedModules: string[]
   details: FollowUpDetails
+  cards: FollowUpDynamicCard[]
+  updatedFields: FollowUpUpdatedFields
+  missingFields: string[]
 }
 
 type FollowUpContext = {
   productName: string
+  category: string
   targetMarket: string
   platform: string
   audience: string
   sellingPoints: string
+  materialSpec: string
+  usageScenario: string
+  imageUnderstanding: string
+  rawPrompt: string
   complianceResult: string
   contentStrategy: string
   digitalHumanPlan: string
@@ -463,11 +551,15 @@ type FollowUpContext = {
 }
 
 const router = useRouter()
+const route = useRoute()
 const reminderAction = ref('')
 const agentMessage = ref('')
 const storedResult = ref<AgentResult | null>(readAgentResult())
+const storedAgentInput = ref<AgentInput | null>(readAgentInput())
+const isHistoryRestoring = ref(false)
 const messages = ref<FollowUpMessage[]>([])
 const isFollowUpLoading = ref(false)
+const isPlanRegenerating = ref(false)
 const appliedUpdateModules = ref<string[]>([])
 const followUpChatRef = ref<HTMLElement | null>(null)
 
@@ -478,6 +570,97 @@ const thinkingSteps = [
   '正在检查合规表达边界……',
   '正在整理可执行优化建议……'
 ]
+
+const regenerationSteps = [
+  '正在合并追问与当前商品资料……',
+  '正在重新识别商品、市场与平台……',
+  '正在重算合规边界和本地化方向……',
+  '正在生成新的脚本、数字人与投放建议……',
+  '正在同步到当前方案和商品资料……'
+]
+
+const followUpDetailDefinitions: FollowUpDetailDefinition[] = [
+  {
+    key: 'compliance',
+    title: '合规变化',
+    moduleKeywords: ['合规', '风险', '认证', '准入', '法规', '敏感', '材料', '成分'],
+    queryKeywords: ['合规', '风险', '认证', '准入', '禁', '材料', '成分', '市场', '国家', '印尼', '印度尼西亚', '马来', '美国', '欧洲', '东南亚', '食品', '美妆', '母婴', '儿童', '医疗', '电子', '产品', '商品']
+  },
+  {
+    key: 'contentStyle',
+    title: '市场与内容调整',
+    moduleKeywords: ['市场', '内容', '风格', '本地化', '人群', '语气'],
+    queryKeywords: ['市场', '国家', '印尼', '印度尼西亚', '马来', '美国', '欧洲', '东南亚', '语气', '年轻', '本地化', '人群', '风格', '内容', '产品', '商品']
+  },
+  {
+    key: 'videoExpression',
+    title: '视频表达建议',
+    moduleKeywords: ['视频', '表达', '脚本', '分镜', '镜头', '数字人', '口播'],
+    queryKeywords: ['视频', '脚本', '分镜', '镜头', '口播', '数字人', '画面', '开头', '字幕', '图片', '素材', '产品', '商品']
+  },
+  {
+    key: 'promotion',
+    title: '投放建议',
+    moduleKeywords: ['投放', '平台', '渠道', '指标', '预算', '推广'],
+    queryKeywords: ['投放', '平台', 'TikTok', 'Amazon', 'Shopee', 'Lazada', 'Temu', '预算', '点击', '转化', '完播', '推广', '市场']
+  }
+]
+
+const followUpIntentLabels: Record<string, string> = {
+  change_product: '意图：更换商品',
+  change_market: '意图：调整市场',
+  change_platform: '意图：调整平台',
+  change_audience: '意图：调整人群',
+  add_product_info: '意图：补充商品信息',
+  add_material_info: '意图：补充材质',
+  add_usage_scenario: '意图：补充场景',
+  add_image_info: '意图：补充图片信息',
+  adjust_content_tone: '意图：调整语气',
+  optimize_script: '意图：优化脚本',
+  optimize_compliance: '意图：优化合规',
+  optimize_promotion: '意图：优化投放',
+  ask_clarification: '意图：需要补充',
+  general_question: '意图：综合补充'
+}
+
+const followUpTypeTitles: Record<string, string> = {
+  product: '商品资料',
+  market: '市场策略',
+  platform: '平台适配',
+  audience: '人群定位',
+  selling_point: '卖点调整',
+  material: '材质/成分',
+  scenario: '使用场景',
+  compliance: '合规提醒',
+  localization: '本地化内容',
+  script: '脚本表达',
+  digital_human: '数字人方案',
+  promotion: '投放建议',
+  clarification: '需要补充'
+}
+
+const followUpTypeModuleLabels: Record<string, string> = {
+  product: '商品资料',
+  market: '市场策略',
+  platform: '平台策略',
+  audience: '用户人群',
+  selling_point: '核心卖点',
+  material: '材质成分',
+  scenario: '使用场景',
+  compliance: '合规风险',
+  localization: '本地化内容',
+  script: '视频脚本',
+  digital_human: '数字人方案',
+  promotion: '投放建议',
+  clarification: '信息补充'
+}
+
+const legacyDetailTypeMap: Record<FollowUpDetailKey, string> = {
+  compliance: 'compliance',
+  contentStyle: 'localization',
+  videoExpression: 'script',
+  promotion: 'promotion'
+}
 
 const thinkingTimers = new Map<string, number>()
 let followUpAbortController: AbortController | null = null
@@ -544,6 +727,9 @@ const fallbackResult: AgentResult = {
 }
 
 const result = computed(() => storedResult.value ?? fallbackResult)
+const missingResultMessage = computed(() => isHistoryRestoring.value
+  ? '正在从 Agent 历史记录恢复本次方案，请稍候。'
+  : '请返回首页重新填写商品信息并启动丝路 Agent。生成结果会写入当前设备历史，刷新或从通知中心返回时也可以恢复。')
 
 const pageTitle = computed(() => {
   const productName = result.value.recognizedInfo.productName
@@ -624,10 +810,57 @@ const goHome = () => {
   router.push('/')
 }
 
+const restoreAgentResultFromHistory = async () => {
+  if (storedResult.value) {
+    return
+  }
+
+  const rawHistoryId = Array.isArray(route.query.historyId)
+    ? route.query.historyId[0]
+    : route.query.historyId
+  const historyId = Number(rawHistoryId)
+  if (!Number.isFinite(historyId) || historyId <= 0) {
+    return
+  }
+
+  isHistoryRestoring.value = true
+  try {
+    const { item } = await agentAPI.getHistory(historyId)
+    if (item?.input) {
+      storedAgentInput.value = item.input
+      saveAgentInput(item.input)
+    }
+    if (item?.result) {
+      storedResult.value = item.result
+      saveAgentResult(item.result)
+    }
+  } catch (error) {
+    console.warn('Failed to restore Agent history result.', error)
+  } finally {
+    isHistoryRestoring.value = false
+  }
+}
+
 const continueProductEntryFromAgent = () => {
   if (!storedResult.value) return
-  saveAgentResultAsProductDraft(storedResult.value, readAgentInput())
+  // 结果页进入商品录入时，把 Agent 识别出的市场、卖点和合规提示沉淀为商品草稿，避免用户重复填写。
+  saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
   router.push({ path: '/dramas/create', query: { source: 'agent' } })
+}
+
+const startContentWorkflow = (target: ContentWorkflowTarget) => {
+  if (!storedResult.value) return
+
+  // Agent 结果页的内容生产入口需要同时沉淀商品草稿和创作意图，后续页面才能复用同一套商品、市场、脚本和投放建议。
+  saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
+  saveContentWorkflowIntent(buildContentWorkflowIntentFromAgent(storedResult.value, storedAgentInput.value, target))
+  router.push({
+    path: '/workspace/content',
+    query: {
+      source: 'agent',
+      focus: target
+    }
+  })
 }
 
 const markReminderAction = (action: string) => {
@@ -636,7 +869,7 @@ const markReminderAction = (action: string) => {
 
 const sendAgentMessage = () => {
   const message = agentMessage.value.trim()
-  if (!message || isFollowUpLoading.value) return
+  if (!message || isFollowUpLoading.value || isPlanRegenerating.value) return
 
   reminderAction.value = `“${message}”`
   agentMessage.value = ''
@@ -665,6 +898,11 @@ const appendFollowUp = (question: string) => {
   void requestFollowUp(question, agentReply.id)
 }
 
+/**
+ * 功能：向后端发送一次 Agent 追问并消费 SSE 结果。
+ * 参数：question 为用户追加的问题或修改要求；agentMessageId 对应页面上的“思考中”消息。
+ * 返回：Promise；成功时把追问结果转成摘要卡片，失败时保留错误消息供用户重试。
+ */
 const requestFollowUp = async (question: string, agentMessageId: string) => {
   isFollowUpLoading.value = true
   followUpAbortController = new AbortController()
@@ -700,7 +938,7 @@ const requestFollowUp = async (question: string, agentMessageId: string) => {
         const event = parseSSEBlock(block)
         if (!event) continue
         if (event.event === 'result') {
-          updateAgentSummary(agentMessageId, normalizeFollowUpResult(event.data))
+          updateAgentSummary(agentMessageId, normalizeFollowUpResult(event.data, question))
           receivedResult = true
         } else if (event.event === 'error') {
           streamError = event.data?.message || 'follow-up stream error'
@@ -711,7 +949,7 @@ const requestFollowUp = async (question: string, agentMessageId: string) => {
     if (buffer.trim()) {
       const event = parseSSEBlock(buffer)
       if (event?.event === 'result') {
-        updateAgentSummary(agentMessageId, normalizeFollowUpResult(event.data))
+        updateAgentSummary(agentMessageId, normalizeFollowUpResult(event.data, question))
         receivedResult = true
       } else if (event?.event === 'error') {
         streamError = event.data?.message || 'follow-up stream error'
@@ -757,7 +995,8 @@ const parseSSEBlock = (block: string) => {
 const startThinkingSteps = (messageId: string) => {
   const message = findMessage(messageId)
   if (!message) return
-  message.visibleThinkingSteps = [thinkingSteps[0]]
+  const initialSteps = message.thinkingSteps?.length ? message.thinkingSteps : thinkingSteps
+  message.visibleThinkingSteps = [initialSteps[0]]
 
   let index = 1
   const timer = window.setInterval(() => {
@@ -766,8 +1005,9 @@ const startThinkingSteps = (messageId: string) => {
       stopThinkingSteps(messageId)
       return
     }
-    if (index < thinkingSteps.length) {
-      target.visibleThinkingSteps = thinkingSteps.slice(0, index + 1)
+    const steps = target.thinkingSteps?.length ? target.thinkingSteps : thinkingSteps
+    if (index < steps.length) {
+      target.visibleThinkingSteps = steps.slice(0, index + 1)
       index += 1
       scrollFollowUpChat()
     }
@@ -786,7 +1026,7 @@ const stopThinkingSteps = (messageId: string) => {
 const finishThinkingSteps = (messageId: string) => {
   const message = findMessage(messageId)
   if (message?.type === 'thinking') {
-    message.visibleThinkingSteps = [...thinkingSteps]
+    message.visibleThinkingSteps = [...(message.thinkingSteps?.length ? message.thinkingSteps : thinkingSteps)]
   }
   stopThinkingSteps(messageId)
 }
@@ -798,8 +1038,12 @@ const updateAgentSummary = (messageId: string, payload: FollowUpResult) => {
 
   message.type = 'summary'
   message.summary = payload.summary
+  message.intent = payload.intent
   message.tags = payload.affectedModules
   message.details = payload.details
+  message.cards = payload.cards
+  message.updatedFields = payload.updatedFields
+  message.missingFields = payload.missingFields
   message.detailExpanded = true
   message.applied = false
   scrollFollowUpChat()
@@ -811,27 +1055,181 @@ const updateAgentError = (messageId: string) => {
   if (!message) return
   message.type = 'error'
   message.summary = ''
+  message.intent = ''
   message.tags = []
   message.detailExpanded = false
   message.applied = false
+  message.cards = []
+  message.updatedFields = {}
+  message.missingFields = []
 }
 
-const normalizeFollowUpResult = (data: any): FollowUpResult => {
+const normalizeFollowUpResult = (data: any, question = ''): FollowUpResult => {
   const details = data?.details || {}
+  const cards = normalizeFollowUpCards(data?.cards)
+  const updatedFields = normalizeUpdatedFields(data?.updatedFields)
+  const missingFields = toStringList(data?.missingFields).slice(0, 6)
   const modules = Array.isArray(data?.affectedModules)
     ? data.affectedModules.filter((item: unknown): item is string => typeof item === 'string' && item.trim() !== '')
     : []
+  const inferredModules = inferAffectedModules(question, modules, cards)
+  // 后端新协议使用动态 cards，旧协议使用 details；这里统一归一化，保证历史结果和新版追问都能展示。
+  const normalizedDetails = {
+    compliance: sanitizeDisplayText(details.compliance, '继续避免绝对化、医疗化和未经证实的认证表达，并以目标市场实际准入材料为准。'),
+    contentStyle: sanitizeDisplayText(details.contentStyle, '内容语气应贴近目标人群日常表达，保留真实体验感，减少夸张承诺。'),
+    videoExpression: sanitizeDisplayText(details.videoExpression, '前 3 秒突出核心场景和可见卖点，中段用真实使用画面承接。'),
+    promotion: sanitizeDisplayText(details.promotion, '优先测试当前主平台短视频内容，结合完播率、点击率和评论问题继续迭代素材。')
+  }
+  const legacyCards = cards.length ? cards : legacyDetailsToCards(normalizedDetails, question, modules)
 
   return {
     summary: sanitizeDisplayText(data?.summary, '已基于当前商品和原方案，整理出适合继续优化的补充建议。'),
-    affectedModules: modules.length ? modules.slice(0, 6) : ['市场策略', '内容风格', '投放建议', '合规风险'],
-    details: {
-      compliance: sanitizeDisplayText(details.compliance, '继续避免绝对化、医疗化和未经证实的认证表达，并以目标市场实际准入材料为准。'),
-      contentStyle: sanitizeDisplayText(details.contentStyle, '内容语气应贴近目标人群日常表达，保留真实体验感，减少夸张承诺。'),
-      videoExpression: sanitizeDisplayText(details.videoExpression, '前 3 秒突出核心场景和可见卖点，中段用真实使用画面承接。'),
-      promotion: sanitizeDisplayText(details.promotion, '优先测试当前主平台短视频内容，结合完播率、点击率和评论问题继续迭代素材。')
-    }
+    intent: sanitizeIntent(data?.intent, question),
+    affectedModules: modules.length ? modules.slice(0, 6) : inferredModules,
+    details: normalizedDetails,
+    cards: legacyCards,
+    updatedFields,
+    missingFields
   }
+}
+
+const inferAffectedModules = (question: string, modules: string[], cards: FollowUpDynamicCard[] = []) => {
+  if (cards.length) {
+    const labels = Array.from(new Set(cards.map((card) => followUpTypeModuleLabels[card.type] || card.title).filter(Boolean)))
+    if (labels.length) return labels.slice(0, 6)
+  }
+
+  const keys = inferFollowUpDetailKeys(question, modules)
+  const labels: Record<FollowUpDetailKey, string> = {
+    compliance: '合规风险',
+    contentStyle: '市场策略',
+    videoExpression: '视频表达',
+    promotion: '投放建议'
+  }
+  const inferred = Array.from(keys).map((key) => labels[key])
+  return inferred.length ? inferred : ['市场策略', '合规风险']
+}
+
+const inferFollowUpDetailKeys = (question: string, modules: string[] = []) => {
+  const normalizedQuestion = question.toLowerCase()
+  const moduleText = modules.join(' ').toLowerCase()
+  const questionMatchedKeys = followUpDetailDefinitions
+    .filter((definition) =>
+      definition.queryKeywords.some((keyword) => normalizedQuestion.includes(keyword.toLowerCase()))
+    )
+    .map((definition) => definition.key)
+
+  if (questionMatchedKeys.length) {
+    return new Set(questionMatchedKeys)
+  }
+
+  const moduleMatchedKeys = followUpDetailDefinitions
+    .filter((definition) =>
+      definition.moduleKeywords.some((keyword) => moduleText.includes(keyword.toLowerCase()))
+    )
+    .map((definition) => definition.key)
+
+  return new Set(moduleMatchedKeys.length ? moduleMatchedKeys : (['contentStyle', 'compliance'] as FollowUpDetailKey[]))
+}
+
+const getFollowUpDetailCards = (message: FollowUpMessage): FollowUpDetailCard[] => {
+  if (message.cards?.length) {
+    return message.cards
+  }
+  if (!message.details) return []
+
+  const selectedKeys = inferFollowUpDetailKeys(message.content, message.tags || [])
+  return followUpDetailDefinitions
+    .filter((definition) => selectedKeys.has(definition.key))
+    .map((definition) => ({
+      key: definition.key,
+      title: definition.title,
+      value: message.details?.[definition.key] || '',
+      type: definition.key
+    }))
+    .filter((item) => item.value.trim())
+}
+
+const normalizeFollowUpCards = (value: unknown): FollowUpDynamicCard[] => {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item, index) => {
+      const raw = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+      const type = sanitizeCardType(raw.type)
+      const title = sanitizeDisplayText(raw.title, followUpTypeTitles[type] || '补充建议')
+      const content = sanitizeDisplayText(raw.content, '')
+      return {
+        key: `${type}-${index}-${title}`,
+        type,
+        title,
+        value: content
+      }
+    })
+    .filter((card) => card.value.trim())
+}
+
+const legacyDetailsToCards = (details: FollowUpDetails, question: string, modules: string[]) => {
+  const selectedKeys = inferFollowUpDetailKeys(question, modules)
+  return followUpDetailDefinitions
+    .filter((definition) => selectedKeys.has(definition.key))
+    .map((definition) => ({
+      key: definition.key,
+      type: legacyDetailTypeMap[definition.key],
+      title: definition.title,
+      value: details[definition.key] || ''
+    }))
+    .filter((card) => card.value.trim())
+}
+
+const normalizeUpdatedFields = (value: unknown): FollowUpUpdatedFields => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const allowedKeys = new Set<keyof FollowUpUpdatedFields>([
+    'productName',
+    'category',
+    'targetMarket',
+    'targetPlatform',
+    'targetAudience',
+    'coreSellingPoints',
+    'materialSpec',
+    'usageScenario',
+    'marketingGoal',
+    'budgetPreference',
+    'complianceHints',
+    'localizationHints',
+    'description'
+  ])
+  const out: FollowUpUpdatedFields = {}
+
+  Object.entries(value as Record<string, unknown>).forEach(([key, rawValue]) => {
+    if (!allowedKeys.has(key as keyof FollowUpUpdatedFields)) return
+    if (Array.isArray(rawValue)) {
+      const list = toStringList(rawValue)
+      if (list.length) {
+        out[key as keyof FollowUpUpdatedFields] = list
+      }
+      return
+    }
+    const text = sanitizeOptionalText(rawValue)
+    if (text) {
+      out[key as keyof FollowUpUpdatedFields] = text
+    }
+  })
+
+  return out
+}
+
+const toStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeOptionalText(item)).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[，,、;；\n]/)
+      .map((item) => sanitizeOptionalText(item))
+      .filter(Boolean)
+  }
+  return []
 }
 
 const sanitizeDisplayText = (value: unknown, fallback: string) => {
@@ -840,14 +1238,46 @@ const sanitizeDisplayText = (value: unknown, fallback: string) => {
   return cleaned || fallback
 }
 
+const sanitizeOptionalText = (value: unknown) => {
+  return sanitizeDisplayText(value, '')
+}
+
+const sanitizeIntent = (value: unknown, question = '') => {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (question.includes('换') && question.includes('市场')) return 'change_market'
+  if (question.includes('平台')) return 'change_platform'
+  if (question.includes('换') && (question.includes('产品') || question.includes('商品'))) return 'change_product'
+  return 'general_question'
+}
+
+const sanitizeCardType = (value: unknown) => {
+  const type = typeof value === 'string' ? value.trim() : ''
+  return followUpTypeTitles[type] ? type : 'product'
+}
+
+const getFollowUpIntentLabel = (intent: string) => {
+  return followUpIntentLabels[intent] || '意图：综合补充'
+}
+
+/**
+ * 功能：构造追问接口需要的当前方案上下文。
+ * 参数：无；读取当前结果、原始 Agent 输入和已生成模块。
+ * 返回：FollowUpContext，帮助后端判断追问会影响商品、合规、脚本、数字人还是投放模块。
+ */
 const buildFollowUpContext = (): FollowUpContext => {
   const current = result.value
+  const input = storedAgentInput.value
   return {
     productName: current.recognizedInfo.productName,
+    category: current.recognizedInfo.category || input?.category || '',
     targetMarket: current.recognizedInfo.targetMarket,
     platform: current.recognizedInfo.targetPlatform,
     audience: current.recognizedInfo.targetAudience,
     sellingPoints: current.recognizedInfo.coreSellingPoints.join(' / '),
+    materialSpec: input?.materialSpec || '',
+    usageScenario: input?.usageScenario || current.localization.sceneSuggestions.join(' / '),
+    imageUnderstanding: current.recognizedInfo.imageUnderstanding,
+    rawPrompt: input?.rawPrompt || '',
     complianceResult: `${current.overview.complianceRiskLevel}；${current.compliance.summary}`,
     contentStrategy: [
       current.localization.direction,
@@ -870,22 +1300,422 @@ const buildFollowUpContext = (): FollowUpContext => {
   }
 }
 
-const applyFollowUp = (message: FollowUpMessage) => {
-  if (message.type !== 'summary' || message.applied) return
+const applyFollowUp = async (message: FollowUpMessage) => {
+  if (message.type !== 'summary' || message.applied || isPlanRegenerating.value) return
+  const nextResult = applyFollowUpToResult(result.value, message)
+
+  if (shouldRegeneratePlan(message)) {
+    // 换商品、换市场等会改变合规边界，必须重新生成完整方案，不能只在页面局部替换文案。
+    await regenerateCurrentPlan(message, nextResult)
+  } else {
+    storedResult.value = nextResult
+    saveAgentResult(nextResult)
+    persistFollowUpProductDraft(message, nextResult)
+  }
+
   message.applied = true
   const nextModules = new Set(appliedUpdateModules.value)
   ;(message.tags || []).forEach((tag) => nextModules.add(tag))
+  if (shouldRegeneratePlan(message)) {
+    nextModules.add('方案重编排')
+  }
   appliedUpdateModules.value = Array.from(nextModules)
 }
 
+const regenerateCurrentPlan = async (message: FollowUpMessage, baseResult: AgentResult) => {
+  const thinkingMessage: FollowUpMessage = {
+    id: createMessageId('agent-regeneration'),
+    role: 'agent',
+    type: 'thinking',
+    content: message.content,
+    intent: message.intent,
+    regenerating: true,
+    thinkingSteps: [...regenerationSteps],
+    visibleThinkingSteps: []
+  }
+  messages.value.push(thinkingMessage)
+  startThinkingSteps(thinkingMessage.id)
+  isPlanRegenerating.value = true
+  scrollFollowUpChat()
+
+  try {
+    const input = buildRegenerationInput(baseResult, message)
+    storedAgentInput.value = input
+    saveAgentInput(input)
+    const regenerated = await agentAPI.generate(input)
+    const nextResult = mergeRegeneratedResult(regenerated, message)
+    storedResult.value = nextResult
+    saveAgentResult(nextResult)
+    saveAgentResultAsProductDraft(nextResult, input)
+    persistFollowUpProductDraft(message, nextResult)
+    updateRegenerationSummary(thinkingMessage.id, message, nextResult)
+  } catch {
+    storedResult.value = baseResult
+    saveAgentResult(baseResult)
+    persistFollowUpProductDraft(message, baseResult)
+    updateRegenerationFallback(thinkingMessage.id, message)
+  } finally {
+    stopThinkingSteps(thinkingMessage.id)
+    isPlanRegenerating.value = false
+    scrollFollowUpChat()
+  }
+}
+
+const shouldRegeneratePlan = (message: FollowUpMessage) => {
+  if (message.intent === 'ask_clarification' || message.missingFields?.length) {
+    return false
+  }
+
+  const regenerationIntents = new Set([
+    'change_product',
+    'change_market',
+    'change_platform',
+    'change_audience',
+    'add_product_info',
+    'add_material_info',
+    'add_usage_scenario',
+    'add_image_info',
+    'adjust_content_tone',
+    'optimize_script',
+    'optimize_compliance',
+    'optimize_promotion'
+  ])
+  if (message.intent && regenerationIntents.has(message.intent)) {
+    return true
+  }
+
+  const fieldKeys = Object.keys(message.updatedFields || {})
+  return fieldKeys.some((key) =>
+    ['productName', 'category', 'targetMarket', 'targetPlatform', 'targetAudience', 'coreSellingPoints', 'materialSpec', 'usageScenario'].includes(key)
+  )
+}
+
+const buildRegenerationInput = (baseResult: AgentResult, message: FollowUpMessage): AgentInput => {
+  const previous = storedAgentInput.value
+  const draft = getProductDraft()
+  const fields = message.updatedFields || {}
+  const productName = fieldAsText(fields.productName) || baseResult.recognizedInfo.productName || previous?.productName || draft?.productName || ''
+  const category = fieldAsText(fields.category) || baseResult.recognizedInfo.category || previous?.category || draft?.category || ''
+  const targetMarket = fieldAsText(fields.targetMarket) || baseResult.recognizedInfo.targetMarket || previous?.targetMarket || draft?.targetMarket || ''
+  const targetPlatform = fieldAsText(fields.targetPlatform) || baseResult.recognizedInfo.targetPlatform || previous?.targetPlatform || draft?.targetPlatform || ''
+  const targetAudience = fieldAsText(fields.targetAudience) || baseResult.recognizedInfo.targetAudience || previous?.targetAudience || draft?.targetAudience || ''
+  const coreSellingPoints = mergeUnique(
+    fieldAsList(fields.coreSellingPoints),
+    baseResult.recognizedInfo.coreSellingPoints,
+    previous?.coreSellingPoints,
+    draft?.coreSellingPoints
+  )
+  const materialSpec = fieldAsText(fields.materialSpec) || previous?.materialSpec || draft?.materialSpec || ''
+  const usageScenario =
+    fieldAsText(fields.usageScenario) ||
+    previous?.usageScenario ||
+    draft?.usageScenario ||
+    baseResult.localization.sceneSuggestions.join('、')
+
+  return {
+    ...previous,
+    productName,
+    category,
+    targetMarket,
+    targetPlatform,
+    targetAudience,
+    coreSellingPoints,
+    materialSpec,
+    usageScenario,
+    rawPrompt: mergeText(previous?.rawPrompt || draft?.description || '', `追问更新：${message.content}`),
+    imageDataUrl: previous?.imageDataUrl || draft?.productImage || ''
+  }
+}
+
+const mergeRegeneratedResult = (regenerated: AgentResult, message: FollowUpMessage): AgentResult => {
+  const next = cloneAgentResult(regenerated)
+  next.agentMessage.summary = mergeText(next.agentMessage.summary, message.summary || '')
+  if (message.missingFields?.length) {
+    next.compliance.missingInfo = mergeUnique(message.missingFields, next.compliance.missingInfo)
+    next.agentMessage.missingInfoNotice = `建议继续补充：${message.missingFields.join('、')}。`
+  }
+  return next
+}
+
+const updateRegenerationSummary = (messageId: string, sourceMessage: FollowUpMessage, nextResult: AgentResult) => {
+  finishThinkingSteps(messageId)
+  const message = findMessage(messageId)
+  if (!message) return
+
+  message.type = 'summary'
+  message.summary = `当前方案已根据“${sourceMessage.content}”重新编排，主结果区和商品资料已同步更新。`
+  message.intent = sourceMessage.intent
+  message.tags = mergeUnique(['方案已重新编排'], sourceMessage.tags || [])
+  message.cards = buildRegenerationResultCards(nextResult)
+  message.updatedFields = sourceMessage.updatedFields
+  message.missingFields = []
+  message.applied = true
+  scrollFollowUpChat()
+}
+
+const updateRegenerationFallback = (messageId: string, sourceMessage: FollowUpMessage) => {
+  finishThinkingSteps(messageId)
+  const message = findMessage(messageId)
+  if (!message) return
+
+  message.type = 'summary'
+  message.summary = '完整方案重新编排暂时未完成，已先将本次追问能确定的字段同步到当前方案。'
+  message.intent = sourceMessage.intent
+  message.tags = mergeUnique(['已应用字段更新'], sourceMessage.tags || [])
+  message.cards = [
+    {
+      key: `fallback-${messageId}`,
+      type: 'clarification',
+      title: '重新编排未完成',
+      value: '当前已保留追问更新；可稍后重新发送本次要求，让 Agent 再次完整生成方案。'
+    }
+  ]
+  message.updatedFields = sourceMessage.updatedFields
+  message.missingFields = sourceMessage.missingFields || []
+  message.applied = true
+  scrollFollowUpChat()
+}
+
+const buildRegenerationResultCards = (nextResult: AgentResult): FollowUpDynamicCard[] => [
+  {
+    key: 'regenerated-product',
+    type: 'product',
+    title: '商品资料',
+    value: [nextResult.recognizedInfo.productName, nextResult.recognizedInfo.category].filter(Boolean).join(' / ') || '商品资料已更新'
+  },
+  {
+    key: 'regenerated-market',
+    type: 'market',
+    title: '市场与平台',
+    value: [nextResult.recognizedInfo.targetMarket, nextResult.recognizedInfo.targetPlatform].filter(Boolean).join(' / ') || nextResult.overview.marketStrategy
+  },
+  {
+    key: 'regenerated-compliance',
+    type: 'compliance',
+    title: '合规结论',
+    value: nextResult.compliance.summary || nextResult.overview.complianceRiskLevel
+  },
+  {
+    key: 'regenerated-script',
+    type: 'script',
+    title: '内容脚本',
+    value: nextResult.script.opening.content || nextResult.overview.recommendedVideoStyle
+  }
+].filter((card) => card.value.trim())
+
+const fieldAsText = (value: FollowUpFieldValue | undefined) => {
+  const text = Array.isArray(value) ? value[0] : value
+  return sanitizeOptionalText(text)
+}
+
+const fieldAsList = (value: FollowUpFieldValue | undefined) => toStringList(value)
+
+const getFollowUpActionLabel = (message: FollowUpMessage) => {
+  if (message.applied) return '已应用'
+  if (isPlanRegenerating.value) return '重新编排中'
+  if (shouldRegeneratePlan(message)) return '应用并重新编排方案'
+  if (message.intent === 'ask_clarification') return '记录补充需求'
+  return '应用到当前方案'
+}
+
+const applyFollowUpToResult = (current: AgentResult, message: FollowUpMessage): AgentResult => {
+  const next = cloneAgentResult(current)
+  const fields = message.updatedFields || {}
+
+  setStringField(fields.productName, (value) => {
+    next.recognizedInfo.productName = value
+  })
+  setStringField(fields.category, (value) => {
+    next.recognizedInfo.category = value
+  })
+  setStringField(fields.targetMarket, (value) => {
+    next.recognizedInfo.targetMarket = value
+    next.localization.direction = `${value}市场本地化方向`
+    next.overview.marketStrategy = `围绕${value}市场重新校准商品表达、合规提示和投放节奏。`
+  })
+  setStringField(fields.targetPlatform, (value) => {
+    next.recognizedInfo.targetPlatform = value
+    next.promotion.platforms = mergeUnique([value], next.promotion.platforms)
+  })
+  setStringField(fields.targetAudience, (value) => {
+    next.recognizedInfo.targetAudience = value
+  })
+  setListField(fields.coreSellingPoints, (values) => {
+    next.recognizedInfo.coreSellingPoints = mergeUnique(values, next.recognizedInfo.coreSellingPoints)
+  })
+  setStringField(fields.materialSpec, (value) => {
+    next.recognizedInfo.imageUnderstanding = mergeText(next.recognizedInfo.imageUnderstanding, `材质/成分：${value}`)
+    next.compliance.missingInfo = next.compliance.missingInfo.filter((item) => !item.includes('材质') && !item.includes('成分'))
+  })
+  setStringField(fields.usageScenario, (value) => {
+    next.localization.sceneSuggestions = mergeUnique([value], next.localization.sceneSuggestions)
+  })
+  setListField(fields.marketingGoal, (values) => {
+    next.promotion.focusMetrics = mergeUnique(values, next.promotion.focusMetrics)
+  })
+  setStringField(fields.budgetPreference, (value) => {
+    next.promotion.optimizationAdvice = mergeText(next.promotion.optimizationAdvice, `预算偏好：${value}`)
+  })
+  setListField(fields.complianceHints, (values) => {
+    next.compliance.suggestions = mergeUnique(values, next.compliance.suggestions)
+  })
+  setListField(fields.localizationHints, (values) => {
+    next.localization.keywords = mergeUnique(values, next.localization.keywords)
+  })
+  setStringField(fields.description, (value) => {
+    next.agentMessage.summary = mergeText(next.agentMessage.summary, value)
+  })
+
+  applyFollowUpCardsToResult(next, message.cards || [])
+  if (message.summary) {
+    next.agentMessage.summary = mergeText(next.agentMessage.summary, message.summary)
+  }
+  if (message.missingFields?.length) {
+    next.compliance.missingInfo = mergeUnique(message.missingFields, next.compliance.missingInfo)
+    next.agentMessage.missingInfoNotice = `建议继续补充：${message.missingFields.join('、')}。`
+  }
+
+  return next
+}
+
+const applyFollowUpCardsToResult = (next: AgentResult, cards: FollowUpDynamicCard[]) => {
+  cards.forEach((card) => {
+    if (card.type === 'compliance') {
+      next.compliance.suggestions = mergeUnique([card.value], next.compliance.suggestions)
+      next.compliance.summary = mergeText(next.compliance.summary, card.value)
+    } else if (['market', 'localization', 'audience', 'scenario'].includes(card.type)) {
+      next.localization.sceneSuggestions = mergeUnique([card.value], next.localization.sceneSuggestions)
+      next.localization.reason = mergeText(next.localization.reason, card.value)
+    } else if (card.type === 'script') {
+      next.script.opening.content = mergeText(next.script.opening.content, card.value)
+      next.overview.recommendedVideoStyle = card.title
+    } else if (card.type === 'digital_human') {
+      next.digitalHuman.tone = mergeText(next.digitalHuman.tone, card.value)
+    } else if (card.type === 'promotion' || card.type === 'platform') {
+      next.promotion.optimizationAdvice = mergeText(next.promotion.optimizationAdvice, card.value)
+    }
+  })
+}
+
+const persistFollowUpProductDraft = (message: FollowUpMessage, nextResult: AgentResult) => {
+  if (!getProductDraft()) {
+    saveAgentResultAsProductDraft(nextResult, storedAgentInput.value)
+  }
+
+  const currentDraft = getProductDraft()
+  const fields = message.updatedFields || {}
+  const complianceHints = mergeUnique(
+    [
+      ...(currentDraft?.complianceHints || []),
+      ...toStringList(fields.complianceHints),
+      ...getCardsByType(message.cards || [], ['compliance']).map((card) => card.value)
+    ]
+  )
+  const localizationHints = mergeUnique(
+    [
+      ...(currentDraft?.localizationHints || []),
+      ...toStringList(fields.localizationHints),
+      ...getCardsByType(message.cards || [], ['market', 'localization', 'audience', 'scenario', 'script', 'digital_human', 'promotion', 'platform']).map((card) => card.value)
+    ]
+  )
+  const patch: Parameters<typeof saveProductDraft>[0] = {
+    source: 'agent',
+    agentSummary: mergeText(currentDraft?.agentSummary || '', message.summary || ''),
+    complianceHints,
+    localizationHints
+  }
+
+  setDraftTextField(patch, 'productName', fields.productName)
+  setDraftTextField(patch, 'category', fields.category)
+  setDraftTextField(patch, 'targetMarket', fields.targetMarket)
+  setDraftTextField(patch, 'targetPlatform', fields.targetPlatform)
+  setDraftTextField(patch, 'targetAudience', fields.targetAudience)
+  setDraftTextField(patch, 'materialSpec', fields.materialSpec)
+  setDraftTextField(patch, 'usageScenario', fields.usageScenario)
+  setDraftTextField(patch, 'budgetPreference', fields.budgetPreference)
+  setDraftTextField(patch, 'description', fields.description)
+  setDraftListField(patch, 'coreSellingPoints', fields.coreSellingPoints)
+  setDraftListField(patch, 'marketingGoal', fields.marketingGoal)
+
+  saveProductDraft(patch)
+}
+
+const cloneAgentResult = (value: AgentResult): AgentResult => JSON.parse(JSON.stringify(value)) as AgentResult
+
+const setDraftTextField = (
+  patch: Parameters<typeof saveProductDraft>[0],
+  key: 'productName' | 'category' | 'targetMarket' | 'targetPlatform' | 'targetAudience' | 'materialSpec' | 'usageScenario' | 'budgetPreference' | 'description',
+  value: FollowUpFieldValue | undefined
+) => {
+  const text = Array.isArray(value) ? value[0] : value
+  if (typeof text === 'string' && text.trim()) {
+    patch[key] = text.trim()
+  }
+}
+
+const setDraftListField = (
+  patch: Parameters<typeof saveProductDraft>[0],
+  key: 'coreSellingPoints' | 'marketingGoal',
+  value: FollowUpFieldValue | undefined
+) => {
+  const list = toStringList(value)
+  if (list.length) {
+    patch[key] = list
+  }
+}
+
+const setStringField = (value: FollowUpFieldValue | undefined, setter: (value: string) => void) => {
+  const text = Array.isArray(value) ? value[0] : value
+  if (typeof text === 'string' && text.trim()) {
+    setter(text.trim())
+  }
+}
+
+const setListField = (value: FollowUpFieldValue | undefined, setter: (value: string[]) => void) => {
+  const list = toStringList(value)
+  if (list.length) {
+    setter(list)
+  }
+}
+
+const mergeUnique = (...groups: Array<Array<string | undefined> | undefined>) => {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  groups.flat().forEach((item) => {
+    const text = sanitizeOptionalText(item)
+    if (!text || seen.has(text)) return
+    seen.add(text)
+    merged.push(text)
+  })
+  return merged
+}
+
+const mergeText = (base: string | undefined, addition: string | undefined) => {
+  const current = sanitizeOptionalText(base)
+  const next = sanitizeOptionalText(addition)
+  if (!next) return current
+  if (!current) return next
+  if (current.includes(next)) return current
+  return `${current}；${next}`
+}
+
+const getCardsByType = (cards: FollowUpDynamicCard[], types: string[]) => {
+  const wanted = new Set(types)
+  return cards.filter((card) => wanted.has(card.type))
+}
+
 const regenerateFollowUp = (message: FollowUpMessage) => {
-  if (isFollowUpLoading.value || !message.content) return
+  if (isFollowUpLoading.value || isPlanRegenerating.value || !message.content) return
   message.type = 'thinking'
   message.thinkingSteps = [...thinkingSteps]
   message.visibleThinkingSteps = []
   message.summary = ''
+  message.intent = ''
   message.tags = []
   message.details = undefined
+  message.cards = []
+  message.updatedFields = {}
+  message.missingFields = []
   message.detailExpanded = false
   message.applied = false
   startThinkingSteps(message.id)
@@ -896,6 +1726,9 @@ type AppliedModuleKey = 'compliance' | 'video' | 'localization' | 'digitalHuman'
 
 const hasAppliedUpdate = (module: AppliedModuleKey) => {
   const modules = appliedUpdateModules.value.join(' ')
+  if (modules.includes('方案重编排')) {
+    return true
+  }
   const rules: Record<AppliedModuleKey, string[]> = {
     compliance: ['合规', '风险'],
     video: ['视频', '表达', '内容风格'],
@@ -923,6 +1756,10 @@ const scrollFollowUpChat = () => {
     }
   })
 }
+
+onMounted(() => {
+  void restoreAgentResultFromHistory()
+})
 
 onBeforeUnmount(() => {
   followUpAbortController?.abort()
@@ -1294,6 +2131,66 @@ onBeforeUnmount(() => {
 .agent-button--primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 22px 34px -18px rgba(124, 58, 237, 0.6);
+}
+
+.agent-card-action-row {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.agent-card-action-row--compact {
+  margin-top: 14px;
+}
+
+.agent-card-action-button {
+  min-height: 34px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  padding: 8px 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #ffffff;
+  color: #0a2463;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.agent-card-action-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(6, 182, 212, 0.45);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+}
+
+.agent-card-action-button--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%);
+  color: #ffffff;
+}
+
+.agent-card-action-button--pink {
+  border-color: transparent;
+  background: linear-gradient(135deg, #d946ef 0%, #7c3aed 100%);
+  color: #ffffff;
+}
+
+.agent-card-action-button--green {
+  border-color: transparent;
+  background: linear-gradient(135deg, #10b981 0%, #0891b2 100%);
+  color: #ffffff;
+}
+
+.agent-card-action-button__icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
 }
 
 .agent-summary-card {
@@ -1933,13 +2830,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
-.agent-reminder-card__time {
-  color: #90a1b9;
-  font-size: 11px;
-  line-height: 17px;
-  white-space: nowrap;
-}
-
 .follow-up-chat {
   min-height: 214px;
   max-height: 560px;
@@ -2279,6 +3169,36 @@ onBeforeUnmount(() => {
   color: #0a2463;
   font-size: 11px;
   line-height: 17px;
+  font-weight: 700;
+}
+
+.agent-follow-up-missing {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(249, 115, 22, 0.22);
+  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255, 247, 237, 0.72);
+}
+
+.agent-follow-up-missing strong,
+.agent-follow-up-missing span {
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.agent-follow-up-missing strong {
+  color: #9a3412;
+}
+
+.agent-follow-up-missing span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #c2410c;
   font-weight: 700;
 }
 

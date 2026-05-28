@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路分发账号设置面板。
+ * 业务场景：用户需要为当前设备身份绑定 Pinterest、Reddit 和 Discord 发布目标。
+ * 核心职责：创建/同步 Upload-Post profile，保存默认 board/subreddit/webhook，并维护前端可选择的分发目标。
+ */
+-->
 <template>
   <div class="distribution-settings" v-loading="loading">
     <div class="settings-header">
@@ -317,6 +324,7 @@ const connectedPlatforms = computed(() => {
 })
 
 const hydrateTargetState = () => {
+  // 加载目标后同步默认值到表单，保证用户看到的配置与后端当前默认发布目标一致。
   const defaultBoard = pinterestBoards.value.find(item => item.is_default)
   selectedBoardId.value = defaultBoard?.id
 
@@ -375,6 +383,7 @@ const openConnectLink = async (platform: DistributionPlatform) => {
   connectingPlatform.value = platform
   try {
     if (!targetsView.value.uploadPostProfile) {
+      // 授权链接必须绑定 profile；没有本地 profile 时先创建，避免第三方回调找不到用户归属。
       await ensureProfile()
     }
     const result = await distributionAPI.generateUploadPostConnectLink()
@@ -444,6 +453,7 @@ const saveDiscordTarget = async () => {
 
   savingDiscord.value = true
   try {
+    // Webhook URL 只提交给后端保存，前端不持久化敏感 URL，降低浏览器侧泄露风险。
     await distributionAPI.upsertDiscordTarget({
       webhookUrl: discordForm.webhookUrl.trim(),
       name: discordForm.name.trim() || undefined,

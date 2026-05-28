@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：数字丝路商品录入完成页。
+ * 业务场景：用户完成商品资料录入后，需要进入合规分析或回到工作台。
+ * 核心职责：把最终商品草稿同步为后端创建/合规接口可识别的请求草稿，并承接下一步跳转。
+ */
+-->
 <template>
   <ProductEntryFlowShell active-step="complete">
     <section class="product-entry-card product-entry-card--complete">
@@ -34,6 +41,7 @@ const router = useRouter()
 const goCompliance = () => {
   const createDraft = buildCreateDramaDraftFromProductEntry()
   if (createDraft) {
+    // 完成页再次同步创建草稿，是为了用户刷新或直接点击合规分析时仍能拿到完整商品上下文。
     saveCreateDramaDraft(createDraft)
   }
 

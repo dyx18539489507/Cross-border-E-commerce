@@ -1,3 +1,8 @@
+/**
+ * 模块说明：项目与合规接口请求封装。
+ * 业务场景：数字丝路商品录入完成后，前端复用现有项目接口完成合规预检、创建项目和后续脚本/分镜流程。
+ * 核心职责：封装 /dramas 相关请求；本次注释只解释数字丝路用到的合规与创建入口，旧短剧接口不展开说明。
+ */
 import type {
     CheckDramaComplianceResponse,
     CreateDramaRequest,
@@ -22,10 +27,20 @@ export const dramaAPI = {
     }>('/dramas', { params })
   },
 
+  /**
+   * 功能：创建数字丝路商品项目并进入后续脚本/分镜流程。
+   * 参数：data 为商品录入适配出的 CreateDramaRequest，可携带 compliance_token 证明已完成同内容预检。
+   * 返回：CreateDramaResponse，包含创建后的项目记录和后端保存的合规结果。
+   */
   create(data: CreateDramaRequest) {
     return request.post<CreateDramaResponse>('/dramas', data)
   },
 
+  /**
+   * 功能：对商品录入数据进行合规预检。
+   * 参数：data 包含商品标题、描述、目标国家、材质和营销卖点。
+   * 返回：合规评分、风险等级、整改建议和短期 compliance_token，供后续创建接口校验。
+   */
   checkCompliance(data: CreateDramaRequest) {
     return request.post<CheckDramaComplianceResponse>('/dramas/compliance-check', data)
   },

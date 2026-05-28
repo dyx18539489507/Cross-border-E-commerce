@@ -1150,6 +1150,7 @@ import VideoTimelineEditor from '@/components/editor/VideoTimelineEditor.vue'
 import DistributionDialog from '@/components/distribution/DistributionDialog.vue'
 import type { Drama, Episode, Storyboard } from '@/types/drama'
 import { AppHeader } from '@/components/common'
+import { readContentWorkflowIntent } from '@/utils/contentWorkflowIntent'
 
 const route = useRoute()
 const router = useRouter()
@@ -1221,6 +1222,8 @@ const loadingDouyinMusic = ref(false)
 const douyinMusicUpdatedAt = ref<string | null>(null)
 const sfxAssets = ref<AudioListItem[]>([])
 const loadingSfx = ref(false)
+const sfxPrompt = ref('')
+const generatingSfx = ref(false)
 const sfxCategory = ref('热门')
 const sfxPage = ref(1)
 const sfxHasMore = ref(true)
@@ -2119,6 +2122,56 @@ const loadSfx = async (append = false) => {
     } else {
       loadingSfx.value = false
     }
+  }
+}
+
+const generateSfx = async () => {
+  const prompt = sfxPrompt.value.trim()
+  if (!prompt) {
+    ElMessage.warning('请输入要生成的音效描述')
+    return
+  }
+  if (generatingSfx.value) return
+
+  generatingSfx.value = true
+  const { signal, cleanup } = createTimeoutSignal(SFX_FETCH_TIMEOUT_MS)
+  try {
+    const response = await fetch('/api/v1/sfx/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, count: 3 }),
+      signal
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const data = await response.json()
+    const payload = data && typeof data === 'object' && 'success' in data && 'data' in data ? data.data : data
+    const { items } = resolveListPayload(payload)
+    const generated = mapSfxItems(items, 'AI生成', 0)
+    if (!generated.length) {
+      ElMessage.warning('暂未生成可用音效，请换个描述重试')
+      return
+    }
+
+    const existingKeys = new Set(sfxAssets.value.map((asset) => `${asset.id}|${asset.url}`))
+    sfxAssets.value = [
+      ...generated.filter((asset) => {
+        const key = `${asset.id}|${asset.url}`
+        if (existingKeys.has(key)) return false
+        existingKeys.add(key)
+        return true
+      }),
+      ...sfxAssets.value
+    ]
+    audioMode.value = 'sfx'
+    sfxCategory.value = 'AI生成'
+    ElMessage.success('音效已生成，可直接试听并加入时间线')
+  } catch (error: any) {
+    ElMessage.error(error?.message === 'timeout' ? '音效生成超时，请稍后重试' : '音效生成失败')
+  } finally {
+    cleanup()
+    generatingSfx.value = false
   }
 }
 
@@ -4258,6 +4311,28 @@ const loadData = async () => {
   }
 }
 
+const getRouteQueryText = (value: unknown) => {
+  if (Array.isArray(value)) return String(value[0] || '')
+  return String(value || '')
+}
+
+const applyContentWorkflowFocus = () => {
+  const focus = getRouteQueryText(route.query.focus) || readContentWorkflowIntent()?.target || ''
+  const formats = getRouteQueryText(route.query.formats)
+
+  if (focus === 'image' || formats.split(',').includes('image')) {
+    activeTab.value = 'image'
+    return
+  }
+  if (focus === 'video' || focus === 'promotion' || formats.split(',').includes('video')) {
+    activeTab.value = 'video'
+    return
+  }
+  if (focus === 'avatar') {
+    activeTab.value = 'audio'
+  }
+}
+
 const selectScene = async (sceneId: number) => {
   if (!currentStoryboard.value) return
 
@@ -4901,6 +4976,7 @@ onMounted(async () => {
   await loadData()
   await loadVideoModels()
   await loadVideoMerges()
+  applyContentWorkflowFocus()
 })
 
 onActivated(async () => {

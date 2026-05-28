@@ -1,3 +1,8 @@
+/**
+ * 模块说明：数字丝路合规结果归一化与请求适配。
+ * 业务场景：前端需要把商品录入数据提交给后端合规接口，并把模型返回的风险等级、类目建议转换成可展示结构。
+ * 核心职责：统一风险分级文案、清洗合规结果、翻译建议类目，并生成后端可接受的 CreateDramaRequest。
+ */
 import type { ComplianceResult, ComplianceRiskLevel, CreateDramaRequest } from '@/types/drama'
 
 export interface ComplianceRiskMeta {
@@ -448,6 +453,7 @@ const localizeSuggestedCategory = (value: string, language?: string): string => 
         continue
       }
       if (isGenericCategorySegment(segment) && normalizedSegments.length > 0) {
+        // 模型常把“Other”挂在类目末尾，已有有效上级类目时跳过它，避免页面展示无意义层级。
         continue
       }
       const prev = normalizedSegments[normalizedSegments.length - 1]
@@ -502,6 +508,7 @@ export const normalizeComplianceResult = (value: unknown, language?: string): Co
   const defaults = getDefaultCompliance(language)
   const riskMetaMap = getRiskMetaMap(language)
   const parsedScore = Number(raw.score)
+  // 后端和模型都按 0-100 风险分处理，前端再次夹紧分数，防止异常值破坏 UI 风险条。
   const score = Number.isFinite(parsedScore) ? clampScore(Math.round(parsedScore)) : defaults.score
   const level = isRiskLevel(raw.level) ? raw.level : getLevelByScore(score)
 
@@ -524,11 +531,21 @@ export const normalizeComplianceResult = (value: unknown, language?: string): Co
   }
 }
 
+/**
+ * 功能：获取合规风险等级的展示元信息。
+ * 参数：compliance 为归一化后的合规结果；language 控制中英文标签。
+ * 返回：包含颜色、徽标、文本和分数区间的展示配置。
+ */
 export const getComplianceRiskMeta = (compliance: ComplianceResult, language?: string): ComplianceRiskMeta => {
   const riskMetaMap = getRiskMetaMap(language)
   return riskMetaMap[compliance.level] || riskMetaMap.green
 }
 
+/**
+ * 功能：构造后端合规预检/项目创建 payload。
+ * 参数：form 为商品录入适配出的请求草稿。
+ * 返回：清洗后的 CreateDramaRequest，去掉空国家并规范文本字段。
+ */
 export const buildCreateDramaPayload = (form: CreateDramaRequest): CreateDramaRequest => {
   return {
     title: form.title.trim(),

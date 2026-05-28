@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：丝路 Agent 移动端流式过渡页。
+ * 业务场景：移动端用户需要以聊天式节奏看到商品图片、分析摘要、识别标签和任务链完成状态。
+ * 核心职责：消费 Agent SSE 流、自动滚动到最新内容，并在模型或网络异常时生成本地兜底结果。
+ */
+-->
 <template>
   <main class="mobile-agent-transition" aria-labelledby="mobile-agent-title">
     <div class="mobile-agent-transition__ambient mobile-agent-transition__ambient--cyan" aria-hidden="true"></div>
@@ -269,6 +276,11 @@ const goHome = () => {
   router.push('/')
 }
 
+/**
+ * 功能：构造移动端过渡页的 Agent 流式分析参数。
+ * 参数：无；读取会话缓存中的商品信息和图片。
+ * 返回：包含 mobile_transition 场景标记的分析上下文，后端据此生成适合移动端逐步展示的摘要。
+ */
 const buildAnalyzePayload = () => {
   const input = storedAgentInput.value
   return {
@@ -286,6 +298,11 @@ const buildAnalyzePayload = () => {
   }
 }
 
+/**
+ * 功能：并行生成结果页需要的完整 AgentResult。
+ * 参数：无。
+ * 返回：Promise；后端成功则保存真实结果，失败则保存移动端本地兜底结果。
+ */
 const startResultGeneration = async () => {
   const input = storedAgentInput.value || buildFallbackInput()
   resultFallbackTimer = schedule(() => {
@@ -309,6 +326,11 @@ const startResultGeneration = async () => {
   }
 }
 
+/**
+ * 功能：建立 /agent/analyze 的 SSE 连接并处理增量事件。
+ * 参数：无。
+ * 返回：Promise；流结束后若任务链未完成则补齐本地进度。
+ */
 const startStreamingAnalysis = async () => {
   abortController = new AbortController()
   try {
@@ -400,6 +422,7 @@ const handleStreamEvent = (event: string, data: any) => {
 const appendSummary = (text: string) => {
   if (!text) return
   summaryText.value += text
+  // 移动端内容区域较短，每次增量都滚到底部，保证用户看到最新分析而不是停留在旧摘要。
   scrollToLatest()
 }
 
@@ -417,6 +440,7 @@ const runLocalFallbackFlow = async () => {
   if (allDone.value) return
   fallbackNotice.value = '网络波动，已切换为本地演示流程'
   const info = currentRecognizedInfo()
+  // 兜底摘要只基于用户已给出的商品/市场/平台做解释，目标市场不明确时继续提示缺口。
   const paragraphs = [
     '已接收到你的出海需求，正在从自然语言中提取商品、目标市场、平台、人群和核心卖点。\n\n',
     `识别到商品为${info.product}，属于${info.category}，${describeTargetMarketForSummary(info.market)}，主要投放平台为${info.platform}。\n\n`,
@@ -461,6 +485,7 @@ const completeAllTasks = () => {
 const tryRedirect = () => {
   if (!allDone.value || hasRedirected.value) return
   if (!generationReady.value) {
+    // 结果生成和任务链展示是并行的；这里等待结果落盘后再跳转，避免结果页出现空白方案。
     schedule(() => {
       if (!generationReady.value) {
         const input = storedAgentInput.value || buildFallbackInput()

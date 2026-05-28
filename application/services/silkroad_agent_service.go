@@ -1,3 +1,8 @@
+/**
+ * 模块说明：丝路 Agent 业务编排服务。
+ * 业务场景：把跨境商品信息、目标市场、商品图片和用户追问交给 DeepSeek/GLM/视觉模型，生成可落地的出海营销方案。
+ * 核心职责：输入抽取、视觉理解、文本方案生成、流式摘要、任务链事件、追问增量更新和本地兜底。
+ */
 package services
 
 import (
@@ -21,6 +26,7 @@ import (
 var ErrSilkroadAgentConfigMissing = errors.New("silkroad agent model config missing")
 
 type SilkroadAgentInput struct {
+	RequestID         string   `json:"requestId" form:"requestId"`
 	ProductName       string   `json:"productName" form:"productName"`
 	Category          string   `json:"category" form:"category"`
 	TargetMarket      string   `json:"targetMarket" form:"targetMarket"`
@@ -58,21 +64,36 @@ type SilkroadAgentFollowUpInput struct {
 }
 
 type SilkroadAgentFollowUpContext struct {
-	ProductName      string `json:"productName"`
-	TargetMarket     string `json:"targetMarket"`
-	Platform         string `json:"platform"`
-	Audience         string `json:"audience"`
-	SellingPoints    string `json:"sellingPoints"`
-	ComplianceResult string `json:"complianceResult"`
-	ContentStrategy  string `json:"contentStrategy"`
-	DigitalHumanPlan string `json:"digitalHumanPlan"`
-	PromotionAdvice  string `json:"promotionAdvice"`
+	ProductName        string `json:"productName"`
+	Category           string `json:"category"`
+	TargetMarket       string `json:"targetMarket"`
+	Platform           string `json:"platform"`
+	Audience           string `json:"audience"`
+	SellingPoints      string `json:"sellingPoints"`
+	MaterialSpec       string `json:"materialSpec"`
+	UsageScenario      string `json:"usageScenario"`
+	ImageUnderstanding string `json:"imageUnderstanding"`
+	RawPrompt          string `json:"rawPrompt"`
+	ComplianceResult   string `json:"complianceResult"`
+	ContentStrategy    string `json:"contentStrategy"`
+	DigitalHumanPlan   string `json:"digitalHumanPlan"`
+	PromotionAdvice    string `json:"promotionAdvice"`
 }
 
 type SilkroadAgentFollowUpResult struct {
 	Summary         string                       `json:"summary"`
+	Intent          string                       `json:"intent,omitempty"`
 	AffectedModules []string                     `json:"affectedModules"`
+	UpdatedFields   map[string]interface{}       `json:"updatedFields,omitempty"`
+	MissingFields   []string                     `json:"missingFields,omitempty"`
+	Cards           []SilkroadAgentFollowUpCard  `json:"cards,omitempty"`
 	Details         SilkroadAgentFollowUpDetails `json:"details"`
+}
+
+type SilkroadAgentFollowUpCard struct {
+	Type    string `json:"type"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
 }
 
 type SilkroadAgentFollowUpDetails struct {
@@ -199,10 +220,20 @@ func NewSilkroadAgentService(cfg *config.Config, log *logger.Logger) *SilkroadAg
 	}
 }
 
+/**
+ * 功能：对外暴露 Agent 输入抽取能力。
+ * 参数：input 为用户提交的商品、市场、平台、图片等原始字段。
+ * 返回：补齐可推断字段后的 SilkroadAgentInput。
+ */
 func (s *SilkroadAgentService) ExtractInput(input SilkroadAgentInput) SilkroadAgentInput {
 	return extractSilkroadInput(input)
 }
 
+/**
+ * 功能：生成丝路 Agent 完整结果页方案。
+ * 参数：input 为商品、图片、目标市场、平台、人群、卖点和原始描述。
+ * 返回：SilkroadAgentResult；配置缺失或模型调用失败时返回错误，开发环境可返回 mock 结果。
+ */
 func (s *SilkroadAgentService) Generate(input SilkroadAgentInput) (*SilkroadAgentResult, error) {
 	input = extractSilkroadInput(input)
 	settings := s.readSettings()
@@ -221,6 +252,7 @@ func (s *SilkroadAgentService) Generate(input SilkroadAgentInput) (*SilkroadAgen
 
 	imageUnderstanding := ""
 	if hasUsableAgentImage(input.ImageDataURL) {
+		// 视觉模型只负责理解图片中的外观、包装和潜在风险线索，不直接给出最终合规结论。
 		visionSettings := s.readVisionSettings()
 		if visionSettings.APIKey == "" || visionSettings.VisionModel == "" {
 			imageUnderstanding = "已收到商品图片；当前模型未配置视觉能力，已主要依据文本信息生成方案。"
@@ -251,12 +283,18 @@ func (s *SilkroadAgentService) Generate(input SilkroadAgentInput) (*SilkroadAgen
 		result = buildFallbackAgentResult(input, "模型返回内容未能解析为完整 JSON，已使用系统兜底结构。")
 		result.ErrorMessage = "模型返回内容未能解析为完整 JSON，已使用系统兜底结构。"
 	} else {
+		// 文本模型负责把商品、图片理解和目标市场合并为结果页 JSON；缺口字段在 fill 阶段统一兜底。
 		result = fillAgentDefaults(parsedResult, input, imageUnderstanding)
 	}
 	result.Model = settings.TextModel
 	return result, nil
 }
 
+/**
+ * 功能：为过渡页生成流式分析摘要和任务状态事件。
+ * 参数：ctx 控制客户端断开；input 为过渡页上下文；emit 用于输出 SSE 事件。
+ * 返回：错误；调用方会转换为前端可识别的 error/fallback_notice 事件。
+ */
 func (s *SilkroadAgentService) StreamMobileTransitionAnalysis(ctx context.Context, input SilkroadAgentAnalyzeInput, emit func(SilkroadAgentAnalyzeEvent) error) error {
 	input = normalizeSilkroadAnalyzeInput(input)
 	settings := readDeepSeekAnalyzeSettings()
@@ -264,6 +302,7 @@ func (s *SilkroadAgentService) StreamMobileTransitionAnalysis(ctx context.Contex
 	imageUnderstanding := s.analyzeTransitionImage(input)
 
 	emitFallback := func(message string) error {
+		// 过渡页优先保证用户看到稳定流程，模型不可用时用本地规则输出摘要和任务链，不阻塞最终结果页兜底。
 		if message != "" {
 			if err := emit(SilkroadAgentAnalyzeEvent{Type: "fallback_notice", Data: map[string]string{"message": message}}); err != nil {
 				return err
@@ -318,6 +357,11 @@ func (s *SilkroadAgentService) StreamMobileTransitionAnalysis(ctx context.Contex
 	return s.emitMobileAnalysisTail(ctx, recognized, emit)
 }
 
+/**
+ * 功能：根据用户追问生成增量优化建议。
+ * 参数：ctx 控制流式请求生命周期；input 包含追问文本和当前方案上下文；emit 输出 result/error。
+ * 返回：错误；模型不可用时返回本地追问结果，避免结果页对话中断。
+ */
 func (s *SilkroadAgentService) StreamFollowUp(ctx context.Context, input SilkroadAgentFollowUpInput, emit func(SilkroadAgentAnalyzeEvent) error) error {
 	input = normalizeSilkroadFollowUpInput(input)
 	if input.Question == "" {
@@ -351,6 +395,7 @@ func (s *SilkroadAgentService) StreamFollowUp(ctx context.Context, input Silkroa
 
 	if err := s.streamChat(ctx, settings, req, func(delta string) error {
 		cleaned := stripReasoningSensitiveText(delta)
+		// 追问要求 JSON 结果，服务端先拼完整响应再解析，避免前端拿到半段不可用结构。
 		raw.WriteString(cleaned)
 		return nil
 	}); err != nil {
@@ -368,6 +413,11 @@ func (s *SilkroadAgentService) StreamFollowUp(ctx context.Context, input Silkroa
 	return emit(SilkroadAgentAnalyzeEvent{Type: "result", Data: result})
 }
 
+/**
+ * 功能：在过渡页阶段分析商品图片。
+ * 参数：input 包含用户上传图片和文本上下文。
+ * 返回：图片理解摘要；未配置视觉模型时返回安全兜底说明。
+ */
 func (s *SilkroadAgentService) analyzeTransitionImage(input SilkroadAgentAnalyzeInput) string {
 	if !hasUsableAgentImage(input.ImageDataURL) {
 		return ""
@@ -399,6 +449,11 @@ func (s *SilkroadAgentService) analyzeTransitionImage(input SilkroadAgentAnalyze
 	return strings.TrimSpace(text)
 }
 
+/**
+ * 功能：发送过渡页分析尾部事件。
+ * 参数：ctx 控制等待过程；recognized 为已识别商品信息；emit 输出 SSE。
+ * 返回：错误；依次输出识别信息、分析完成、六个任务状态和 all_done。
+ */
 func (s *SilkroadAgentService) emitMobileAnalysisTail(ctx context.Context, recognized MobileRecognizedInfo, emit func(SilkroadAgentAnalyzeEvent) error) error {
 	if err := emit(SilkroadAgentAnalyzeEvent{Type: "recognized_info", Data: recognized}); err != nil {
 		return err
@@ -416,6 +471,7 @@ func (s *SilkroadAgentService) emitMobileAnalysisTail(ctx context.Context, recog
 		Status      string `json:"status"`
 		Description string `json:"description"`
 	}{
+		// 任务链顺序对应前端展示：先确定商品与合规边界，再进入内容、本地化、数字人和投放。
 		{Step: 1, Name: "商品理解", Status: "completed", Description: "确认商品类目、卖点与使用场景"},
 		{Step: 2, Name: "合规风险识别", Status: "completed", Description: "匹配目标市场规则与广告敏感表达"},
 		{Step: 3, Name: "本地化方向", Status: "completed", Description: taskLocalizationDescription(recognized.Market)},
@@ -459,6 +515,11 @@ func readDeepSeekFollowUpSettings() silkroadAgentSettings {
 	}
 }
 
+/**
+ * 功能：读取完整 Agent 方案生成的模型配置。
+ * 参数：无；内部读取环境变量和默认 provider。
+ * 返回：文本模型、可选视觉模型、BaseURL 和 API Key；DeepSeek 负责文本方案，GLM/方舟可承担视觉理解。
+ */
 func (s *SilkroadAgentService) readSettings() silkroadAgentSettings {
 	apiKey := firstEnv("AGENT_API_KEY", "SILKROAD_AGENT_API_KEY", "DEEPSEEK_API_KEY", "GLM_API_KEY", "ARK_API_KEY")
 	provider := strings.ToLower(firstEnv("AGENT_PROVIDER", "SILKROAD_AGENT_PROVIDER"))
@@ -482,6 +543,11 @@ func (s *SilkroadAgentService) readSettings() silkroadAgentSettings {
 	}
 }
 
+/**
+ * 功能：读取商品图片理解的视觉模型配置。
+ * 参数：无；内部按 AGENT/GLM/ARK/DEEPSEEK 变量优先级解析。
+ * 返回：视觉模型调用配置；缺失时上层会降级为文本分析。
+ */
 func (s *SilkroadAgentService) readVisionSettings() silkroadAgentSettings {
 	model := firstEnv("AGENT_VISION_MODEL", "SILKROAD_AGENT_VISION_MODEL")
 	provider := strings.ToLower(firstEnv("AGENT_VISION_PROVIDER", "SILKROAD_AGENT_VISION_PROVIDER"))
@@ -570,6 +636,11 @@ func hasUsableAgentImage(value string) bool {
 		strings.HasPrefix(lowerValue, "https://")
 }
 
+/**
+ * 功能：调用视觉模型理解商品图片。
+ * 参数：settings 为视觉模型配置；model 为视觉模型名；input 包含图片 URL/Data URL 和商品上下文。
+ * 返回：图片理解文本，包含外观、包装、用途和潜在宣传风险线索。
+ */
 func (s *SilkroadAgentService) callVision(settings silkroadAgentSettings, model string, input SilkroadAgentInput) (string, error) {
 	if !hasUsableAgentImage(input.ImageDataURL) {
 		return "", errors.New("vision image is empty")
@@ -594,6 +665,11 @@ func (s *SilkroadAgentService) callVision(settings silkroadAgentSettings, model 
 	return s.sendChat(settings, req)
 }
 
+/**
+ * 功能：调用文本模型生成完整 Agent JSON。
+ * 参数：settings 为文本模型配置；input 为结构化商品上下文；imageUnderstanding 为视觉模型摘要。
+ * 返回：模型原始 JSON 文本。
+ */
 func (s *SilkroadAgentService) callText(settings silkroadAgentSettings, input SilkroadAgentInput, imageUnderstanding string) (string, error) {
 	req := llmChatRequest{
 		Model: settings.TextModel,
@@ -743,6 +819,7 @@ func (s *SilkroadAgentService) streamChat(ctx context.Context, settings silkroad
 			if unmarshalErr := json.Unmarshal([]byte(data), &chunk); unmarshalErr == nil {
 				for _, choice := range chunk.Choices {
 					if choice.Delta.Content != "" {
+						// 只向前端透出 content，reasoning_content 等内部推理字段不会进入用户可见摘要。
 						if deltaErr := onDelta(choice.Delta.Content); deltaErr != nil {
 							return deltaErr
 						}
@@ -867,6 +944,11 @@ func buildMobileTransitionPrompt(input SilkroadAgentAnalyzeInput, recognized Mob
 	return string(jsonPayload) + "\n\n请生成手机过渡页可见的流式分析摘要，围绕跨境电商、合规、本地化、数字人和短视频投放展开。用户未明确目标市场时，不要自行补全国家。"
 }
 
+/**
+ * 功能：构造完整方案生成提示词。
+ * 参数：input 为用户商品上下文；imageUnderstanding 为视觉模型提取出的商品图片线索。
+ * 返回：要求模型输出严格 JSON 的用户提示词，缺失信息会被要求写入 missingInfo。
+ */
 func buildAgentUserPrompt(input SilkroadAgentInput, imageUnderstanding string) string {
 	payload := map[string]interface{}{
 		"商品名称":     input.ProductName,
@@ -885,21 +967,43 @@ func buildAgentUserPrompt(input SilkroadAgentInput, imageUnderstanding string) s
 }
 
 func silkroadFollowUpSystemPrompt() string {
-	return `你是“丝路 Agent”，专注于跨境电商 AI 准入合规与智能营销方案优化。
-你需要基于已有商品信息、目标市场、平台场景、合规结论和营销方案，对用户追问进行增量分析。
-不要输出冗长解释。
-不要输出原始思维链。
-请返回适合前端展示的结构化结果。
+	return `你是“丝路 Agent”的追问编排器，专注于跨境电商商品理解、准入合规和智能营销方案优化。
+你需要像首页 Agent 输入一样理解用户追加的一句话：可能是换商品、换市场、换平台、补充材质/成分/使用场景/图片信息、调整内容语气、重做脚本、询问合规或投放。
+先判断用户意图，再基于已有方案做增量更新；不要为了凑模块输出无关内容。
+如果用户表达不完整，例如只说“换个产品”但没有新产品名称/类目/卖点，intent 必须为 ask_clarification，并把需要补充的信息写入 missingFields。
+不要输出冗长解释，不要输出原始思维链。
 必须只输出合法 JSON，不要输出 Markdown，不要输出额外解释。
+
+intent 只能从以下值中选择：
+change_product, change_market, change_platform, change_audience, add_product_info, add_material_info, add_usage_scenario, add_image_info, adjust_content_tone, optimize_script, optimize_compliance, optimize_promotion, ask_clarification, general_question
+
+updatedFields 只写用户这次追问中可以明确提取并应用到商品资料的字段。可用字段包括：
+productName, category, targetMarket, targetPlatform, targetAudience, coreSellingPoints, materialSpec, usageScenario, marketingGoal, budgetPreference, complianceHints, localizationHints, description
+
+cards 是给前端展示的动态建议模块，数量完全由用户追问和受影响范围决定；不要为了凑数量输出无关内容，也不要因为固定上限删除确实相关的模块。每张卡必须直接服务于本次追问。可用 type 包括：
+product, market, platform, audience, selling_point, material, scenario, compliance, localization, script, digital_human, promotion, clarification
+
 JSON 结构必须符合：
 {
-  "summary": "已基于当前商品和原方案，重新调整目标市场、内容风格与合规提醒。",
-  "affectedModules": ["市场策略", "内容风格", "投放建议", "合规风险"],
+  "intent": "change_market",
+  "summary": "已理解用户本次追问，并基于当前商品方案完成增量调整。",
+  "affectedModules": ["商品资料", "合规风险", "本地化内容"],
+  "updatedFields": {
+    "targetMarket": "印尼"
+  },
+  "missingFields": [],
+  "cards": [
+    {
+      "type": "localization",
+      "title": "本地化调整",
+      "content": "说明本次追问导致的内容语气、场景或表达变化。"
+    }
+  ],
   "details": {
-    "compliance": "增加目标市场准入或广告表达提醒，移除高风险表达。",
-    "contentStyle": "说明内容语气、语言风格或本地化表达变化。",
-    "videoExpression": "说明短视频前 3 秒、中段场景或数字人表达建议。",
-    "promotion": "说明投放平台、组合渠道或重点指标调整。"
+    "compliance": "兼容旧版前端的合规提醒，可与 cards 内容一致或为空。",
+    "contentStyle": "兼容旧版前端的内容风格建议，可与 cards 内容一致或为空。",
+    "videoExpression": "兼容旧版前端的视频表达建议，可与 cards 内容一致或为空。",
+    "promotion": "兼容旧版前端的投放建议，可与 cards 内容一致或为空。"
   }
 }`
 }
@@ -909,10 +1013,15 @@ func buildFollowUpPrompt(input SilkroadAgentFollowUpInput) string {
 		"用户追问": input.Question,
 		"当前方案上下文": map[string]string{
 			"当前商品名称":  input.Context.ProductName,
+			"当前商品类目":  input.Context.Category,
 			"当前目标市场":  input.Context.TargetMarket,
 			"当前平台":    input.Context.Platform,
 			"当前目标用户":  input.Context.Audience,
 			"当前卖点":    input.Context.SellingPoints,
+			"当前材质成分":  input.Context.MaterialSpec,
+			"当前使用场景":  input.Context.UsageScenario,
+			"图片理解信息":  input.Context.ImageUnderstanding,
+			"原始用户输入":  input.Context.RawPrompt,
 			"当前合规结论":  input.Context.ComplianceResult,
 			"当前内容策略":  input.Context.ContentStrategy,
 			"当前数字人方案": input.Context.DigitalHumanPlan,
@@ -920,9 +1029,14 @@ func buildFollowUpPrompt(input SilkroadAgentFollowUpInput) string {
 		},
 	}
 	jsonPayload, _ := json.MarshalIndent(payload, "", "  ")
-	return string(jsonPayload) + "\n\n请基于现有方案做增量优化，只返回 JSON。不要重新从零生成完整方案，不要输出思维链。"
+	return string(jsonPayload) + "\n\n请基于现有方案做增量优化。先判断用户意图，再返回动态 cards 和可沉淀到商品资料的 updatedFields。只返回 JSON，不要重新从零生成完整方案，不要输出思维链。"
 }
 
+/**
+ * 功能：解析完整 Agent 方案 JSON。
+ * 参数：raw 为文本模型返回内容，可能包含额外文本。
+ * 返回：SilkroadAgentResult；找不到合法 JSON 时返回错误并交由上层兜底。
+ */
 func parseAgentResult(raw string) (SilkroadAgentResult, error) {
 	var result SilkroadAgentResult
 	jsonText := extractFirstJSONObject(raw)
@@ -935,6 +1049,11 @@ func parseAgentResult(raw string) (SilkroadAgentResult, error) {
 	return result, nil
 }
 
+/**
+ * 功能：解析追问结果。
+ * 参数：raw 为模型返回内容；input 为原始追问，用于解析失败时推断兜底模块。
+ * 返回：SilkroadAgentFollowUpResult，保证前端至少拿到 summary、cards 和 details。
+ */
 func parseFollowUpResult(raw string, input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpResult {
 	raw = stripReasoningSensitiveText(raw)
 	jsonText := extractFirstJSONObject(raw)
@@ -947,9 +1066,15 @@ func parseFollowUpResult(raw string, input SilkroadAgentFollowUpInput) SilkroadA
 	return fillFollowUpDefaults(SilkroadAgentFollowUpResult{Summary: summarizeFollowUpText(raw)}, raw, input)
 }
 
+/**
+ * 功能：生成本地追问兜底结果。
+ * 参数：input 为用户追问和当前方案上下文。
+ * 返回：基于关键词推断的增量建议，避免模型不可用时结果页对话彻底失败。
+ */
 func buildLocalFollowUpResult(input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpResult {
 	product := firstNonBlank(input.Context.ProductName, "当前商品")
-	platform := firstNonBlank(input.Context.Platform, "TikTok")
+	intent := inferFollowUpIntent(input.Question)
+	platform := firstNonBlank(inferPlatformFromPrompt(input.Question), input.Context.Platform, "TikTok")
 	targetMarket := firstNonBlank(inferTargetMarketFromPrompt(input.Question), input.Context.TargetMarket)
 	if isUnknownTargetMarket(targetMarket) {
 		targetMarket = "目标市场"
@@ -958,15 +1083,32 @@ func buildLocalFollowUpResult(input SilkroadAgentFollowUpInput) SilkroadAgentFol
 	if marketPhrase == "" || isUnknownTargetMarket(marketPhrase) {
 		marketPhrase = "目标市场"
 	}
+	missingFields := []string{}
+	if intent == "ask_clarification" {
+		missingFields = []string{"新商品名称", "商品类目", "核心卖点或使用场景"}
+	}
+	updatedFields := map[string]interface{}{}
+	if inferredMarket := inferTargetMarketFromPrompt(input.Question); inferredMarket != "" {
+		updatedFields["targetMarket"] = inferredMarket
+	}
+	if inferredPlatform := inferPlatformFromPrompt(input.Question); inferredPlatform != "" {
+		updatedFields["targetPlatform"] = inferredPlatform
+	}
+	if material := inferMaterialFromPrompt(input.Question); material != "" {
+		updatedFields["materialSpec"] = material
+	}
+	if scenario := inferUsageScenarioFromPrompt(input.Question); scenario != "" {
+		updatedFields["usageScenario"] = scenario
+	}
+	cards := buildLocalFollowUpCards(intent, product, marketPhrase, platform, missingFields)
 
 	result := SilkroadAgentFollowUpResult{
-		Summary: fmt.Sprintf("已基于%s和当前方案，将优化重点调整到%s、内容风格、合规表达与投放建议。", product, marketPhrase),
-		AffectedModules: []string{
-			"市场策略",
-			"内容风格",
-			"投放建议",
-			"合规风险",
-		},
+		Intent:          intent,
+		Summary:         buildLocalFollowUpSummary(intent, product, marketPhrase, platform),
+		AffectedModules: inferFollowUpModules(input.Question + " " + marketPhrase + " " + platform),
+		UpdatedFields:   updatedFields,
+		MissingFields:   missingFields,
+		Cards:           cards,
 		Details: SilkroadAgentFollowUpDetails{
 			Compliance:      fmt.Sprintf("切换到%s时需重新核对当地准入、标签和广告表达边界，避免治疗、减肥、绝对化功效等高风险说法。", marketPhrase),
 			ContentStyle:    "语气可更年轻、口语化，保留真实体验和生活化表达，减少夸张承诺。",
@@ -975,6 +1117,152 @@ func buildLocalFollowUpResult(input SilkroadAgentFollowUpInput) SilkroadAgentFol
 		},
 	}
 	return fillFollowUpDefaults(result, input.Question+" "+marketPhrase, input)
+}
+
+func inferFollowUpIntent(question string) string {
+	text := strings.ToLower(strings.TrimSpace(question))
+	if text == "" {
+		return "general_question"
+	}
+	if hasAny(text, []string{"换个产品", "换一个产品", "换商品", "换一个商品", "改个产品", "改一个产品"}) &&
+		!hasAny(text, []string{"换成", "改成", "换为", "改为"}) {
+		return "ask_clarification"
+	}
+	if hasAny(text, []string{"换成", "改成", "换为", "改为", "改卖", "换卖"}) &&
+		hasAny(text, []string{"产品", "商品", "水杯", "杯", "包", "鞋", "灯", "玩具", "服", "美妆", "食品"}) {
+		return "change_product"
+	}
+	if inferTargetMarketFromPrompt(question) != "" || hasAny(text, []string{"市场", "国家", "地区", "本地化"}) {
+		return "change_market"
+	}
+	if inferPlatformFromPrompt(question) != "" || hasAny(text, []string{"平台", "渠道"}) {
+		return "change_platform"
+	}
+	if hasAny(text, []string{"人群", "用户", "受众", "学生", "妈妈", "女性", "男性", "年轻", "儿童", "亲子"}) {
+		return "change_audience"
+	}
+	if hasAny(text, []string{"材质", "材料", "成分", "规格", "认证"}) {
+		return "add_material_info"
+	}
+	if hasAny(text, []string{"场景", "使用", "户外", "厨房", "通勤", "办公室", "宿舍"}) {
+		return "add_usage_scenario"
+	}
+	if hasAny(text, []string{"图片", "图", "照片", "包装"}) {
+		return "add_image_info"
+	}
+	if hasAny(text, []string{"语气", "年轻", "口语", "风格", "活泼", "高级", "专业"}) {
+		return "adjust_content_tone"
+	}
+	if hasAny(text, []string{"脚本", "分镜", "镜头", "开头", "字幕", "口播", "视频"}) {
+		return "optimize_script"
+	}
+	if hasAny(text, []string{"合规", "风险", "违规", "准入", "禁", "广告法"}) {
+		return "optimize_compliance"
+	}
+	if hasAny(text, []string{"投放", "预算", "点击", "转化", "完播", "推广"}) {
+		return "optimize_promotion"
+	}
+	return "general_question"
+}
+
+func inferPlatformFromPrompt(value string) string {
+	platforms := []string{"TikTok", "Instagram Reels", "Instagram", "YouTube Shorts", "YouTube", "Shopee", "Lazada", "Amazon", "Temu", "eBay", "Facebook"}
+	lowerValue := strings.ToLower(value)
+	for _, platform := range platforms {
+		if strings.Contains(lowerValue, strings.ToLower(platform)) {
+			return platform
+		}
+	}
+	return ""
+}
+
+func inferMaterialFromPrompt(value string) string {
+	return cleanupExtractedChinese(extractPromptMatch(value, []string{
+		`(?:材质|材料|成分|面料)(?:是|为|:|：)?([^，,。；;\n]{1,40})`,
+	}))
+}
+
+func inferUsageScenarioFromPrompt(value string) string {
+	return cleanupExtractedChinese(extractPromptMatch(value, []string{
+		`(?:场景|使用场景|适合|用于)(?:是|为|:|：)?([^，,。；;\n]{2,48})`,
+	}))
+}
+
+func buildLocalFollowUpSummary(intent string, product string, market string, platform string) string {
+	switch intent {
+	case "ask_clarification":
+		return "我还需要新的商品名称、类目或卖点，才能把当前方案切换到新产品。"
+	case "change_market":
+		return fmt.Sprintf("已将本次追问理解为目标市场调整，后续方案会围绕%s重新校准。", market)
+	case "change_platform":
+		return fmt.Sprintf("已将本次追问理解为平台调整，内容形式和投放建议会优先适配%s。", platform)
+	case "change_product":
+		return "已将本次追问理解为商品变更，需要同步重看商品信息、合规边界和内容表达。"
+	case "add_material_info":
+		return "已记录新的材质/成分信息，后续合规判断会优先基于这部分资料。"
+	case "adjust_content_tone":
+		return "已将本次追问理解为内容语气调整，会优先更新口播、字幕和场景表达。"
+	case "optimize_script":
+		return "已将本次追问理解为脚本优化，会聚焦开头钩子、镜头节奏和口播表达。"
+	case "optimize_promotion":
+		return "已将本次追问理解为投放优化，会聚焦平台组合、预算测试和关键指标。"
+	default:
+		return fmt.Sprintf("已基于%s和当前方案，整理出适合继续优化的增量建议。", product)
+	}
+}
+
+func buildLocalFollowUpCards(intent string, product string, market string, platform string, missingFields []string) []SilkroadAgentFollowUpCard {
+	if intent == "ask_clarification" {
+		return []SilkroadAgentFollowUpCard{{
+			Type:    "clarification",
+			Title:   "需要补充信息",
+			Content: "请补充新商品名称、类目、核心卖点或使用场景，Agent 才能把当前方案切换到新产品。",
+		}}
+	}
+	cards := []SilkroadAgentFollowUpCard{}
+	addCard := func(cardType string, title string, content string) {
+		cards = append(cards, SilkroadAgentFollowUpCard{Type: cardType, Title: title, Content: content})
+	}
+	switch intent {
+	case "change_market":
+		addCard("market", "市场策略更新", fmt.Sprintf("后续商品定位、表达语言和内容场景优先围绕%s重新组织。", market))
+		addCard("compliance", "合规重新校准", fmt.Sprintf("进入%s前需重新核对当地准入、标签和广告表达限制，避免绝对化功效承诺。", market))
+		addCard("promotion", "投放测试建议", fmt.Sprintf("可先在%s测试本地化短视频素材，再用完播率、点击率和评论问题迭代。", platform))
+	case "change_platform":
+		addCard("platform", "平台适配", fmt.Sprintf("内容节奏、标题钩子和素材规格优先适配%s的推荐机制。", platform))
+		addCard("script", "视频表达调整", "开头 3 秒突出可见卖点，中段用真实场景承接，结尾引导查看详情或评论互动。")
+	case "change_product":
+		addCard("product", "商品资料重置", "新产品会影响类目、卖点、目标人群和使用场景，建议补齐基础资料后再继续沉淀。")
+		addCard("compliance", "合规边界重看", "商品变化后原合规结论不能直接复用，需要重新核对材质、认证和广告敏感表达。")
+		addCard("script", "内容方案重写", "脚本钩子、场景和数字人口播都应围绕新产品的可视卖点重新生成。")
+	case "add_material_info":
+		addCard("material", "材质信息已记录", "材质/成分会直接影响准入、标签、禁限售和广告表达边界。")
+		addCard("compliance", "合规判断更新", "后续合规分析会优先核对该材质是否涉及认证、儿童接触、食品接触或敏感功效表达。")
+	case "adjust_content_tone":
+		addCard("localization", "内容语气更新", "口播和字幕可以更贴近日常表达，减少硬广感和夸张承诺。")
+		addCard("script", "脚本表达调整", "开头用生活化痛点承接，中段用具体场景展示卖点，结尾保留轻量行动引导。")
+	case "optimize_script":
+		addCard("script", "脚本优化重点", "优先优化开头钩子、镜头节奏、口播密度和字幕可读性。")
+	case "optimize_compliance":
+		addCard("compliance", "合规优化重点", "减少绝对化、医疗化、认证暗示和未经证实的功效承诺。")
+	case "optimize_promotion":
+		addCard("promotion", "投放优化重点", fmt.Sprintf("围绕%s做小预算 A/B 测试，观察完播率、点击率、收藏率和评论问题。", platform))
+	default:
+		addCard("product", "增量理解", fmt.Sprintf("本次追问会作为%s的补充上下文，继续影响后续合规、内容和投放方案。", product))
+	}
+	if len(missingFields) > 0 && len(cards) < 4 {
+		addCard("clarification", "仍需补充", fmt.Sprintf("建议继续补充：%s。", strings.Join(missingFields, "、")))
+	}
+	return cards
+}
+
+func hasAny(text string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(text, strings.ToLower(keyword)) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractFirstJSONObject(text string) string {
@@ -1366,6 +1654,10 @@ func stripReasoningSensitiveText(value string) string {
 }
 
 func fillFollowUpDefaults(result SilkroadAgentFollowUpResult, raw string, input SilkroadAgentFollowUpInput) SilkroadAgentFollowUpResult {
+	result.Intent = strings.TrimSpace(result.Intent)
+	if result.Intent == "" {
+		result.Intent = inferFollowUpIntent(input.Question)
+	}
 	if strings.TrimSpace(result.Summary) == "" {
 		result.Summary = summarizeFollowUpText(raw)
 	}
@@ -1377,6 +1669,28 @@ func fillFollowUpDefaults(result SilkroadAgentFollowUpResult, raw string, input 
 	result.AffectedModules = cleanStringList(result.AffectedModules)
 	if len(result.AffectedModules) == 0 {
 		result.AffectedModules = inferFollowUpModules(raw + " " + input.Question)
+	}
+	if len(result.AffectedModules) > 6 {
+		result.AffectedModules = result.AffectedModules[:6]
+	}
+
+	result.MissingFields = cleanStringList(result.MissingFields)
+	result.UpdatedFields = cleanFollowUpUpdatedFields(result.UpdatedFields)
+	result.Cards = cleanFollowUpCards(result.Cards)
+	if len(result.Cards) == 0 {
+		result.Cards = followUpDetailsToCards(result.Details, result.AffectedModules)
+	}
+	if len(result.Cards) == 0 && result.Intent == "ask_clarification" {
+		missing := result.MissingFields
+		if len(missing) == 0 {
+			missing = []string{"新商品名称", "商品类目", "核心卖点或使用场景"}
+			result.MissingFields = missing
+		}
+		result.Cards = []SilkroadAgentFollowUpCard{{
+			Type:    "clarification",
+			Title:   "需要补充信息",
+			Content: fmt.Sprintf("请补充%s，Agent 才能继续更新当前方案。", strings.Join(missing, "、")),
+		}}
 	}
 
 	if strings.TrimSpace(result.Details.Compliance) == "" {
@@ -1396,6 +1710,122 @@ func fillFollowUpDefaults(result SilkroadAgentFollowUpResult, raw string, input 
 	result.Details.VideoExpression = limitRunes(cleanupFollowUpText(result.Details.VideoExpression), 96)
 	result.Details.Promotion = limitRunes(cleanupFollowUpText(result.Details.Promotion), 96)
 	return result
+}
+
+func cleanFollowUpUpdatedFields(fields map[string]interface{}) map[string]interface{} {
+	if len(fields) == 0 {
+		return nil
+	}
+	allowed := map[string]bool{
+		"productName":       true,
+		"category":          true,
+		"targetMarket":      true,
+		"targetPlatform":    true,
+		"targetAudience":    true,
+		"coreSellingPoints": true,
+		"materialSpec":      true,
+		"usageScenario":     true,
+		"marketingGoal":     true,
+		"budgetPreference":  true,
+		"complianceHints":   true,
+		"localizationHints": true,
+		"description":       true,
+	}
+	cleaned := map[string]interface{}{}
+	for key, value := range fields {
+		if !allowed[key] {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			if text := cleanupFollowUpText(typed); text != "" {
+				cleaned[key] = limitRunes(text, 160)
+			}
+		case []interface{}:
+			items := make([]string, 0, len(typed))
+			for _, item := range typed {
+				if text := cleanupFollowUpText(fmt.Sprint(item)); text != "" {
+					items = append(items, limitRunes(text, 80))
+				}
+			}
+			if len(items) > 0 {
+				cleaned[key] = items
+			}
+		case []string:
+			items := cleanStringList(typed)
+			if len(items) > 0 {
+				cleaned[key] = items
+			}
+		default:
+			if text := cleanupFollowUpText(fmt.Sprint(value)); text != "" {
+				cleaned[key] = limitRunes(text, 160)
+			}
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
+}
+
+func cleanFollowUpCards(cards []SilkroadAgentFollowUpCard) []SilkroadAgentFollowUpCard {
+	if len(cards) == 0 {
+		return nil
+	}
+	allowedTypes := map[string]bool{
+		"product": true, "market": true, "platform": true, "audience": true, "selling_point": true,
+		"material": true, "scenario": true, "compliance": true, "localization": true, "script": true,
+		"digital_human": true, "promotion": true, "clarification": true,
+	}
+	out := make([]SilkroadAgentFollowUpCard, 0, len(cards))
+	seen := map[string]bool{}
+	for _, card := range cards {
+		cardType := strings.TrimSpace(card.Type)
+		if cardType == "" || !allowedTypes[cardType] {
+			cardType = "product"
+		}
+		title := limitRunes(cleanupFollowUpText(card.Title), 20)
+		content := limitRunes(cleanupFollowUpText(card.Content), 120)
+		if title == "" || content == "" {
+			continue
+		}
+		key := cardType + "|" + title
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, SilkroadAgentFollowUpCard{Type: cardType, Title: title, Content: content})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func followUpDetailsToCards(details SilkroadAgentFollowUpDetails, modules []string) []SilkroadAgentFollowUpCard {
+	moduleText := strings.Join(modules, " ")
+	candidates := []SilkroadAgentFollowUpCard{}
+	if strings.TrimSpace(details.Compliance) != "" && strings.Contains(moduleText, "合规") {
+		candidates = append(candidates, SilkroadAgentFollowUpCard{Type: "compliance", Title: "合规提醒", Content: details.Compliance})
+	}
+	if strings.TrimSpace(details.ContentStyle) != "" && (strings.Contains(moduleText, "市场") || strings.Contains(moduleText, "内容") || strings.Contains(moduleText, "本地化")) {
+		candidates = append(candidates, SilkroadAgentFollowUpCard{Type: "localization", Title: "内容调整", Content: details.ContentStyle})
+	}
+	if strings.TrimSpace(details.VideoExpression) != "" && (strings.Contains(moduleText, "视频") || strings.Contains(moduleText, "脚本") || strings.Contains(moduleText, "表达")) {
+		candidates = append(candidates, SilkroadAgentFollowUpCard{Type: "script", Title: "视频表达", Content: details.VideoExpression})
+	}
+	if strings.TrimSpace(details.Promotion) != "" && strings.Contains(moduleText, "投放") {
+		candidates = append(candidates, SilkroadAgentFollowUpCard{Type: "promotion", Title: "投放建议", Content: details.Promotion})
+	}
+	if len(candidates) == 0 {
+		if strings.TrimSpace(details.ContentStyle) != "" {
+			candidates = append(candidates, SilkroadAgentFollowUpCard{Type: "localization", Title: "内容调整", Content: details.ContentStyle})
+		}
+		if strings.TrimSpace(details.Compliance) != "" {
+			candidates = append(candidates, SilkroadAgentFollowUpCard{Type: "compliance", Title: "合规提醒", Content: details.Compliance})
+		}
+	}
+	return cleanFollowUpCards(candidates)
 }
 
 func inferFollowUpModules(text string) []string {

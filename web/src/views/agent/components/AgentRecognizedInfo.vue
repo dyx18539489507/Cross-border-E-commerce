@@ -1,3 +1,10 @@
+<!--
+/**
+ * 模块说明：丝路 Agent 已识别信息展示组件。
+ * 业务场景：结果生成前后都需要让用户确认商品、类目、目标市场、平台、人群和卖点是否被正确理解。
+ * 核心职责：优先展示后端 AgentResult，缺失时回退到用户输入，避免识别中状态出现空卡片。
+ */
+-->
 <template>
   <section class="recognized-section" aria-labelledby="recognized-title">
     <div class="recognized-section__header">
@@ -53,6 +60,11 @@ const props = defineProps<{
 const info = computed(() => props.result?.recognizedInfo)
 const recognized = computed(() => Boolean(props.result))
 
+/**
+ * 功能：为识别字段提供业务占位。
+ * 参数：value 为后端结果或用户输入字段；fallbackValue 为页面兜底文案。
+ * 返回：清洗后的字段值，缺失时返回兜底文案。
+ */
 const fallback = (value: string | undefined, fallbackValue: string) => {
   const trimmed = value?.trim()
   return trimmed || fallbackValue
