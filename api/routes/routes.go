@@ -78,8 +78,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	distributionService := services2.NewDistributionService(db, cfg, log)
 	distributionHandler := handlers2.NewDistributionHandler(distributionService, log)
 	silkroadAgentHistoryService := services2.NewSilkroadAgentHistoryService(db, log)
+	silkroadAgentProjectService := services2.NewSilkroadAgentProjectService(db, log)
 	// 丝路 Agent 独立于旧短剧生成服务，专门处理商品出海分析、追问和结果通知。
-	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log, notificationService, silkroadAgentHistoryService)
+	silkroadAgentHandler := handlers2.NewSilkroadAgentHandler(cfg, log, notificationService, silkroadAgentHistoryService, silkroadAgentProjectService)
 	notificationHandler := handlers2.NewNotificationHandler(notificationService, log)
 	workbenchHandler := handlers2.NewWorkbenchHandler(workbenchService, log)
 	analyticsHandler := handlers2.NewAnalyticsHandler(analyticsService, log)
@@ -126,10 +127,14 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			// /extract 用于轻量识别，/analyze 用于过渡页流式展示，/generate 生成最终结果页 JSON。
 			agent.POST("/extract", silkroadAgentHandler.Extract)
 			agent.POST("/generate", silkroadAgentHandler.Generate)
+			agent.POST("/workflow", silkroadAgentHandler.GenerateWorkflow)
+			agent.POST("/generate-workflow", silkroadAgentHandler.GenerateWorkflow)
 			agent.POST("/analyze", silkroadAgentHandler.Analyze)
 			agent.POST("/follow-up", silkroadAgentHandler.FollowUp)
 			agent.GET("/history", silkroadAgentHandler.ListHistory)
 			agent.GET("/history/:id", silkroadAgentHandler.GetHistory)
+			agent.POST("/create-project", silkroadAgentHandler.CreateProject)
+			agent.POST("/:id/create-project", silkroadAgentHandler.CreateProjectFromHistory)
 		}
 
 		workbench := api.Group("/workbench")

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/config"
 	"github.com/drama-generator/backend/pkg/logger"
 )
@@ -144,13 +145,18 @@ type AgentOverview struct {
 }
 
 type CompliancePlan struct {
-	Title                string   `json:"title"`
-	Summary              string   `json:"summary"`
-	RiskTags             []string `json:"riskTags"`
-	MissingInfo          []string `json:"missingInfo"`
-	Suggestions          []string `json:"suggestions"`
-	ForbiddenExpressions []string `json:"forbiddenExpressions"`
-	SaferExpressions     []string `json:"saferExpressions"`
+	Title                string                  `json:"title"`
+	Summary              string                  `json:"summary"`
+	RiskTags             []string                `json:"riskTags"`
+	MissingInfo          []string                `json:"missingInfo"`
+	Suggestions          []string                `json:"suggestions"`
+	ForbiddenExpressions []string                `json:"forbiddenExpressions"`
+	SaferExpressions     []string                `json:"saferExpressions"`
+	Level                string                  `json:"level,omitempty"`
+	Score                int                     `json:"score,omitempty"`
+	RiskReasons          []string                `json:"riskReasons,omitempty"`
+	MatchedRules         []models.ComplianceRule `json:"matchedRules,omitempty"`
+	Disclaimer           string                  `json:"disclaimer,omitempty"`
 }
 
 type Localization struct {

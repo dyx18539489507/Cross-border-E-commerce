@@ -67,13 +67,13 @@ var defaultDistributionPlatforms = []models.VideoDistributionPlatform{
 }
 
 var distributionPlatformAlias = map[string]models.VideoDistributionPlatform{
-	"discord":          models.VideoDistributionPlatformDiscord,
-	"discord server":   models.VideoDistributionPlatformDiscord,
-	"reddit":           models.VideoDistributionPlatformReddit,
-	"reddit post":      models.VideoDistributionPlatformReddit,
-	"pinterest":        models.VideoDistributionPlatformPinterest,
-	"pinterest board":  models.VideoDistributionPlatformPinterest,
-	"pinterest pin":    models.VideoDistributionPlatformPinterest,
+	"discord":         models.VideoDistributionPlatformDiscord,
+	"discord server":  models.VideoDistributionPlatformDiscord,
+	"reddit":          models.VideoDistributionPlatformReddit,
+	"reddit post":     models.VideoDistributionPlatformReddit,
+	"pinterest":       models.VideoDistributionPlatformPinterest,
+	"pinterest board": models.VideoDistributionPlatformPinterest,
+	"pinterest pin":   models.VideoDistributionPlatformPinterest,
 	"tiktok":          models.VideoDistributionPlatformTikTok,
 	"tik tok":         models.VideoDistributionPlatformTikTok,
 	"douyin":          models.VideoDistributionPlatformTikTok,
@@ -1028,7 +1028,7 @@ func buildDistributionPublishedURL(platform string, sourceURL string, distributi
 	case string(models.VideoDistributionPlatformPinterest):
 		description := strings.TrimSpace(title)
 		if description == "" {
-			description = "跨境短剧视频"
+			description = "跨境营销短视频"
 		}
 		return fmt.Sprintf("https://www.pinterest.com/pin-builder/?url=%s&description=%s", escapedSource, url.QueryEscape(description))
 	case string(models.VideoDistributionPlatformTikTok):

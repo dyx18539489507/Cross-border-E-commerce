@@ -23,6 +23,7 @@ import (
 type SilkroadAgentHandler struct {
 	service             *services.SilkroadAgentService
 	historyService      *services.SilkroadAgentHistoryService
+	projectService      *services.SilkroadAgentProjectService
 	notificationService *services.NotificationService
 	log                 *logger.Logger
 }
@@ -32,10 +33,11 @@ type SilkroadAgentHandler struct {
  * 参数：cfg 为模型与运行配置；log 为日志实例；notificationService 用于写入前端通知中心。
  * 返回：可注册到路由的 SilkroadAgentHandler。
  */
-func NewSilkroadAgentHandler(cfg *config.Config, log *logger.Logger, notificationService *services.NotificationService, historyService *services.SilkroadAgentHistoryService) *SilkroadAgentHandler {
+func NewSilkroadAgentHandler(cfg *config.Config, log *logger.Logger, notificationService *services.NotificationService, historyService *services.SilkroadAgentHistoryService, projectService *services.SilkroadAgentProjectService) *SilkroadAgentHandler {
 	return &SilkroadAgentHandler{
 		service:             services.NewSilkroadAgentService(cfg, log),
 		historyService:      historyService,
+		projectService:      projectService,
 		notificationService: notificationService,
 		log:                 log,
 	}
@@ -89,6 +91,58 @@ func (h *SilkroadAgentHandler) Generate(c *gin.Context) {
 	})
 
 	response.Success(c, result)
+}
+
+/**
+ * 功能：执行分阶段多 Agent 工作流并返回 Trace、Critic 评分和最终方案。
+ * 参数：c 为 Gin 请求上下文，Body 与原 generate 保持一致。
+ * 返回：SilkroadAgentWorkflowResult；同时保存历史记录，便于结果页和论文实验复现阶段输出。
+ */
+func (h *SilkroadAgentHandler) GenerateWorkflow(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
+	input, err := bindSilkroadAgentInput(c)
+	if err != nil {
+		response.BadRequest(c, "无效的 Agent 工作流请求参数")
+		return
+	}
+
+	workflow, err := h.service.GenerateWithWorkflow(input)
+	if err != nil {
+		if errors.Is(err, services.ErrSilkroadAgentConfigMissing) {
+			response.Error(c, http.StatusBadRequest, "AGENT_CONFIG_MISSING", "Agent 模型环境变量未配置，无法调用多 Agent 工作流。")
+			return
+		}
+		if h.log != nil {
+			h.log.Warnw("silkroad workflow generation failed", "error", err)
+		}
+		response.InternalError(c, "丝路 Agent 工作流生成失败，请稍后重试。")
+		return
+	}
+
+	historyItem := h.saveWorkflowHistory(deviceID, input, workflow)
+	notificationPath := "/agent/result"
+	metadata := map[string]interface{}{
+		"model":           workflow.Result.Model,
+		"market":          workflow.Result.RecognizedInfo.TargetMarket,
+		"workflow_status": workflow.WorkflowStatus,
+		"revised":         workflow.Revised,
+	}
+	if historyItem != nil {
+		workflow.SessionID = historyItem.ID
+		notificationPath = fmt.Sprintf("/agent/result?historyId=%d", historyItem.ID)
+		metadata["history_id"] = historyItem.ID
+		metadata["request_id"] = historyItem.RequestID
+	}
+
+	h.notify(deviceID, services.CreateNotificationInput{
+		Type:     "agent_workflow_completed",
+		Title:    "多 Agent 营销方案已生成",
+		Content:  "「" + workflow.Result.RecognizedInfo.ProductName + "」的跨境营销工作流已完成。",
+		Path:     notificationPath,
+		Metadata: metadata,
+	})
+
+	response.Success(c, workflow)
 }
 
 /**
@@ -259,6 +313,84 @@ func (h *SilkroadAgentHandler) GetHistory(c *gin.Context) {
 }
 
 /**
+ * 功能：从 Agent 历史记录一键创建营销项目。
+ * 参数：id 为历史记录 ID；Body 可选传入 result/workflow 作为历史缺失时的兜底。
+ * 返回：项目 ID、跳转路径和创建摘要。
+ */
+func (h *SilkroadAgentHandler) CreateProjectFromHistory(c *gin.Context) {
+	if h.projectService == nil {
+		response.InternalError(c, "营销项目创建服务未初始化")
+		return
+	}
+
+	deviceID := middlewares2.GetDeviceID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "无效的 Agent 历史 ID")
+		return
+	}
+
+	var req services.CreateProjectFromAgentRequest
+	_ = c.ShouldBindJSON(&req)
+
+	if h.historyService != nil {
+		if item, err := h.historyService.Get(deviceID, uint(id)); err == nil {
+			if item.Workflow != nil {
+				req.Workflow = item.Workflow
+				req.Result = &item.Workflow.Result
+			} else if item.Result != nil {
+				req.Result = item.Result
+			}
+		}
+	}
+
+	h.createProjectFromAgentPayload(c, deviceID, req)
+}
+
+/**
+ * 功能：直接使用当前页面提交的 Agent 结果创建营销项目。
+ * 参数：Body 包含 result 或 workflow。
+ * 返回：项目 ID、跳转路径和创建摘要。
+ */
+func (h *SilkroadAgentHandler) CreateProject(c *gin.Context) {
+	if h.projectService == nil {
+		response.InternalError(c, "营销项目创建服务未初始化")
+		return
+	}
+
+	var req services.CreateProjectFromAgentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "无效的 Agent 项目创建参数")
+		return
+	}
+	h.createProjectFromAgentPayload(c, middlewares2.GetDeviceID(c), req)
+}
+
+func (h *SilkroadAgentHandler) createProjectFromAgentPayload(c *gin.Context, deviceID string, req services.CreateProjectFromAgentRequest) {
+	project, err := h.projectService.CreateFromAgentResult(deviceID, req.Result, req.Workflow)
+	if err != nil {
+		if h.log != nil {
+			h.log.Warnw("failed to create project from agent", "error", err, "device_id", deviceID)
+		}
+		response.BadRequest(c, "无法从当前 Agent 结果创建营销项目")
+		return
+	}
+
+	h.notify(deviceID, services.CreateNotificationInput{
+		Type:    "agent_project_created",
+		Title:   "营销项目已创建",
+		Content: project.Summary,
+		Path:    project.Path,
+		Metadata: map[string]interface{}{
+			"project_id": project.ProjectID,
+			"episode_id": project.EpisodeID,
+			"source":     project.CreatedFrom,
+		},
+	})
+	response.Created(c, project)
+}
+
+/**
  * 功能：绑定丝路 Agent 输入。
  * 参数：c 为 Gin 请求上下文。
  * 返回：SilkroadAgentInput 和错误；兼容首页 JSON 请求与未来图片上传表单请求。
@@ -314,6 +446,20 @@ func (h *SilkroadAgentHandler) saveHistory(deviceID string, input services.Silkr
 	if err != nil && h.log != nil {
 		// 历史记录是体验增强能力，保存失败不应阻断 Agent 主结果返回。
 		h.log.Warnw("failed to save silkroad agent history", "error", err, "device_id", deviceID, "request_id", input.RequestID)
+	}
+	if err != nil {
+		return nil
+	}
+	return item
+}
+
+func (h *SilkroadAgentHandler) saveWorkflowHistory(deviceID string, input services.SilkroadAgentInput, workflow *services.SilkroadAgentWorkflowResult) *services.SilkroadAgentHistoryItem {
+	if h.historyService == nil {
+		return nil
+	}
+	item, err := h.historyService.SaveWorkflow(deviceID, input, workflow)
+	if err != nil && h.log != nil {
+		h.log.Warnw("failed to save silkroad workflow history", "error", err, "device_id", deviceID, "request_id", input.RequestID)
 	}
 	if err != nil {
 		return nil

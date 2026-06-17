@@ -2,7 +2,7 @@
 # 业务场景：开发者复制该文件后，为合规分析、视觉理解、数字人和分发服务补充自己的第三方服务参数。
 # 核心职责：展示配置字段含义，不提供真实密钥。
 app:
-  name: "Huobao Drama API"
+  name: "Digital Silk Road API"
   version: "1.0.0"
   debug: true
   language: "zh"  # 系统语言：zh(中文) 或 en(英文)
@@ -52,7 +52,7 @@ distribution:
   upload_post_connect_description: "Connect your own Pinterest and Reddit accounts before distributing content."
   upload_post_redirect_url: ""
   upload_post_logo_image: ""
-  discord_username: "Drama Generator"
+  discord_username: "Digital Silk Road"
   discord_avatar_url: ""
   status_poll_interval_seconds: 20
   history_lookback_pages: 3

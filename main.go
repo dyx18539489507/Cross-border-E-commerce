@@ -29,7 +29,7 @@ func main() {
 	logr := logger.NewLogger(cfg.App.Debug)
 	defer logr.Sync()
 
-	logr.Info("Starting Drama Generator API Server...")
+	logr.Info("Starting Digital Silk Road API Server...")
 
 	db, err := database.NewDatabase(cfg.Database)
 	if err != nil {

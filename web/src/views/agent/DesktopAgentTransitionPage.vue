@@ -198,7 +198,7 @@ import { useRouter } from 'vue-router'
 import type { Component } from 'vue'
 import type { AgentInput, AgentResult } from '@/types/agent'
 import { agentAPI } from '@/api/agent'
-import { readAgentInput, readAgentUserInput, saveAgentResult } from '@/utils/agentStorage'
+import { clearAgentResult, readAgentInput, readAgentUserInput, saveAgentResult, saveAgentWorkflowResult } from '@/utils/agentStorage'
 import {
   ArrowLeft,
   CircleCheck,
@@ -398,18 +398,21 @@ const startResultGeneration = async () => {
   const input = storedAgentInput.value || buildFallbackInput()
   resultFallbackTimer = schedule(() => {
     if (generationReady.value) return
+    clearAgentResult()
     saveAgentResult(buildFallbackResult(input, currentRecognizedInfo()))
     generationReady.value = true
     tryRedirect()
   }, 18000)
 
   try {
-    const result = await agentAPI.generate(input)
-    saveAgentResult(result)
+    const workflow = await agentAPI.generateWorkflow(input)
+    saveAgentWorkflowResult(workflow)
+    saveAgentResult(workflow.result)
     generationReady.value = true
     tryRedirect()
   } catch {
     if (!generationReady.value) {
+      clearAgentResult()
       saveAgentResult(buildFallbackResult(input, currentRecognizedInfo()))
       generationReady.value = true
       tryRedirect()
@@ -604,6 +607,7 @@ const tryRedirect = () => {
     schedule(() => {
       if (!generationReady.value) {
         const input = storedAgentInput.value || buildFallbackInput()
+        clearAgentResult()
         saveAgentResult(buildFallbackResult(input, currentRecognizedInfo()))
         generationReady.value = true
       }

@@ -3,8 +3,13 @@
  * 业务场景：用户从首页启动 Agent 后，过渡页、结果页和商品录入页需要共享同一次分析上下文。
  * 核心职责：保存 Agent 输入、用户原话和生成结果，并用 schemaVersion 避免旧缓存污染新版页面。
  */
-import type { AgentInput, AgentResult } from '@/types/agent'
-import { SILKROAD_AGENT_INPUT_KEY, SILKROAD_AGENT_RESULT_KEY, SILKROAD_AGENT_SCHEMA_VERSION } from '@/types/agent'
+import type { AgentInput, AgentResult, WorkflowResult } from '@/types/agent'
+import {
+  SILKROAD_AGENT_INPUT_KEY,
+  SILKROAD_AGENT_RESULT_KEY,
+  SILKROAD_AGENT_SCHEMA_VERSION,
+  SILKROAD_AGENT_WORKFLOW_KEY
+} from '@/types/agent'
 
 export const SILKROAD_AGENT_USER_INPUT_KEY = 'agent_user_input'
 
@@ -66,8 +71,32 @@ export const saveAgentResult = (result: AgentResult) => {
   })
 }
 
+export const readAgentWorkflowResult = () => {
+  const workflow = readJSON<WorkflowResult & { schemaVersion?: number }>(SILKROAD_AGENT_WORKFLOW_KEY)
+  if (!workflow) return null
+  if (workflow.schemaVersion !== SILKROAD_AGENT_SCHEMA_VERSION) {
+    sessionStorage.removeItem(SILKROAD_AGENT_WORKFLOW_KEY)
+    return null
+  }
+  return workflow
+}
+
+export const saveAgentWorkflowResult = (workflow: WorkflowResult) => {
+  const input = readAgentInput()
+  writeJSON(SILKROAD_AGENT_WORKFLOW_KEY, {
+    ...workflow,
+    schemaVersion: SILKROAD_AGENT_SCHEMA_VERSION,
+    result: {
+      ...workflow.result,
+      schemaVersion: SILKROAD_AGENT_SCHEMA_VERSION,
+      requestId: input?.requestId || workflow.result.requestId || createAgentRequestId()
+    }
+  })
+}
+
 export const clearAgentResult = () => {
   sessionStorage.removeItem(SILKROAD_AGENT_RESULT_KEY)
+  sessionStorage.removeItem(SILKROAD_AGENT_WORKFLOW_KEY)
 }
 
 /**

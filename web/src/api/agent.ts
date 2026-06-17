@@ -3,7 +3,14 @@
  * 业务场景：首页、过渡页和结果页需要把商品文本、图片、目标市场等信息交给后端 Agent。
  * 核心职责：统一调用 Agent 识别与方案生成接口，并用类型约束返回给页面展示的业务结构。
  */
-import type { AgentInput, AgentResult } from '@/types/agent'
+import type {
+  AgentAnalyzeInput,
+  AgentFollowUpInput,
+  AgentInput,
+  AgentResult,
+  CreateProjectFromAgentResponse,
+  WorkflowResult
+} from '@/types/agent'
 import request from '@/utils/request'
 
 export interface AgentHistoryItem {
@@ -19,6 +26,7 @@ export interface AgentHistoryItem {
   model: string
   input: AgentInput
   result?: AgentResult
+  workflow?: WorkflowResult
   createdAt: string
   updatedAt: string
 }
@@ -40,10 +48,29 @@ export const agentAPI = {
   generate(data: AgentInput) {
     return request.post<AgentResult>('/agent/generate', data)
   },
-  listHistory(limit = 20) {
-    return request.get<{ items: AgentHistoryItem[] }>('/agent/history', { params: { limit } })
+  generateWorkflow(data: AgentInput & { workflow?: boolean }) {
+    return request.post<WorkflowResult>('/agent/workflow', { ...data, workflow: true })
   },
-  getHistory(id: number) {
+  workflow(data: AgentInput & { workflow?: boolean }) {
+    return request.post<WorkflowResult>('/agent/workflow', { ...data, workflow: true })
+  },
+  analyze(data: AgentAnalyzeInput) {
+    return request.post('/agent/analyze', data)
+  },
+  followUp(data: AgentFollowUpInput) {
+    return request.post('/agent/follow-up', data)
+  },
+  listHistory(params: { limit?: number; page?: number } | number = { limit: 20 }) {
+    const normalizedParams = typeof params === 'number' ? { limit: params } : params
+    return request.get<{ items: AgentHistoryItem[] }>('/agent/history', { params: normalizedParams })
+  },
+  getHistory(id: number | string) {
     return request.get<{ item: AgentHistoryItem }>(`/agent/history/${id}`)
+  },
+  createProjectFromAgent(id?: number | string, data?: { result?: AgentResult; workflow?: WorkflowResult }) {
+    if (id !== undefined && id !== null && String(id).trim() !== '') {
+      return request.post<CreateProjectFromAgentResponse>(`/agent/${id}/create-project`, data || {})
+    }
+    return request.post<CreateProjectFromAgentResponse>('/agent/create-project', data || {})
   }
 }

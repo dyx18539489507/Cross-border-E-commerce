@@ -1,4 +1,4 @@
--- AI短剧生成平台 - SQLite数据库初始化脚本 (开源版本 - 无用户认证)
+-- 数字丝路跨境电商 AI Agent 智能营销引擎 - SQLite数据库初始化脚本 (开源版本 - 无用户认证)
 -- 创建时间: 2026-01-07
 -- 说明: 此版本适配SQLite，移除外键约束，适合单机部署
 
@@ -32,6 +32,31 @@ CREATE TABLE IF NOT EXISTS dramas (
 
 CREATE INDEX IF NOT EXISTS idx_dramas_status ON dramas(status);
 CREATE INDEX IF NOT EXISTS idx_dramas_deleted_at ON dramas(deleted_at);
+
+-- 丝路 Agent 历史与多 Agent 工作流快照
+CREATE TABLE IF NOT EXISTS silkroad_agent_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL DEFAULT '',
+    request_id TEXT NOT NULL DEFAULT '',
+    product_name TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    target_market TEXT NOT NULL DEFAULT '',
+    target_platform TEXT NOT NULL DEFAULT '',
+    target_audience TEXT NOT NULL DEFAULT '',
+    raw_prompt TEXT,
+    input_snapshot TEXT,
+    result_snapshot TEXT,
+    workflow_snapshot TEXT,
+    status TEXT NOT NULL DEFAULT 'completed',
+    model TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_silkroad_agent_sessions_device_id ON silkroad_agent_sessions(device_id);
+CREATE INDEX IF NOT EXISTS idx_silkroad_agent_sessions_request_id ON silkroad_agent_sessions(request_id);
+CREATE INDEX IF NOT EXISTS idx_silkroad_agent_sessions_status ON silkroad_agent_sessions(status);
 
 -- 章节表
 CREATE TABLE IF NOT EXISTS episodes (

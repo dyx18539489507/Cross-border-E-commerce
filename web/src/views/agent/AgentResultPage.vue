@@ -69,12 +69,95 @@
 
       <section class="agent-card agent-next-card" aria-label="沉淀 Agent 商品信息">
         <div>
-          <strong>将本次分析沉淀为商品资料</strong>
-          <p>Agent 已识别的商品、市场、平台、卖点和合规提示会自动预填到商品录入页。</p>
+          <strong>将本次分析沉淀为营销项目</strong>
+          <p>Agent 已识别的商品、市场、合规边界、脚本、数字人和投放建议会自动带入工作台。</p>
         </div>
-        <button type="button" class="agent-button agent-button--primary" @click="continueProductEntryFromAgent">
-          <span>继续完善商品信息</span>
-          <ArrowRight class="agent-button__icon" aria-hidden="true" />
+        <div class="agent-next-card__actions">
+          <button type="button" class="agent-button agent-button--primary" :disabled="isCreatingProject" @click="createMarketingProject">
+            <span>{{ isCreatingProject ? '创建中…' : '一键创建营销项目' }}</span>
+            <ArrowRight class="agent-button__icon" aria-hidden="true" />
+          </button>
+          <button type="button" class="agent-button agent-button--ghost" @click="continueProductEntryFromAgent">
+            <span>继续完善商品信息</span>
+          </button>
+        </div>
+      </section>
+
+      <section v-if="workflowResult || matchedComplianceRules.length" class="agent-card agent-workflow-card" aria-label="多 Agent 工作流结果">
+        <div class="agent-card__header">
+          <div class="agent-section-title">
+            <span class="agent-title-icon agent-title-icon--violet">
+              <Cpu aria-hidden="true" />
+            </span>
+            <h2>多 Agent 执行链</h2>
+          </div>
+          <div class="agent-card__header-actions">
+            <span v-if="workflowResult?.revised" class="agent-applied-badge">已根据 Critic 二次修订</span>
+            <span v-if="workflowResult?.workflow_status" class="agent-safe-badge">
+              <CircleCheck class="agent-safe-badge__icon" aria-hidden="true" />
+              <span>{{ workflowStatusLabel }}</span>
+            </span>
+          </div>
+        </div>
+
+        <div v-if="workflowTraces.length" class="agent-trace-list">
+          <article v-for="trace in workflowTraces" :key="`${trace.agent_name}-${trace.stage}`" class="agent-trace-item">
+            <div class="agent-trace-item__head">
+              <strong>{{ getAgentDisplayName(trace.agent_name) }}</strong>
+              <span :class="`agent-trace-item__status agent-trace-item__status--${trace.status}`">{{ getTraceStatusLabel(trace.status) }}</span>
+            </div>
+            <p>{{ getTraceOutputSummary(trace) }}</p>
+            <small>{{ trace.stage }} · {{ trace.duration_ms || 0 }}ms</small>
+          </article>
+        </div>
+
+        <div v-if="criticScoreItems.length" class="agent-critic-panel">
+          <div class="agent-critic-panel__scores">
+            <article v-for="item in criticScoreItems" :key="item.label">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}/5</strong>
+            </article>
+          </div>
+          <div class="agent-critic-panel__feedback">
+            <strong>Critic 评审</strong>
+            <ul>
+              <li v-for="problem in criticProblems" :key="problem">{{ problem }}</li>
+            </ul>
+          </div>
+        </div>
+
+        <div v-if="matchedComplianceRules.length" class="agent-rule-panel">
+          <div class="agent-rule-panel__head">
+            <strong>命中的合规知识</strong>
+            <span>{{ matchedComplianceRules.length }} 条</span>
+          </div>
+          <article v-for="rule in matchedComplianceRules" :key="rule.id" class="agent-rule-item">
+            <div>
+              <strong>{{ rule.id }}</strong>
+              <span>{{ rule.country }} · {{ rule.platform }} · {{ rule.category }}</span>
+            </div>
+            <p>{{ rule.rule_text }}</p>
+          </article>
+          <p v-if="result.compliance.disclaimer" class="agent-rule-panel__disclaimer">{{ result.compliance.disclaimer }}</p>
+        </div>
+      </section>
+
+      <section class="agent-card agent-shortcut-card" aria-label="Agent 工作台快捷入口">
+        <button type="button" class="agent-shortcut-button" @click="goCompliance">
+          <DocumentChecked aria-hidden="true" />
+          <span>进入合规分析</span>
+        </button>
+        <button type="button" class="agent-shortcut-button" @click="goScriptWorkspace">
+          <VideoCamera aria-hidden="true" />
+          <span>进入脚本工作台</span>
+        </button>
+        <button type="button" class="agent-shortcut-button" @click="startContentWorkflow('combo')">
+          <MagicStick aria-hidden="true" />
+          <span>进入内容生成</span>
+        </button>
+        <button type="button" class="agent-shortcut-button" @click="goTimelineWorkspace">
+          <TrendCharts aria-hidden="true" />
+          <span>进入剪辑时间线</span>
         </button>
       </section>
 
@@ -431,8 +514,16 @@ import {
   VideoCamera,
   WarningFilled
 } from '@element-plus/icons-vue'
-import type { AgentInput, AgentResult } from '@/types/agent'
-import { readAgentInput, readAgentResult, saveAgentInput, saveAgentResult } from '@/utils/agentStorage'
+import { ElMessage } from 'element-plus'
+import type { AgentInput, AgentResult, AgentTrace, ComplianceRule, WorkflowResult } from '@/types/agent'
+import {
+  readAgentInput,
+  readAgentResult,
+  readAgentWorkflowResult,
+  saveAgentInput,
+  saveAgentResult,
+  saveAgentWorkflowResult
+} from '@/utils/agentStorage'
 import {
   getProductDraft,
   saveAgentResultAsProductDraft,
@@ -555,11 +646,13 @@ const route = useRoute()
 const reminderAction = ref('')
 const agentMessage = ref('')
 const storedResult = ref<AgentResult | null>(readAgentResult())
+const storedWorkflow = ref<WorkflowResult | null>(readAgentWorkflowResult())
 const storedAgentInput = ref<AgentInput | null>(readAgentInput())
 const isHistoryRestoring = ref(false)
 const messages = ref<FollowUpMessage[]>([])
 const isFollowUpLoading = ref(false)
 const isPlanRegenerating = ref(false)
+const isCreatingProject = ref(false)
 const appliedUpdateModules = ref<string[]>([])
 const followUpChatRef = ref<HTMLElement | null>(null)
 
@@ -727,6 +820,34 @@ const fallbackResult: AgentResult = {
 }
 
 const result = computed(() => storedResult.value ?? fallbackResult)
+const workflowResult = computed(() => storedWorkflow.value)
+const workflowTraces = computed(() => workflowResult.value?.traces || [])
+const workflowStatusLabel = computed(() => {
+  const status = workflowResult.value?.workflow_status || ''
+  if (status === 'completed_with_fallback') return '含本地兜底'
+  if (status === 'completed') return '执行完成'
+  return status || '已生成'
+})
+const matchedComplianceRules = computed<ComplianceRule[]>(() => {
+  return result.value.compliance.matchedRules?.length ? result.value.compliance.matchedRules : []
+})
+const criticScoreItems = computed(() => {
+  const critic = workflowResult.value?.critic
+  if (!critic) return []
+  return [
+    { label: '完整性', value: critic.completeness_score },
+    { label: '合规性', value: critic.compliance_score },
+    { label: '本地化', value: critic.localization_score },
+    { label: '营销力', value: critic.marketing_score },
+    { label: '总分', value: critic.overall_score }
+  ]
+})
+const criticProblems = computed(() => {
+  const critic = workflowResult.value?.critic
+  if (!critic) return []
+  const problems = critic.problems?.length ? critic.problems : ['未发现明显结构性问题，建议人工复核合规依据。']
+  return problems.slice(0, 4)
+})
 const missingResultMessage = computed(() => isHistoryRestoring.value
   ? '正在从 Agent 历史记录恢复本次方案，请稍候。'
   : '请返回首页重新填写商品信息并启动丝路 Agent。生成结果会写入当前设备历史，刷新或从通知中心返回时也可以恢复。')
@@ -811,7 +932,7 @@ const goHome = () => {
 }
 
 const restoreAgentResultFromHistory = async () => {
-  if (storedResult.value) {
+  if (storedResult.value && storedWorkflow.value) {
     return
   }
 
@@ -829,6 +950,13 @@ const restoreAgentResultFromHistory = async () => {
     if (item?.input) {
       storedAgentInput.value = item.input
       saveAgentInput(item.input)
+    }
+    if (item?.workflow) {
+      storedWorkflow.value = item.workflow
+      storedResult.value = item.workflow.result
+      saveAgentWorkflowResult(item.workflow)
+      saveAgentResult(item.workflow.result)
+      return
     }
     if (item?.result) {
       storedResult.value = item.result
@@ -848,6 +976,32 @@ const continueProductEntryFromAgent = () => {
   router.push({ path: '/dramas/create', query: { source: 'agent' } })
 }
 
+const getCurrentHistoryId = () => {
+  const rawHistoryId = Array.isArray(route.query.historyId)
+    ? route.query.historyId[0]
+    : route.query.historyId
+  const historyId = Number(rawHistoryId || storedWorkflow.value?.session_id)
+  return Number.isFinite(historyId) && historyId > 0 ? historyId : undefined
+}
+
+const createMarketingProject = async () => {
+  if (!storedResult.value || isCreatingProject.value) return
+  isCreatingProject.value = true
+  try {
+    saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
+    const created = await agentAPI.createProjectFromAgent(getCurrentHistoryId(), {
+      result: storedResult.value,
+      workflow: storedWorkflow.value || undefined
+    })
+    ElMessage.success(created.summary || '营销项目已创建')
+    router.push(created.path || { path: '/workspace/script', query: { projectId: String(created.project_id), source: 'agent' } })
+  } catch (error) {
+    ElMessage.error((error as Error).message || '创建营销项目失败')
+  } finally {
+    isCreatingProject.value = false
+  }
+}
+
 const startContentWorkflow = (target: ContentWorkflowTarget) => {
   if (!storedResult.value) return
 
@@ -861,6 +1015,80 @@ const startContentWorkflow = (target: ContentWorkflowTarget) => {
       focus: target
     }
   })
+}
+
+const goCompliance = () => {
+  if (storedResult.value) {
+    saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
+  }
+  router.push({ path: '/compliance', query: { source: 'agent' } })
+}
+
+const goScriptWorkspace = () => {
+  if (storedResult.value) {
+    saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
+  }
+  router.push({ path: '/workspace/script', query: { source: 'agent' } })
+}
+
+const goTimelineWorkspace = () => {
+  if (storedResult.value) {
+    saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
+  }
+  router.push({ path: '/workspace/timeline', query: { source: 'agent' } })
+}
+
+const getAgentDisplayName = (name: string) => {
+  const labels: Record<string, string> = {
+    PlanningAgent: '任务规划智能体',
+    ProductAgent: '商品理解智能体',
+    ComplianceAgent: '合规分析智能体',
+    LocalizationAgent: '本地化智能体',
+    ContentAgent: '内容生成智能体',
+    CriticAgent: '评审反馈智能体'
+  }
+  return labels[name] || name
+}
+
+const getTraceStatusLabel = (status: string) => {
+  if (status === 'fallback') return '兜底'
+  if (status === 'completed') return '完成'
+  if (status === 'running') return '执行中'
+  return status || '完成'
+}
+
+const getTraceOutputSummary = (trace: AgentTrace) => {
+  const output = trace.output as Record<string, any> | undefined
+  if (!output || typeof output !== 'object') return '已完成该阶段处理。'
+  if (trace.agent_name === 'PlanningAgent') {
+    return toTraceSentence(output.task_chain || output.execution_steps, '已生成任务链和输出结构规划。')
+  }
+  if (trace.agent_name === 'ProductAgent') {
+    return [output.product_name, output.category, toTraceSentence(output.core_selling_points, '')].filter(Boolean).join(' · ') || '已完成商品结构化理解。'
+  }
+  if (trace.agent_name === 'ComplianceAgent') {
+    return [output.level, output.summary].filter(Boolean).join(' · ') || '已完成合规知识检索与风险判断。'
+  }
+  if (trace.agent_name === 'LocalizationAgent') {
+    return [output.language_style, toTraceSentence(output.localized_selling_points, '')].filter(Boolean).join(' · ') || '已生成本地化策略。'
+  }
+  if (trace.agent_name === 'ContentAgent') {
+    return toTraceSentence(output.marketing_titles, output.short_video_script?.title || '已生成营销内容初稿。')
+  }
+  if (trace.agent_name === 'CriticAgent') {
+    const score = output.overall_score ? `总分 ${output.overall_score}/5` : ''
+    const revise = output.need_revise ? '建议修订' : '可继续推进'
+    return [score, revise].filter(Boolean).join(' · ') || '已完成方案评审。'
+  }
+  return JSON.stringify(output).slice(0, 120)
+}
+
+const toTraceSentence = (value: unknown, fallback: string) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 4).join(' / ') || fallback
+  }
+  if (typeof value === 'string') return value.trim() || fallback
+  return fallback
 }
 
 const markReminderAction = (action: string) => {
@@ -2133,6 +2361,12 @@ onBeforeUnmount(() => {
   box-shadow: 0 22px 34px -18px rgba(124, 58, 237, 0.6);
 }
 
+.agent-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  transform: none;
+}
+
 .agent-card-action-row {
   margin-top: 16px;
   display: flex;
@@ -2360,6 +2594,234 @@ onBeforeUnmount(() => {
   color: #45556c;
   font-size: 14px;
   line-height: 20px;
+}
+
+.agent-next-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.agent-workflow-card,
+.agent-shortcut-card {
+  margin-top: 16px;
+  padding: 22px;
+}
+
+.agent-trace-list {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-trace-item {
+  min-height: 132px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.agent-trace-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-trace-item__head strong {
+  color: #0a2463;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agent-trace-item p {
+  margin: 0;
+  color: #45556c;
+  font-size: 13px;
+  line-height: 20px;
+  flex: 1 1 auto;
+}
+
+.agent-trace-item small {
+  color: #90a1b9;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.agent-trace-item__status {
+  min-width: 44px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 800;
+}
+
+.agent-trace-item__status--completed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.agent-trace-item__status--fallback {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.agent-trace-item__status--running {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.agent-critic-panel {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+
+.agent-critic-panel__scores {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.agent-critic-panel__scores article {
+  min-height: 62px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.agent-critic-panel__scores span,
+.agent-rule-panel__head span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.agent-critic-panel__scores strong {
+  display: block;
+  margin-top: 4px;
+  color: #0a2463;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.agent-critic-panel__feedback {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.agent-critic-panel__feedback strong,
+.agent-rule-panel__head strong {
+  color: #0a2463;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agent-critic-panel__feedback ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #45556c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.agent-rule-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.agent-rule-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-rule-item {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.agent-rule-item div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-rule-item strong {
+  color: #0a2463;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.agent-rule-item span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.agent-rule-item p,
+.agent-rule-panel__disclaimer {
+  margin: 6px 0 0;
+  color: #45556c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.agent-rule-panel__disclaimer {
+  color: #92400e;
+}
+
+.agent-shortcut-card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-shortcut-button {
+  min-height: 46px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #ffffff;
+  color: #0a2463;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.agent-shortcut-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.agent-shortcut-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(6, 182, 212, 0.42);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.09);
 }
 
 .agent-result-grid {
@@ -3569,6 +4031,18 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
+  .agent-next-card__actions {
+    justify-content: flex-start;
+  }
+
+  .agent-trace-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agent-critic-panel {
+    grid-template-columns: 1fr;
+  }
+
   .agent-result-grid {
     grid-template-columns: 1fr;
   }
@@ -3608,6 +4082,10 @@ onBeforeUnmount(() => {
   }
 
   .agent-overview-card__items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agent-shortcut-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3674,8 +4152,10 @@ onBeforeUnmount(() => {
 
   .agent-summary-card,
   .agent-overview-card,
-  .agent-next-card,
-  .compliance-result-card,
+    .agent-next-card,
+    .agent-workflow-card,
+    .agent-shortcut-card,
+    .compliance-result-card,
   .video-script-card,
   .localization-card,
   .digital-human-card,
@@ -3697,6 +4177,12 @@ onBeforeUnmount(() => {
   }
 
   .agent-overview-card__items {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-trace-list,
+  .agent-shortcut-card,
+  .agent-critic-panel__scores {
     grid-template-columns: 1fr;
   }
 

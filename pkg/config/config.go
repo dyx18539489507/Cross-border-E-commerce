@@ -180,7 +180,7 @@ func LoadConfig() (*Config, error) {
 		config.Distribution.UploadPostLogoImage = os.Getenv("UPLOAD_POST_LOGO_IMAGE")
 	}
 	if config.Distribution.DiscordUsername == "" {
-		config.Distribution.DiscordUsername = firstNonEmpty(os.Getenv("DISTRIBUTION_DISCORD_USERNAME"), "Drama Generator")
+		config.Distribution.DiscordUsername = firstNonEmpty(os.Getenv("DISTRIBUTION_DISCORD_USERNAME"), "Digital Silk Road")
 	}
 	if config.Distribution.DiscordAvatarURL == "" {
 		config.Distribution.DiscordAvatarURL = os.Getenv("DISTRIBUTION_DISCORD_AVATAR_URL")
