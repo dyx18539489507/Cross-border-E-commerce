@@ -192,7 +192,7 @@
             下载完整报告 PDF
           </button>
 
-          <button type="button" class="compliance-actions__ghost" @click="router.push('/dramas')">
+          <button type="button" class="compliance-actions__ghost" @click="router.push('/projects')">
             返回工作台
           </button>
         </section>
@@ -241,8 +241,8 @@ const creatingStage = ref<'idle' | 'checking' | 'creating' | 'episode' | 'routin
 const brandLogo = '/logo_circle.png'
 
 const navItems = [
-  { label: '工作台', path: '/dramas', active: false, width: '66px' },
-  { label: '商品录入', path: '/dramas/create', active: false, width: '80px' },
+  { label: '工作台', path: '/projects', active: false, width: '66px' },
+  { label: '商品录入', path: '/projects/create', active: false, width: '80px' },
   { label: '合规分析', path: '/compliance', active: true, width: '80px' },
   { label: '脚本/分镜', path: '/workspace/script', active: false, width: '92px' },
   { label: '内容创作', path: '/workspace/content', active: false, width: '80px' },

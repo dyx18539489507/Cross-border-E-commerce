@@ -64,7 +64,6 @@ const handleCommand = async (lang: string) => {
     
     // 调用后端API更新语言设置
     const res = await settingsAPI.updateLanguage(backendLang)
-    console.log('Backend language updated:', res)
     
     // 更新前端语言
     setLanguage(normalizedLang)

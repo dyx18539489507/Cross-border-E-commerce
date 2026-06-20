@@ -99,11 +99,11 @@ const isIndeterminate = computed(() => {
 })
 
 const goBack = () => {
-  router.push(`/dramas/${dramaId}`)
+  router.push(`/projects/${dramaId}`)
 }
 
 const goToCharacterManagement = () => {
-  router.push(`/dramas/${dramaId}/characters`)
+  router.push(`/projects/${dramaId}/characters`)
 }
 
 const isSelected = (id: number | string) => {
@@ -235,7 +235,7 @@ const stopPolling = () => {
 }
 
 const goToNextStep = () => {
-  router.push(`/dramas/${dramaId}`)
+  router.push(`/projects/${dramaId}`)
 }
 
 onMounted(async () => {
@@ -245,11 +245,11 @@ onMounted(async () => {
       characters.value = drama.characters
     } else {
       ElMessage.warning(t('characterImages.noCharacters'))
-      router.push(`/dramas/${dramaId}`)
+      router.push(`/projects/${dramaId}`)
     }
   } catch (error: any) {
     ElMessage.error(error.message || t('characterImages.loadFailed'))
-    router.push(`/dramas/${dramaId}`)
+    router.push(`/projects/${dramaId}`)
   }
 })
 

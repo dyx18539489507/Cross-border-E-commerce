@@ -1,6 +1,6 @@
 <template>
   <div class="storyboard-generation">
-    <el-empty description="分镜拆解功能开发中" />
+    <el-empty description="请从营销脚本页生成视频分镜" />
   </div>
 </template>
 

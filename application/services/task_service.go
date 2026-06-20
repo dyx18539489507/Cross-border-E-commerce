@@ -23,6 +23,10 @@ func NewTaskService(db *gorm.DB, log *logger.Logger) *TaskService {
 	}
 }
 
+func (s *TaskService) GetDB() *gorm.DB {
+	return s.db
+}
+
 func firstTaskDeviceID(deviceIDs []string) string {
 	if len(deviceIDs) == 0 {
 		return ""

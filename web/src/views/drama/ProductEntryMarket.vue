@@ -215,7 +215,7 @@ const validateStep = () => {
 
 const goPrevious = () => {
   persistDraft()
-  router.push('/dramas/create')
+  router.push('/projects/create')
 }
 
 const goNext = () => {

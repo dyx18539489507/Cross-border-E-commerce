@@ -1,34 +1,56 @@
 services:
-  huobao-drama:
-    image: huobao-drama:latest
-    container_name: huobao-drama
+  digital-silk-road:
+    image: digital-silk-road:latest
+    container_name: digital-silk-road
     build:
       context: .
       dockerfile: Dockerfile
       args:
         DOCKER_REGISTRY: ${DOCKER_REGISTRY:-}
         NPM_REGISTRY: ${NPM_REGISTRY:-}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_DEMO_DEVICE_ID: ${VITE_DEMO_DEVICE_ID:-}
         GO_PROXY: ${GO_PROXY:-}
         ALPINE_MIRROR: ${ALPINE_MIRROR:-}
     ports:
-      - "5678:5678"
+      - "${SERVER_PORT:-5678}:${SERVER_PORT:-5678}"
     volumes:
       - ./data:/app/data
       - ./configs/config.yaml:/app/configs/config.yaml:ro
     environment:
-      - TZ=Asia/Shanghai
+      TZ: Asia/Shanghai
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: ${SERVER_PORT:-5678}
+      DATABASE_PATH: ${DATABASE_PATH:-./data/drama_generator.db}
+      STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-./data/storage}
+      STORAGE_BASE_URL: ${STORAGE_BASE_URL:-http://localhost:5678/static}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      AGENT_BASE_URL: ${AGENT_BASE_URL:-}
+      AGENT_TEXT_MODEL: ${AGENT_TEXT_MODEL:-}
+      AGENT_VISION_API_KEY: ${AGENT_VISION_API_KEY:-}
+      AGENT_VISION_BASE_URL: ${AGENT_VISION_BASE_URL:-}
+      AGENT_VISION_MODEL: ${AGENT_VISION_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      COMPLIANCE_API_KEY: ${COMPLIANCE_API_KEY:-}
+      VOLCENGINE_ACCESS_KEY_ID: ${VOLCENGINE_ACCESS_KEY_ID:-}
+      VOLCENGINE_SECRET_ACCESS_KEY: ${VOLCENGINE_SECRET_ACCESS_KEY:-}
+      VOLCENGINE_SPEECH_APP_ID: ${VOLCENGINE_SPEECH_APP_ID:-}
+      VOLCENGINE_SPEECH_TOKEN: ${VOLCENGINE_SPEECH_TOKEN:-}
+      DISTRIBUTION_SECRET_KEY: ${DISTRIBUTION_SECRET_KEY:-}
+      UPLOAD_POST_API_KEY: ${UPLOAD_POST_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5678/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:$${SERVER_PORT:-5678}/health"]
       interval: 30s
       timeout: 3s
       retries: 3
       start_period: 10s
     networks:
-      - huobao-network
+      - digital-silk-road-network
 
 networks:
-  huobao-network:
+  digital-silk-road-network:
     driver: bridge

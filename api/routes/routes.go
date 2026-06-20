@@ -106,6 +106,29 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			dramas.DELETE("/:id", dramaHandler.DeleteDrama)
 		}
 
+		projects := api.Group("/projects")
+		{
+			projects.GET("", dramaHandler.ListDramas)
+			projects.POST("/compliance-check", dramaHandler.CheckCompliance)
+			projects.POST("", dramaHandler.CreateDrama)
+			projects.GET("/stats", dramaHandler.GetDramaStats)
+			projects.GET("/:id/script", dramaHandler.GetProjectScript)
+			projects.PUT("/:id/script", dramaHandler.SaveProjectScript)
+			projects.GET("/:id/timeline", dramaHandler.GetProjectTimeline)
+			projects.PUT("/:id/timeline", dramaHandler.SaveProjectTimeline)
+			projects.POST("/:id/timeline/export", dramaHandler.GetProjectTimeline)
+			projects.GET("/:id/assets", dramaHandler.GetProjectAssets)
+			projects.GET("/:id/tasks", dramaHandler.GetProjectTasks)
+			projects.GET("/:id/characters", dramaHandler.GetCharacters)
+			projects.PUT("/:id/characters", dramaHandler.SaveCharacters)
+			projects.PUT("/:id/outline", dramaHandler.SaveOutline)
+			projects.PUT("/:id/episodes", dramaHandler.SaveEpisodes)
+			projects.PUT("/:id/progress", dramaHandler.SaveProgress)
+			projects.GET("/:id", dramaHandler.GetDrama)
+			projects.PUT("/:id", dramaHandler.UpdateDrama)
+			projects.DELETE("/:id", dramaHandler.DeleteDrama)
+		}
+
 		aiConfigs := api.Group("/ai-configs")
 		{
 			aiConfigs.GET("", aiConfigHandler.ListConfigs)
@@ -191,7 +214,13 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		digitalHumans := api.Group("/digital-humans")
 		{
 			// 数字丝路内容创作阶段使用该接口把角色图和口播音频生成数字人视频素材。
+			digitalHumans.GET("", digitalHumanHandler.ListTasks)
 			digitalHumans.POST("", digitalHumanHandler.Generate)
+			digitalHumans.GET("/history", digitalHumanHandler.ListTasks)
+			digitalHumans.GET("/:id", digitalHumanHandler.GetTask)
+			digitalHumans.GET("/:id/status", digitalHumanHandler.GetTaskStatus)
+			digitalHumans.GET("/:id/result", digitalHumanHandler.GetTaskResult)
+			digitalHumans.DELETE("/:id", digitalHumanHandler.DeleteTask)
 		}
 
 		// 音色库

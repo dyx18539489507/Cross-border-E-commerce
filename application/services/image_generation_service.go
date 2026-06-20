@@ -142,6 +142,15 @@ func (s *ImageGenerationService) CreateImageRecord(request *CreateImageRecordReq
 		return nil, fmt.Errorf("failed to create image record: %w", err)
 	}
 
+	if request.SceneID != nil && imageType == string(models.ImageTypeScene) {
+		if err := s.db.Model(&models.Scene{}).Where("id = ?", *request.SceneID).Updates(map[string]interface{}{
+			"image_url": request.ImageURL,
+			"status":    "generated",
+		}).Error; err != nil {
+			s.log.Errorw("Failed to update scene image url after manual upload", "error", err, "scene_id", *request.SceneID)
+		}
+	}
+
 	return imageGen, nil
 }
 

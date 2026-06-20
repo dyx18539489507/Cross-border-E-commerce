@@ -100,10 +100,10 @@ func (s *AnalyticsService) Summary(deviceID string) (*AnalyticsSummary, error) {
 
 	return &AnalyticsSummary{
 		MetricCards: []AnalyticsMetricCard{
-			{Icon: "eye", Label: "总曝光量", Value: compactNumber(current.Exposure), Trend: formatDelta(current.Exposure, previous.Exposure), Tone: "blue"},
-			{Icon: "spark", Label: "点击率", Value: percentValue(current.ClickRate), Trend: formatDelta(current.ClickRate, previous.ClickRate), Tone: "purple"},
-			{Icon: "cart", Label: "转化率", Value: percentValue(current.ConversionRate), Trend: formatDelta(current.ConversionRate, previous.ConversionRate), Tone: "orange"},
-			{Icon: "coin", Label: "ROI", Value: fmt.Sprintf("%.1fx", current.ROI), Trend: formatDelta(current.ROI, previous.ROI), Tone: "green"},
+			{Icon: "eye", Label: "估算曝光量", Value: compactNumber(current.Exposure), Trend: formatDelta(current.Exposure, previous.Exposure), Tone: "blue"},
+			{Icon: "spark", Label: "估算点击率", Value: percentValue(current.ClickRate), Trend: formatDelta(current.ClickRate, previous.ClickRate), Tone: "purple"},
+			{Icon: "cart", Label: "估算转化率", Value: percentValue(current.ConversionRate), Trend: formatDelta(current.ConversionRate, previous.ConversionRate), Tone: "orange"},
+			{Icon: "coin", Label: "内容产出指数", Value: fmt.Sprintf("%.1fx", current.ROI), Trend: formatDelta(current.ROI, previous.ROI), Tone: "green"},
 		},
 		TrendXAxis:      xAxis,
 		TrendSeries:     series,

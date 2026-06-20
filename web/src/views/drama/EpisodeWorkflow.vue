@@ -793,10 +793,7 @@
       <el-upload
         class="upload-area"
         drag
-        :action="uploadAction"
-        :headers="uploadHeaders"
-        :on-success="handleUploadSuccess"
-        :on-error="handleUploadError"
+        :http-request="handleUploadRequest"
         :show-file-list="false"
         accept="image/jpeg,image/png,image/jpg"
       >
@@ -1077,6 +1074,39 @@
           下载视频
         </el-button>
       </div>
+
+      <div class="digital-human-history">
+        <div class="digital-human-history__header">
+          <span>最近数字人口播任务</span>
+          <el-button text size="small" :loading="digitalHumanHistoryLoading" @click="loadDigitalHumanHistory">
+            刷新
+          </el-button>
+        </div>
+        <el-alert
+          v-if="digitalHumanHistoryError"
+          :title="digitalHumanHistoryError"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+        <div v-else-if="digitalHumanHistoryLoading" class="digital-human-history__state">正在加载历史任务...</div>
+        <div v-else-if="digitalHumanTasks.length === 0" class="digital-human-history__state">
+          暂无数字人营销视频任务
+        </div>
+        <div v-else class="digital-human-history__list">
+          <button
+            v-for="task in digitalHumanTasks"
+            :key="task.id"
+            type="button"
+            class="digital-human-history__item"
+            :disabled="!task.video_url && !task.result?.video_url"
+            @click="applyDigitalHumanTask(task)"
+          >
+            <span class="digital-human-history__name">{{ formatDigitalHumanTaskStatus(task) }}</span>
+            <span class="digital-human-history__time">{{ formatDigitalHumanTaskTime(task.updated_at) }}</span>
+          </button>
+        </div>
+      </div>
       </div>
 
       <template #footer>
@@ -1109,7 +1139,7 @@ import { ref, computed, onMounted, watch, reactive, nextTick, onBeforeUnmount } 
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadProps, UploadUserFile } from 'element-plus'
+import type { UploadProps, UploadRequestOptions, UploadUserFile } from 'element-plus'
 import {
   User, 
   Location, 
@@ -1141,6 +1171,9 @@ import { imageAPI } from '@/api/image'
 import { voiceLibraryAPI } from '@/api/voice-library'
 import type { VoiceLibraryItem } from '@/api/voice-library'
 import { digitalHumanAPI } from '@/api/digital-human'
+import type { DigitalHumanTask } from '@/api/digital-human'
+import { mediaAPI } from '@/api/media'
+import { uploadAPI } from '@/api/upload'
 import { handleFormEnterNavigation } from '@/utils/formFocus'
 import type { Drama } from '@/types/drama'
 import { AppHeader, BeianFooter } from '@/components/common'
@@ -1175,6 +1208,9 @@ const generatingSceneImages = ref<Record<string, boolean>>({})
 const digitalHumanDialogVisible = ref(false)
 const digitalHumanLoading = ref(false)
 const digitalHumanResultUrl = ref('')
+const digitalHumanHistoryLoading = ref(false)
+const digitalHumanHistoryError = ref('')
+const digitalHumanTasks = ref<DigitalHumanTask[]>([])
 const digitalHumanImageList = ref<UploadUserFile[]>([])
 const digitalHumanAudioList = ref<UploadUserFile[]>([])
 const digitalHumanImagePreview = ref('')
@@ -1223,9 +1259,9 @@ const toPlayableMediaUrl = (url: string): string => {
   const value = (url || '').trim()
   if (!value) return ''
   if (value.startsWith('blob:') || value.startsWith('data:')) return value
-  if (value.startsWith('/api/v1/media/proxy')) return value
+  if (mediaAPI.isMediaProxyUrl(value)) return value
   if (value.startsWith('http://') || value.startsWith('https://')) {
-    return `/api/v1/media/proxy?url=${encodeURIComponent(value)}`
+    return mediaAPI.getMediaProxyUrl(value)
   }
   return value
 }
@@ -1234,7 +1270,7 @@ const fixImageUrl = (url?: string | null): string => {
   const value = (url || '').trim()
   if (!value) return ''
   if (value.startsWith('blob:') || value.startsWith('data:')) return value
-  if (value.startsWith('/api/v1/media/proxy')) {
+  if (mediaAPI.isMediaProxyUrl(value)) {
     try {
       const parsed = new URL(value, window.location.origin)
       const raw = parsed.searchParams.get('url')
@@ -1330,10 +1366,6 @@ const currentEditType = ref<'character' | 'scene'>('character')
 const editPrompt = ref('')
 const libraryItems = ref<any[]>([])
 const currentUploadTarget = ref<any>(null)
-const uploadAction = computed(() => '/api/v1/upload/image')
-const uploadHeaders = computed(() => ({
-  Authorization: `Bearer ${localStorage.getItem('token')}`
-}))
 
 watch(digitalHumanDialogVisible, (visible) => {
   if (typeof document === 'undefined') return
@@ -1503,7 +1535,7 @@ watch(
 
 const goBack = () => {
   // 使用 replace 避免在历史记录中留下当前页面
-  router.replace(`/dramas/${dramaId}`)
+  router.replace(`/projects/${dramaId}`)
 }
 
 const nextStep = () => {
@@ -1707,6 +1739,50 @@ const saveChapterScript = async () => {
 
 const openDigitalHumanDialog = () => {
   digitalHumanDialogVisible.value = true
+  loadDigitalHumanHistory()
+}
+
+const loadDigitalHumanHistory = async () => {
+  digitalHumanHistoryLoading.value = true
+  digitalHumanHistoryError.value = ''
+  try {
+    const data = await digitalHumanAPI.getDigitalHumanTasks({ page: 1, page_size: 6 })
+    digitalHumanTasks.value = data.items || []
+  } catch (error: any) {
+    digitalHumanHistoryError.value = error?.message || '数字人历史任务加载失败'
+    digitalHumanTasks.value = []
+  } finally {
+    digitalHumanHistoryLoading.value = false
+  }
+}
+
+const formatDigitalHumanTaskTime = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const formatDigitalHumanTaskStatus = (task: DigitalHumanTask) => {
+  const labelMap: Record<string, string> = {
+    pending: '等待中',
+    processing: '生成中',
+    completed: '已完成',
+    failed: '生成失败'
+  }
+  return `${labelMap[task.status] || task.status} · ${task.progress || 0}%`
+}
+
+const applyDigitalHumanTask = (task: DigitalHumanTask) => {
+  const videoUrl = task.video_url || task.result?.video_url || ''
+  if (!videoUrl) {
+    if (task.error) {
+      ElMessage.warning(task.error)
+    }
+    return
+  }
+  digitalHumanResultUrl.value = videoUrl
+  ElMessage.success('已载入历史数字人口播结果')
 }
 
 const loadVoiceLibrary = async () => {
@@ -1914,11 +1990,7 @@ const downloadDigitalHumanVideo = async () => {
       message: '正在准备下载...',
       duration: 0
     })
-    const response = await fetch(playableURL)
-    if (!response.ok) {
-      throw new Error(`下载失败: ${response.status}`)
-    }
-    const blob = await response.blob()
+    const blob = await mediaAPI.fetchBlob(playableURL)
     const blobURL = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = blobURL
@@ -2150,6 +2222,7 @@ const submitDigitalHuman = async () => {
     }
     digitalHumanResultUrl.value = result.video_url
     ElMessage.success('数字人视频生成完成')
+    await loadDigitalHumanHistory()
   } catch (error: any) {
     ElMessage.error(formatDigitalHumanError(error))
   } finally {
@@ -2577,17 +2650,6 @@ const generateShots = async () => {
   try {
     const episodeId = currentEpisode.value.id.toString()
     
-    // 【调试日志】输出当前操作的集数信息
-    console.log('=== 开始生成分镜 ===')
-    console.log('当前 episodeNumber (路由参数):', episodeNumber)
-    console.log('当前 episodeId (从 currentEpisode 获取):', episodeId)
-    console.log('currentEpisode 完整信息:', {
-      id: currentEpisode.value?.id,
-      episode_number: currentEpisode.value?.episode_number,
-      title: currentEpisode.value?.title
-    })
-    console.log('所有剧集列表:', drama.value?.episodes?.map(ep => ({ id: ep.id, episode_number: ep.episode_number, title: ep.title })))
-    
     // 创建异步任务
     const response = await generationAPI.generateStoryboard(episodeId, preferredTextModel)
     
@@ -2799,6 +2861,17 @@ const selectLibraryItem = async (item: any) => {
   }
 }
 
+const handleUploadRequest = async (options: UploadRequestOptions) => {
+  try {
+    const result = await uploadAPI.uploadImage(options.file as File)
+    await handleUploadSuccess(result)
+    options.onSuccess?.(result)
+  } catch (error: any) {
+    handleUploadError()
+    options.onError?.(error)
+  }
+}
+
 const handleUploadSuccess = async (response: any) => {
   try {
     const imageUrl = response.url || response.data?.url
@@ -2814,7 +2887,13 @@ const handleUploadSuccess = async (response: any) => {
       )
       ElMessage.success('上传成功！')
     } else if (currentUploadTarget.value?.type === 'scene') {
-      // TODO: 场景图片上传API
+      await imageAPI.createImageRecord({
+        drama_id: dramaId,
+        scene_id: Number(currentUploadTarget.value.id),
+        image_type: 'scene',
+        image_url: imageUrl,
+        prompt: 'manual scene upload'
+      })
       ElMessage.success('上传成功！')
     }
     
@@ -3575,6 +3654,63 @@ onMounted(() => {
     border-color: var(--accent);
     background: var(--bg-surface-accent);
     color: var(--accent);
+  }
+
+  .digital-human-history {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .digital-human-history__header,
+  .digital-human-history__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .digital-human-history__header {
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .digital-human-history__state {
+    padding: 10px 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .digital-human-history__list {
+    display: grid;
+    gap: 6px;
+  }
+
+  .digital-human-history__item {
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    background: var(--bg-soft);
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .digital-human-history__item:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+
+  .digital-human-history__time {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 
   .digital-human-textarea :deep(textarea) {

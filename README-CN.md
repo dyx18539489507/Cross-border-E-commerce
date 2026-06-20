@@ -13,6 +13,17 @@
 - 营销素材生产：复用既有图片生成、视频生成、音乐/SFX、数字人、剪辑时间线和分发能力。
 - 历史与实验：保存 Agent 历史、阶段 Trace、Critic 评分、命中规则和是否二次修订，支持论文实验对比。
 
+## 数字丝路原生页面
+
+- `/dashboard`：业务工作台总览。
+- `/agent`、`/agent/result`、`/agent/history`：丝路 Agent 分析、结果与历史。
+- `/projects`、`/projects/create`、`/projects/:id`：营销项目列表、创建与工作台。
+- `/projects/:id/compliance`、`script`、`assets`、`editor`、`tasks`：项目合规、营销脚本与分镜、素材、剪辑和任务。
+- `/compliance`、`/media/image`、`/media/video`、`/media/music`：合规中心与媒体生成能力。
+- `/digital-human`、`/analytics`、`/settings`：数字人、数据分析与设置。
+
+旧页面路径仅用于重定向兼容，不是菜单入口，也不会加载历史页面实现。
+
 ## 多 Agent 工作流
 
 新增接口：
@@ -87,9 +98,11 @@ go run .
 
 ```bash
 cd web
-npm install
-npm run dev
+npm ci
+npm run dev -- --host 127.0.0.1
 ```
+
+默认端口：后端 `5678`，前端开发服务器 `3012`。部署时可通过 `SERVER_PORT`、`VITE_API_BASE_URL` 和 `VITE_DEV_PROXY_TARGET` 覆盖。
 
 构建与自检：
 
@@ -134,8 +147,40 @@ export COMPLIANCE_MODEL="deepseek-v3-2-251201"
 - `GET /api/v1/agent/history/:id`：Agent 历史详情。
 - `POST /api/v1/agent/:id/create-project`：从 Agent 历史创建营销项目。
 - `POST /api/v1/agent/create-project`：直接从当前 Agent 结果创建营销项目。
-- `POST /api/v1/dramas/compliance-check`：商品合规预检。
-- `POST /api/v1/dramas`：复用现有项目模型创建营销项目。
+- `GET /api/v1/workbench/summary`：基于项目、素材、任务和 Agent 历史的真实工作台统计。
+- `GET /api/v1/analytics/summary`：基于平台内项目、生成素材、成片和分发记录的数据分析统计。
+- `GET /api/v1/projects`：营销项目列表，新前端优先使用该入口。
+- `POST /api/v1/projects/compliance-check`：商品合规预检。
+- `POST /api/v1/projects`：复用现有兼容项目模型创建营销项目。
+- `GET /api/v1/projects/:id/script`：读取营销脚本。
+- `PUT /api/v1/projects/:id/script`：保存营销脚本与内容版本。
+- `GET /api/v1/projects/:id/timeline`：读取时间线数据。
+- `PUT /api/v1/projects/:id/timeline`：保存时间线数据。
+- `GET /api/v1/projects/:id/assets`：读取项目素材。
+- `GET /api/v1/projects/:id/tasks`：读取项目生成任务。
+- `GET /api/v1/digital-humans`：数字人营销任务列表。
+- `POST /api/v1/digital-humans`：创建数字人口播视频任务。
+- `GET /api/v1/digital-humans/:id/status`：查询数字人任务状态。
+- `GET /api/v1/digital-humans/:id/result`：查询数字人任务结果。
+- `GET /api/v1/dramas` 等旧接口：保留兼容，不作为新前端主入口。
+
+## 验收脚本
+
+后端启动后可执行：
+
+```bash
+API_BASE_URL=http://127.0.0.1:5678 ./scripts/smoke-test.sh
+```
+
+脚本会检查健康检查、工作台统计、数据分析、Agent 历史、数字人任务、图片/视频任务、项目列表，以及有项目时的任务/素材子接口。比赛前可执行 `go run ./scripts/seed-demo.go` 写入明确标识的可重复 Demo 数据。
+
+交付文档：
+
+- `docs/DEPLOYMENT.md`：服务器、Docker、Nginx、持久化、备份与故障排查。
+- `docs/DEMO_SCRIPT.md`：固定商品案例和 6-8 分钟演示路径。
+- `docs/PRESENTATION_QA.md`：答辩问答与能力边界。
+- `docs/ACCEPTANCE_TEST.md`：前后端和业务闭环验收。
+- `docs/FRONTEND_DEPENDENCY_RISKS.md`：npm audit、Sass 和 chunk 风险说明。
 
 ## 旧能力的新定位
 
@@ -162,4 +207,5 @@ export COMPLIANCE_MODEL="deepseek-v3-2-251201"
 
 - 数据库表名、部分类型名和路由中仍保留 `dramas` 等历史命名，以保证兼容性。
 - 图片、视频、音乐、数字人、剪辑等旧能力不会删除，而是继续服务跨境营销内容生产。
+- 数据分析目前是平台内估算指标，不等同 TikTok Shop、Amazon、Shopee 的真实广告花费、转化率或店铺销售额。
 - 合规结果仅供辅助，不构成法律意见；正式上架和投放前应结合目标国家法规、平台政策和专业意见复核。

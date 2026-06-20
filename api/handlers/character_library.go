@@ -113,15 +113,12 @@ func (h *CharacterLibraryHandler) DeleteLibraryItem(c *gin.Context) {
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 
-// UploadCharacterImage 上传角色图片
+// UploadCharacterImage 将已上传的角色图片 URL 绑定到数字人形象
 func (h *CharacterLibraryHandler) UploadCharacterImage(c *gin.Context) {
 	deviceID := middlewares2.GetDeviceID(c)
 
 	characterID := c.Param("id")
 
-	// TODO: 处理文件上传
-	// 这里需要实现文件上传逻辑，保存到OSS或本地
-	// 暂时使用简单的实现
 	var req struct {
 		ImageURL string `json:"image_url" binding:"required"`
 	}

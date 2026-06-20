@@ -11,7 +11,7 @@ import type {
   CreateProjectFromAgentResponse,
   WorkflowResult
 } from '@/types/agent'
-import request from '@/utils/request'
+import request, { buildAPIURL, getClientDeviceID } from '@/utils/request'
 
 export interface AgentHistoryItem {
   id: number
@@ -31,6 +31,30 @@ export interface AgentHistoryItem {
   updatedAt: string
 }
 
+export type ProductInfoExtractRequest = AgentInput
+export type ProductInfoExtractResponse = AgentInput
+export type MarketingSolutionRequest = AgentInput
+export type MarketingSolutionResponse = AgentResult
+export type AgentWorkflowRequest = AgentInput & { workflow?: boolean }
+export type AgentWorkflowResponse = WorkflowResult
+export type AgentAnalysisRequest = AgentAnalyzeInput
+export type AgentFollowUpRequest = AgentFollowUpInput
+export type AgentHistoryListResponse = { items: AgentHistoryItem[] }
+export type AgentHistoryDetailResponse = { item: AgentHistoryItem }
+export type CreateProjectFromAgentRequest = { result?: AgentResult; workflow?: WorkflowResult }
+
+const postAgentStream = (path: string, data: unknown, signal?: AbortSignal) => {
+  return fetch(buildAPIURL(path), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-ID': getClientDeviceID()
+    },
+    body: JSON.stringify(data),
+    signal
+  })
+}
+
 export const agentAPI = {
   /**
    * 功能：把用户输入提交给后端做轻量结构化识别。
@@ -40,6 +64,9 @@ export const agentAPI = {
   extract(data: AgentInput) {
     return request.post<AgentInput>('/agent/extract', data)
   },
+  extractProductInfo(data: ProductInfoExtractRequest) {
+    return request.post<ProductInfoExtractResponse>('/agent/extract', data)
+  },
   /**
    * 功能：生成完整的丝路 Agent 出海营销方案。
    * 参数：data 为商品、图片、目标市场、平台、人群、卖点等上下文。
@@ -48,26 +75,51 @@ export const agentAPI = {
   generate(data: AgentInput) {
     return request.post<AgentResult>('/agent/generate', data)
   },
-  generateWorkflow(data: AgentInput & { workflow?: boolean }) {
+  generateMarketingSolution(data: MarketingSolutionRequest) {
+    return request.post<MarketingSolutionResponse>('/agent/generate', data)
+  },
+  generateWorkflow(data: AgentWorkflowRequest) {
     return request.post<WorkflowResult>('/agent/workflow', { ...data, workflow: true })
   },
-  workflow(data: AgentInput & { workflow?: boolean }) {
+  workflow(data: AgentWorkflowRequest) {
     return request.post<WorkflowResult>('/agent/workflow', { ...data, workflow: true })
+  },
+  runAgentWorkflow(data: AgentWorkflowRequest) {
+    return request.post<AgentWorkflowResponse>('/agent/workflow', { ...data, workflow: true })
   },
   analyze(data: AgentAnalyzeInput) {
     return request.post('/agent/analyze', data)
   },
+  analyzeProduct(data: AgentAnalysisRequest) {
+    return request.post('/agent/analyze', data)
+  },
+  analyzeProductStream(data: AgentAnalysisRequest, signal?: AbortSignal) {
+    return postAgentStream('/agent/analyze', data, signal)
+  },
   followUp(data: AgentFollowUpInput) {
     return request.post('/agent/follow-up', data)
   },
+  sendFollowUp(data: AgentFollowUpRequest) {
+    return request.post('/agent/follow-up', data)
+  },
+  sendFollowUpStream(data: AgentFollowUpRequest, signal?: AbortSignal) {
+    return postAgentStream('/agent/follow-up', data, signal)
+  },
   listHistory(params: { limit?: number; page?: number } | number = { limit: 20 }) {
     const normalizedParams = typeof params === 'number' ? { limit: params } : params
-    return request.get<{ items: AgentHistoryItem[] }>('/agent/history', { params: normalizedParams })
+    return request.get<AgentHistoryListResponse>('/agent/history', { params: normalizedParams })
+  },
+  getAgentHistory(params: { limit?: number; page?: number } | number = { limit: 20 }) {
+    const normalizedParams = typeof params === 'number' ? { limit: params } : params
+    return request.get<AgentHistoryListResponse>('/agent/history', { params: normalizedParams })
   },
   getHistory(id: number | string) {
-    return request.get<{ item: AgentHistoryItem }>(`/agent/history/${id}`)
+    return request.get<AgentHistoryDetailResponse>(`/agent/history/${id}`)
   },
-  createProjectFromAgent(id?: number | string, data?: { result?: AgentResult; workflow?: WorkflowResult }) {
+  getAgentHistoryDetail(id: number | string) {
+    return request.get<AgentHistoryDetailResponse>(`/agent/history/${id}`)
+  },
+  createProjectFromAgent(id?: number | string, data?: CreateProjectFromAgentRequest) {
     if (id !== undefined && id !== null && String(id).trim() !== '') {
       return request.post<CreateProjectFromAgentResponse>(`/agent/${id}/create-project`, data || {})
     }

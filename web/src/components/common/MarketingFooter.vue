@@ -82,7 +82,7 @@ const goProductPage = () => {
 }
 
 const goToWorkbench = () => {
-  navigateToTop('/dramas')
+  navigateToTop('/projects')
 }
 
 const goAboutPage = () => {

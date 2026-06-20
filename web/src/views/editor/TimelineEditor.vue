@@ -518,8 +518,8 @@ const musicTracks = computed(() => remoteMusicTracks.value.length ? remoteMusicT
 const materials = computed(() => uploadedMaterials.value.length ? uploadedMaterials.value : fallbackMaterials)
 
 const navItems = computed(() => [
-  { label: '工作台', path: '/dramas', active: false, width: '66px' },
-  { label: '商品录入', path: '/dramas/create', active: false, width: '80px' },
+  { label: '工作台', path: '/projects', active: false, width: '66px' },
+  { label: '商品录入', path: '/projects/create', active: false, width: '80px' },
   { label: '合规分析', path: '/compliance', active: false, width: '80px' },
   {
     label: '脚本/分镜',

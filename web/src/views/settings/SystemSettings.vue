@@ -62,7 +62,6 @@ const loadCurrentLanguage = async () => {
     const res = await settingsAPI.getLanguage()
     currentLanguage.value = res?.language as 'zh' | 'en'
     setLanguage(res?.language || 'zh')
-    console.log('Current language loaded:', res?.language)
   } catch (error) {
     console.error('Failed to load language:', error)
     ElMessage.error(t('languageSwitcher.messages.loadFailed'))
@@ -88,10 +87,8 @@ const handleLanguageChange = async (value: 'zh' | 'en') => {
     )
 
     loading.value = true
-    console.log('Updating language to:', value)
     
     const res = await settingsAPI.updateLanguage(value)
-    console.log('Language update response:', res)
     
     setLanguage(value)
     

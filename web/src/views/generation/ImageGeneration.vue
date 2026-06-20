@@ -379,8 +379,8 @@ const episodeId = computed(() => String(route.params.id || route.query.id || 'dr
 const workspaceStorageKey = computed(() => `${WORKSPACE_STORAGE_PREFIX}${episodeId.value}`)
 
 const navItems = computed(() => [
-  { label: '工作台', path: '/dramas', active: false, width: '66px' },
-  { label: '商品录入', path: '/dramas/create', active: false, width: '80px' },
+  { label: '工作台', path: '/projects', active: false, width: '66px' },
+  { label: '商品录入', path: '/projects/create', active: false, width: '80px' },
   { label: '合规分析', path: '/compliance', active: false, width: '80px' },
   {
     label: '脚本/分镜',
@@ -658,7 +658,7 @@ const handleGenerateAll = () => {
     return
   }
 
-  ElMessage.info('尚未绑定剧集上下文，请先从脚本与分镜阶段进入')
+  ElMessage.info('尚未绑定营销项目上下文，请先从脚本与分镜阶段进入')
 }
 
 const handleEnterTimeline = () => {
@@ -675,7 +675,7 @@ const handleEnterTimeline = () => {
       return
     }
 
-    ElMessage.info('尚未绑定剧集上下文，请先从脚本与分镜阶段进入')
+    ElMessage.info('尚未绑定营销项目上下文，请先从脚本与分镜阶段进入')
     return
   }
 

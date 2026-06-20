@@ -22,38 +22,49 @@
         </div>
       </template>
 
-      <el-empty v-if="characters.length === 0" :description="$t('character.empty')" />
+      <el-alert
+        v-if="loadError"
+        class="load-alert"
+        type="error"
+        :title="loadError"
+        show-icon
+        :closable="false"
+      />
 
-      <el-row :gutter="20" v-else>
-        <el-col :span="8" v-for="character in characters" :key="character.id">
-          <el-card shadow="hover" class="character-card">
-            <template #header>
-              <div class="character-header">
-                <el-avatar :size="60">{{ character.name[0] }}</el-avatar>
-                <div class="character-info">
-                  <h4>{{ character.name }}</h4>
-                  <el-tag size="small">{{ formatCharacterRole(character.role) }}</el-tag>
+      <div v-loading="loading">
+        <el-empty v-if="characters.length === 0" :description="$t('character.empty')" />
+
+        <el-row :gutter="20" v-else>
+          <el-col :span="8" v-for="character in characters" :key="character.id">
+            <el-card shadow="hover" class="character-card">
+              <template #header>
+                <div class="character-header">
+                  <el-avatar :size="60">{{ character.name[0] }}</el-avatar>
+                  <div class="character-info">
+                    <h4>{{ character.name }}</h4>
+                    <el-tag size="small">{{ formatCharacterRole(character.role) }}</el-tag>
+                  </div>
                 </div>
+              </template>
+
+              <div class="character-details">
+                <p><strong>{{ $t('character.personality') }}：</strong>{{ character.personality || '-' }}</p>
+                <p><strong>{{ $t('character.appearance') }}：</strong>{{ character.appearance || '-' }}</p>
+                <p><strong>{{ $t('character.background') }}：</strong>{{ character.background || character.description || '-' }}</p>
               </div>
-            </template>
 
-            <div class="character-details">
-              <p><strong>{{ $t('character.personality') }}：</strong>{{ character.personality }}</p>
-              <p><strong>{{ $t('character.appearance') }}：</strong>{{ character.appearance }}</p>
-              <p><strong>{{ $t('character.background') }}：</strong>{{ character.background }}</p>
-            </div>
-
-            <template #footer>
-              <el-button-group style="width: 100%">
-                <el-button size="small" @click="editCharacter(character)">{{ $t('common.edit') }}</el-button>
-                <el-button size="small" type="primary" @click="generateCharacterImage(character)">
-                  {{ $t('character.generateImage') }}
-                </el-button>
-              </el-button-group>
-            </template>
-          </el-card>
-        </el-col>
-      </el-row>
+              <template #footer>
+                <el-button-group style="width: 100%">
+                  <el-button size="small" @click="editCharacter(character)">{{ $t('common.edit') }}</el-button>
+                  <el-button size="small" type="primary" @click="generateCharacterImage(character)">
+                    {{ $t('character.generateImage') }}
+                  </el-button>
+                </el-button-group>
+              </template>
+            </el-card>
+          </el-col>
+        </el-row>
+      </div>
 
       <div class="actions" v-if="characters.length > 0">
         <el-button type="success" size="large" @click="goToNextStep">
@@ -92,6 +103,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Plus } from '@element-plus/icons-vue'
+import { dramaAPI } from '@/api/drama'
 import type { Character } from '@/types/drama'
 
 const route = useRoute()
@@ -100,7 +112,10 @@ const { t } = useI18n()
 const dramaId = route.params.id as string
 
 const characters = ref<Character[]>([])
+const loading = ref(false)
 const saving = ref(false)
+const loadError = ref('')
+const editingCharacterId = ref<number | null>(null)
 const editDialogVisible = ref(false)
 const editForm = reactive({
   name: '',
@@ -111,10 +126,11 @@ const editForm = reactive({
 })
 
 const goBack = () => {
-  router.push(`/dramas/${dramaId}`)
+  router.push(`/projects/${dramaId}`)
 }
 
 const addCharacter = () => {
+  editingCharacterId.value = null
   Object.assign(editForm, {
     name: '',
     role: '',
@@ -136,8 +152,8 @@ const formatCharacterRole = (role?: string) => {
 const saveCharacters = async () => {
   saving.value = true
   try {
-    // TODO: 调用保存角色API
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await dramaAPI.saveCharacters(dramaId, characters.value.map(toSavePayload))
+    await loadCharacters()
     ElMessage.success(t('character.messages.saveSuccess'))
   } catch (error: any) {
     ElMessage.error(error.message || t('character.messages.saveFailed'))
@@ -147,27 +163,80 @@ const saveCharacters = async () => {
 }
 
 const editCharacter = (character: Character) => {
+  editingCharacterId.value = Number(character.id)
   Object.assign(editForm, character)
   editDialogVisible.value = true
 }
 
 const saveCharacter = () => {
-  // TODO: 保存角色信息
+  if (!editForm.name.trim()) {
+    ElMessage.warning(t('character.messages.enterName'))
+    return
+  }
+
+  const payload = {
+    ...editForm,
+    name: editForm.name.trim()
+  }
+
+  const currentId = editingCharacterId.value
+  if (currentId === null) {
+    characters.value.push({
+      id: -Date.now(),
+      drama_id: dramaId,
+      ...payload,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as Character)
+  } else {
+    const index = characters.value.findIndex((item) => Number(item.id) === currentId)
+    if (index >= 0) {
+      characters.value[index] = {
+        ...characters.value[index],
+        ...payload,
+        updated_at: new Date().toISOString()
+      }
+    }
+  }
+
+  editingCharacterId.value = null
   editDialogVisible.value = false
-  ElMessage.success(t('character.messages.saveSuccess'))
+  saveCharacters()
 }
 
 const generateCharacterImage = (character: Character) => {
-  router.push(`/dramas/${dramaId}/images/characters?character=${character.id}`)
+  router.push(`/projects/${dramaId}/images/characters?character=${character.id}`)
 }
 
 const goToNextStep = () => {
-  router.push(`/dramas/${dramaId}/images/characters`)
+  router.push(`/projects/${dramaId}/images/characters`)
 }
 
-onMounted(() => {
-  // TODO: 加载已有角色
+const toSavePayload = (character: Character) => ({
+  name: character.name,
+  role: character.role || 'supporting',
+  appearance: character.appearance || '',
+  personality: character.personality || '',
+  description: character.description || character.background || '',
+  background: character.background || character.description || '',
+  image_url: character.image_url
 })
+
+const loadCharacters = async () => {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const result = await dramaAPI.getCharacters(dramaId)
+    characters.value = Array.isArray(result) ? result as Character[] : []
+  } catch (error: any) {
+    characters.value = []
+    loadError.value = error.message || t('character.messages.loadFailed')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadCharacters)
 </script>
 
 <style scoped>
@@ -180,6 +249,10 @@ onMounted(() => {
 
 .main-card {
   margin-top: 20px;
+}
+
+.load-alert {
+  margin-bottom: 16px;
 }
 
 .card-header {

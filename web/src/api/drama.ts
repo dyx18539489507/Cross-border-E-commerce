@@ -1,7 +1,7 @@
 /**
  * 模块说明：项目与合规接口请求封装。
  * 业务场景：数字丝路商品录入完成后，前端复用现有项目接口完成合规预检、创建项目和后续脚本/分镜流程。
- * 核心职责：封装 /dramas 相关请求；本次注释只解释数字丝路用到的合规与创建入口，旧短剧接口不展开说明。
+ * 核心职责：封装 /projects 相关请求；本次注释只解释数字丝路用到的合规与创建入口，旧短剧接口不展开说明。
  */
 import type {
     CheckDramaComplianceResponse,
@@ -24,7 +24,7 @@ export const dramaAPI = {
         total: number
         total_pages: number
       }
-    }>('/dramas', { params })
+    }>('/projects', { params })
   },
 
   /**
@@ -33,7 +33,7 @@ export const dramaAPI = {
    * 返回：CreateDramaResponse，包含创建后的项目记录和后端保存的合规结果。
    */
   create(data: CreateDramaRequest) {
-    return request.post<CreateDramaResponse>('/dramas', data)
+    return request.post<CreateDramaResponse>('/projects', data)
   },
 
   /**
@@ -42,46 +42,46 @@ export const dramaAPI = {
    * 返回：合规评分、风险等级、整改建议和短期 compliance_token，供后续创建接口校验。
    */
   checkCompliance(data: CreateDramaRequest) {
-    return request.post<CheckDramaComplianceResponse>('/dramas/compliance-check', data)
+    return request.post<CheckDramaComplianceResponse>('/projects/compliance-check', data)
   },
 
   get(id: string) {
-    return request.get<Drama>(`/dramas/${id}`)
+    return request.get<Drama>(`/projects/${id}`)
   },
 
   update(id: string, data: UpdateDramaRequest) {
-    return request.put<Drama>(`/dramas/${id}`, data)
+    return request.put<Drama>(`/projects/${id}`, data)
   },
 
   delete(id: string) {
-    return request.delete(`/dramas/${id}`)
+    return request.delete(`/projects/${id}`)
   },
 
   getStats() {
-    return request.get<DramaStats>('/dramas/stats')
+    return request.get<DramaStats>('/projects/stats')
   },
 
   saveOutline(id: string, data: { title: string; summary: string; genre?: string; tags?: string[] }) {
-    return request.put(`/dramas/${id}/outline`, data)
+    return request.put(`/projects/${id}/outline`, data)
   },
 
   getCharacters(dramaId: string) {
-    return request.get(`/dramas/${dramaId}/characters`)
+    return request.get(`/projects/${dramaId}/characters`)
   },
 
   saveCharacters(id: string, data: any[], episodeId?: string) {
-    return request.put(`/dramas/${id}/characters`, { 
+    return request.put(`/projects/${id}/characters`, {
       characters: data,
       episode_id: episodeId ? parseInt(episodeId) : undefined
     })
   },
 
   saveEpisodes(id: string, data: any[]) {
-    return request.put(`/dramas/${id}/episodes`, { episodes: data })
+    return request.put(`/projects/${id}/episodes`, { episodes: data })
   },
 
   saveProgress(id: string, data: { current_step: string; step_data?: any }) {
-    return request.put(`/dramas/${id}/progress`, data)
+    return request.put(`/projects/${id}/progress`, data)
   },
 
   generateStoryboard(episodeId: string, model?: string) {

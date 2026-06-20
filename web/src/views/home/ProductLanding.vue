@@ -226,7 +226,7 @@ const scenarios = [
 ]
 
 const createProject = () => {
-  router.push({ path: '/dramas/create', query: { source: 'manual' } })
+  router.push({ path: '/projects/create', query: { source: 'manual' } })
 }
 
 const goHome = () => {

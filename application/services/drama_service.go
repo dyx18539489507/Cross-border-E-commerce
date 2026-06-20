@@ -462,6 +462,11 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest, deviceIDs ...string)
 	if input.marketingSellingPoints != "" {
 		drama.MarketingSellingPoints = &input.marketingSellingPoints
 	}
+	if tags := strings.TrimSpace(req.Tags); tags != "" && json.Valid([]byte(tags)) {
+		// New project-only fields are persisted as JSON metadata while the legacy
+		// table remains unchanged during the compatibility period.
+		drama.Metadata = datatypes.JSON([]byte(tags))
+	}
 
 	if err := s.db.Create(drama).Error; err != nil {
 		s.log.Errorw("Failed to create drama", "error", err)
@@ -688,6 +693,9 @@ func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest, devi
 	}
 	if req.Tags != "" {
 		updates["tags"] = req.Tags
+		if json.Valid([]byte(req.Tags)) {
+			updates["metadata"] = datatypes.JSON([]byte(req.Tags))
+		}
 	}
 	if req.Status != "" {
 		updates["status"] = req.Status
@@ -914,8 +922,27 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 	// 创建新角色或复用已有角色
 	for _, char := range req.Characters {
 		if existingChar, exists := existingCharMap[char.Name]; exists {
-			// 角色已存在，直接复用
-			s.log.Infow("Character already exists, reusing", "name", char.Name, "character_id", existingChar.ID)
+			updates := map[string]interface{}{
+				"role":        char.Role,
+				"description": char.Description,
+				"personality": char.Personality,
+				"appearance":  char.Appearance,
+				"updated_at":  time.Now(),
+			}
+			if char.VoiceStyle != nil {
+				updates["voice_style"] = char.VoiceStyle
+			}
+			if char.ImageURL != nil {
+				updates["image_url"] = char.ImageURL
+			}
+			if char.SortOrder > 0 {
+				updates["sort_order"] = char.SortOrder
+			}
+			if err := s.db.Model(existingChar).Updates(updates).Error; err != nil {
+				s.log.Errorw("Failed to update existing character", "error", err, "name", char.Name)
+				return err
+			}
+			s.log.Infow("Character already exists, updated and reused", "name", char.Name, "character_id", existingChar.ID)
 			characterIDs = append(characterIDs, existingChar.ID)
 			continue
 		}

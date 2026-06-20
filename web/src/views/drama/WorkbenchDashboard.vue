@@ -58,8 +58,8 @@ const route = useRoute()
 const brandLogo = '/logo_circle.png'
 
 const navigationItems: NavItem[] = [
-  { label: '工作台', path: '/dramas', width: 66 },
-  { label: '商品录入', path: '/dramas/create?source=manual', width: 80 },
+  { label: '工作台', path: '/projects', width: 66 },
+  { label: '商品录入', path: '/projects/create?source=manual', width: 80 },
   { label: '合规分析', path: '/compliance', width: 80 },
   { label: '脚本/分镜', path: '/workspace/script', width: 92 },
   { label: '内容创作', path: '/workspace/content', width: 80 },
@@ -71,16 +71,16 @@ const formatTrend = (value = 0) => `+${Math.max(0, Math.round(value))}`
 
 const buildOverviewCards = (summary?: WorkbenchSummary): GradientCard[] => [
   {
-    label: '待处理商品',
-    value: String(summary?.overview.pendingProducts ?? 0),
-    trend: formatTrend(summary?.trends.pendingProducts),
+    label: '营销项目',
+    value: String(summary?.overview.totalProjects ?? 0),
+    trend: formatTrend(summary?.trends.totalProjects),
     icon: overviewBagIcon,
     gradient: 'linear-gradient(135deg, #2b7fff 0%, #00b8db 100%)'
   },
   {
-    label: '合规检测完成',
-    value: String(summary?.overview.complianceCompleted ?? 0),
-    trend: formatTrend(summary?.trends.complianceCompleted),
+    label: '生成图片',
+    value: String(summary?.overview.imagesGenerated ?? 0),
+    trend: formatTrend(summary?.trends.imagesGenerated),
     icon: overviewComplianceIcon,
     gradient: 'linear-gradient(135deg, #ad46ff 0%, #f6339a 100%)'
   },
@@ -92,21 +92,23 @@ const buildOverviewCards = (summary?: WorkbenchSummary): GradientCard[] => [
     gradient: 'linear-gradient(135deg, #ff6900 0%, #fb2c36 100%)'
   },
   {
-    label: '覆盖市场',
-    value: String(summary?.overview.coveredMarkets ?? 0),
-    trend: formatTrend(summary?.trends.coveredMarkets),
+    label: '处理中任务',
+    value: String(summary?.overview.processingTasks ?? 0),
+    trend: formatTrend(summary?.trends.processingTasks),
     icon: overviewMarketIcon,
     gradient: 'linear-gradient(135deg, #00c950 0%, #00bc7d 100%)'
   }
 ]
 
 const overviewCards = ref<GradientCard[]>(buildOverviewCards())
+const loading = ref(false)
+const loadError = ref('')
 
 const quickActions: QuickAction[] = [
   {
     label: '录入新商品',
     icon: quickBagIcon,
-    path: '/dramas/create?source=manual',
+    path: '/projects/create?source=manual',
     gradient: 'linear-gradient(135deg, #2b7fff 0%, #00b8db 100%)'
   },
   {
@@ -147,6 +149,13 @@ const conversionTrend = ref([
 ])
 
 const recentTasks = ref<TaskItem[]>([])
+
+const hasAnyData = computed(() =>
+  overviewCards.value.some((card) => Number(card.value) > 0) ||
+  weeklyActivity.value.some((item) => item.value > 0) ||
+  conversionTrend.value.some((item) => item.value > 0) ||
+  recentTasks.value.length > 0
+)
 
 const barChart = computed(() => {
   const coordinates = [
@@ -224,6 +233,8 @@ function isActive(path?: string) {
 }
 
 async function loadWorkbenchSummary() {
+  loading.value = true
+  loadError.value = ''
   try {
     const summary = await workbenchAPI.summary()
     overviewCards.value = buildOverviewCards(summary)
@@ -233,8 +244,10 @@ async function loadWorkbenchSummary() {
       ...task,
       tone: task.tone === 'done' || task.tone === 'progress' ? task.tone : 'pending'
     }))
-  } catch {
-    // The dashboard keeps its empty state if the summary API is temporarily unavailable.
+  } catch (error: any) {
+    loadError.value = error?.message || '工作台数据加载失败，请稍后重试。'
+  } finally {
+    loading.value = false
   }
 }
 
@@ -285,8 +298,27 @@ onMounted(() => {
 
     <main class="workbench-main">
       <section class="page-title" data-node-id="1:6">
-        <h1>工作台总览</h1>
-        <p>欢迎回来！这是您的业务概览</p>
+        <div>
+          <h1>工作台总览</h1>
+          <p>欢迎回来！这是您的业务概览</p>
+        </div>
+        <button type="button" class="refresh-button" :disabled="loading" @click="loadWorkbenchSummary">
+          {{ loading ? '刷新中...' : '刷新数据' }}
+        </button>
+      </section>
+
+      <section v-if="loading || loadError || !hasAnyData" class="dashboard-state-card">
+        <p v-if="loading">正在读取项目、生成任务和内容生产数据...</p>
+        <template v-else-if="loadError">
+          <strong>数据加载失败</strong>
+          <p>{{ loadError }}</p>
+          <button type="button" @click="loadWorkbenchSummary">重试</button>
+        </template>
+        <template v-else>
+          <strong>还没有营销项目数据</strong>
+          <p>录入第一个商品或运行丝路 Agent 后，项目、图片、视频和任务统计会自动更新。</p>
+          <button type="button" @click="navigateTo('/projects/create?source=manual')">录入商品</button>
+        </template>
       </section>
 
       <section class="overview-grid" data-node-id="1:11">
@@ -694,8 +726,10 @@ onMounted(() => {
 
 .page-title {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-direction: row;
+  gap: 16px;
   margin-bottom: 32px;
 }
 
@@ -715,6 +749,49 @@ onMounted(() => {
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
+}
+
+.refresh-button,
+.dashboard-state-card button {
+  border: 0;
+  border-radius: 12px;
+  background: #0a2463;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.refresh-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.dashboard-state-card {
+  box-sizing: border-box;
+  margin: -8px 0 24px;
+  padding: 18px 20px;
+  border: 1px solid rgba(6, 182, 212, 0.24);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--wb-text);
+  box-shadow: 0 12px 28px -24px rgba(15, 23, 42, 0.28);
+}
+
+.dashboard-state-card strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--wb-navy);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.dashboard-state-card p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .overview-grid {
@@ -1042,6 +1119,10 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
+  .page-title {
+    flex-direction: column;
+  }
+
   .page-title h1 {
     font-size: 30px;
     line-height: 38px;

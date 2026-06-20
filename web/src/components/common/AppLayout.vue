@@ -4,7 +4,7 @@
     <header class="app-header">
       <div class="header-content">
         <div class="header-left">
-          <router-link to="/dramas" class="logo">
+          <router-link to="/projects" class="logo">
             <span class="logo-text">🎬 {{ t('app.name') }}</span>
           </router-link>
         </div>

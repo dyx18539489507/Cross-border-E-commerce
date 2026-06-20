@@ -568,10 +568,7 @@ const autoSelectCharacters = () => {
   }
 }
 
-// 测试函数：不使用防抖，立即触发
 const handleShotUpdateImmediate = async () => {
-  console.log('=== handleShotUpdate 被触发 ===')
-  
   if (!currentShot.value) {
     console.warn('handleShotUpdate: currentShot.value is null')
     return
@@ -599,11 +596,6 @@ const handleShotUpdateImmediate = async () => {
     if (currentShot.value.title !== undefined) updateData.title = currentShot.value.title
     if (currentShot.value.bgm_prompt !== undefined) updateData.bgm_prompt = currentShot.value.bgm_prompt
     if (currentShot.value.sound_effect !== undefined) updateData.sound_effect = currentShot.value.sound_effect
-    
-    console.log('调用更新接口:', {
-      storyboard_id: currentShot.value.id,
-      updateData
-    })
     
     await dramaAPI.updateStoryboard(currentShot.value.id.toString(), updateData)
     
@@ -644,11 +636,6 @@ const handleShotUpdate = debounce(async () => {
     if (currentShot.value.bgm_prompt !== undefined) updateData.bgm_prompt = currentShot.value.bgm_prompt
     if (currentShot.value.sound_effect !== undefined) updateData.sound_effect = currentShot.value.sound_effect
     
-    console.log('调用更新接口:', {
-      storyboard_id: currentShot.value.id,
-      updateData
-    })
-    
     await dramaAPI.updateStoryboard(currentShot.value.id.toString(), updateData)
     
     emit('update:storyboard', currentShot.value)
@@ -659,9 +646,7 @@ const handleShotUpdate = debounce(async () => {
   }
 }, 500)
 
-// 使用立即触发版本进行测试
 const testUpdate = () => {
-  console.log('testUpdate 被调用')
   handleShotUpdateImmediate()
 }
 
@@ -776,7 +761,7 @@ const handleGenerateVideo = async () => {
 }
 
 const handleUploadBackground = () => {
-  ElMessage.info('上传功能开发中')
+  ElMessage.info('上传请先使用已接入的内容创作或专业制作流程')
 }
 
 const getCharacterById = (id: string) => {
@@ -813,12 +798,11 @@ const handleComposeScene = async () => {
     )
     
     generating.value = true
-    ElMessage.info('正在合成场景...')
+    await dramaAPI.updateStoryboard(currentShot.value.id.toString(), {
+      characters: selectedCharacters.value.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+    })
     
-    // TODO: 调用场景合成API
-    // await compositionAPI.composeScene(currentShot.value.id, selectedCharacters.value)
-    
-    ElMessage.success('场景合成成功')
+    ElMessage.success('已保存场景角色配置，请在专业制作流程中生成合成画面')
     emit('refresh')
   } catch (error: any) {
     if (error !== 'cancel') {
@@ -843,7 +827,7 @@ const handleRegenerateShot = async () => {
       }
     )
     
-    ElMessage.info('功能开发中')
+    ElMessage.info('请先使用已接入的内容创作或专业制作流程')
   } catch {
     // 用户取消
   }

@@ -623,12 +623,6 @@ func (s *VideoGenerationService) resolveLocalFilePath(rel string) (string, error
 	basePath := s.localStorage.BasePath()
 	candidates := []string{basePath}
 
-	parent := filepath.Dir(filepath.Dir(basePath))
-	alt := filepath.Join(parent, "huobao-drama", "data", "storage")
-	if alt != basePath {
-		candidates = append(candidates, alt)
-	}
-
 	for _, base := range candidates {
 		if base == "" {
 			continue

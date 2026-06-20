@@ -1,6 +1,9 @@
-import axios from 'axios'
-
-const API_BASE_URL = '/api/v1'
+/**
+ * 模块说明：音频处理接口封装。
+ * 业务场景：营销视频剪辑中需要从视频素材提取口播、背景声或可复用音频轨道。
+ * 核心职责：统一通过 request 调用后端音频提取接口，避免页面绕过拦截器。
+ */
+import request from '@/utils/request'
 
 export interface ExtractAudioRequest {
   video_url: string
@@ -21,25 +24,11 @@ export interface BatchExtractAudioResponse {
 }
 
 export const audioAPI = {
-  /**
-   * 从视频URL提取音频
-   */
-  extractAudio: async (videoUrl: string): Promise<ExtractAudioResponse> => {
-    const response = await axios.post<ExtractAudioResponse>(
-      `${API_BASE_URL}/audio/extract`,
-      { video_url: videoUrl }
-    )
-    return response.data
+  extractAudio(videoUrl: string) {
+    return request.post<ExtractAudioResponse>('/audio/extract', { video_url: videoUrl })
   },
 
-  /**
-   * 批量从视频URL提取音频
-   */
-  batchExtractAudio: async (videoUrls: string[]): Promise<BatchExtractAudioResponse> => {
-    const response = await axios.post<BatchExtractAudioResponse>(
-      `${API_BASE_URL}/audio/extract/batch`,
-      { video_urls: videoUrls }
-    )
-    return response.data
+  batchExtractAudio(videoUrls: string[]) {
+    return request.post<BatchExtractAudioResponse>('/audio/extract/batch', { video_urls: videoUrls })
   }
 }

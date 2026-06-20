@@ -1039,7 +1039,7 @@
           </div>
         </div>
         <div v-if="availableCharacters.length === 0" class="empty-characters">
-          <el-empty description="暂无角色，请先在剧集中创建角色" />
+          <el-empty description="暂无数字人形象，请先在营销内容中创建角色" />
         </div>
       </div>
       <template #footer>
@@ -1130,6 +1130,10 @@ import { imageAPI } from '@/api/image'
 import { videoAPI } from '@/api/video'
 import { aiAPI } from '@/api/ai'
 import { assetAPI } from '@/api/asset'
+import { mediaAPI } from '@/api/media'
+import { musicAPI } from '@/api/music'
+import { sfxAPI } from '@/api/sfx'
+import { uploadAPI } from '@/api/upload'
 import {
   videoMergeAPI,
   type DistributionPlatform,
@@ -1555,7 +1559,7 @@ const loadAudioAssets = async () => {
 
 const DOUYIN_MUSIC_RAW_SOURCE = 'https://raw.githubusercontent.com/lonnyzhang423/douyin-hot-hub/main/README.md'
 const DOUYIN_MUSIC_SOURCE_CANDIDATES = [
-  `/api/v1/media/proxy?url=${encodeURIComponent(DOUYIN_MUSIC_RAW_SOURCE)}`,
+  mediaAPI.getMediaProxyUrl(DOUYIN_MUSIC_RAW_SOURCE),
   DOUYIN_MUSIC_RAW_SOURCE
 ]
 
@@ -1573,66 +1577,25 @@ const HOT_MUSIC_LAZY_BATCH_SIZE = 20
 const HOT_MUSIC_FALLBACK_MAX_PAGES = 30
 const SFX_LAZY_PAGE_SIZE = 20
 
-const createTimeoutSignal = (timeoutMs: number, externalSignal?: AbortSignal) => {
-  const timeoutController = new AbortController()
-  const timeoutId = window.setTimeout(() => timeoutController.abort(), timeoutMs)
-
-  const onExternalAbort = () => timeoutController.abort()
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      timeoutController.abort()
-    } else {
-      externalSignal.addEventListener('abort', onExternalAbort, { once: true })
-    }
-  }
-
-  const cleanup = () => {
-    window.clearTimeout(timeoutId)
-    if (externalSignal) {
-      externalSignal.removeEventListener('abort', onExternalAbort)
-    }
-  }
-
-  return { signal: timeoutController.signal, cleanup }
-}
-
 const fetchJsonWithTimeout = async (url: string, timeoutMs = FRONTEND_FETCH_TIMEOUT_MS, externalSignal?: AbortSignal) => {
-  const { signal, cleanup } = createTimeoutSignal(timeoutMs, externalSignal)
   try {
-    const response = await fetch(url, { cache: 'no-store', signal })
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const json = await response.json()
-    if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
-      return json.data
-    }
-    return json
+    return await mediaAPI.fetchJSON(url, { timeoutMs, signal: externalSignal })
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       throw new Error(externalSignal?.aborted ? 'cancelled' : 'timeout')
     }
     throw error
-  } finally {
-    cleanup()
   }
 }
 
 const fetchTextWithTimeout = async (url: string, timeoutMs = FRONTEND_FETCH_TIMEOUT_MS, externalSignal?: AbortSignal) => {
-  const { signal, cleanup } = createTimeoutSignal(timeoutMs, externalSignal)
   try {
-    const response = await fetch(url, { cache: 'no-store', signal })
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    return response.text()
+    return await mediaAPI.fetchText(url, { timeoutMs, signal: externalSignal })
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       throw new Error(externalSignal?.aborted ? 'cancelled' : 'timeout')
     }
     throw error
-  } finally {
-    cleanup()
   }
 }
 
@@ -1759,8 +1722,13 @@ const fixMediaUrl = (url?: string | null) => {
 }
 
 const getApiBase = () => {
-  const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined) || window.location.origin
-  return raw.replace(/\/$/, '')
+  const raw = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+  if (!raw || raw.startsWith('/')) return window.location.origin
+  try {
+    return new URL(raw).origin
+  } catch {
+    return window.location.origin
+  }
 }
 
 const isTunnelStaticUrl = (url: URL) => {
@@ -1787,11 +1755,11 @@ const resolveVideoUrl = (url?: string | null) => {
   const fixed = fixMediaUrl(url)
   if (!fixed) return ''
   if (fixed.startsWith('blob:') || fixed.startsWith('data:')) return fixed
-  if (fixed.startsWith('/api/v1/media/proxy')) return fixed
+  if (mediaAPI.isMediaProxyUrl(fixed)) return fixed
   if (fixed.startsWith('http://') || fixed.startsWith('https://')) {
     try {
       const parsed = new URL(fixed)
-      if (parsed.pathname === '/api/v1/media/proxy') {
+      if (mediaAPI.isMediaProxyUrl(fixed)) {
         return `${parsed.pathname}${parsed.search}`
       }
       if (isTunnelStaticUrl(parsed)) {
@@ -1800,7 +1768,7 @@ const resolveVideoUrl = (url?: string | null) => {
     } catch {
       // noop
     }
-    return `/api/v1/media/proxy?url=${encodeURIComponent(fixed)}`
+    return mediaAPI.getMediaProxyUrl(fixed)
   }
   return toBackendMediaUrl(fixed)
 }
@@ -1808,10 +1776,10 @@ const resolveVideoUrl = (url?: string | null) => {
 const resolveAudioUrl = (url?: string | null) => {
   if (!url) return ''
   if (url.startsWith('data:') || url.startsWith('blob:')) return url
-  if (url.startsWith('/api/v1/music/stream') || url.startsWith('/api/v1/music/netease/stream')) return url
-  if (url.startsWith('/api/v1/media/proxy')) return url
+  if (musicAPI.isMusicStreamUrl(url)) return url
+  if (mediaAPI.isMediaProxyUrl(url)) return url
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return `/api/v1/media/proxy?url=${encodeURIComponent(url)}`
+    return mediaAPI.getMediaProxyUrl(url)
   }
   return fixMediaUrl(url)
 }
@@ -1908,8 +1876,6 @@ const searchNeteaseSongs = async (keywords: string) => {
   neteaseSearchError.value = null
   try {
     const pageLimit = audioSearchPageSize.value
-    const backendUrl = `/api/v1/music/search?keywords=${encodeURIComponent(query)}&page=${audioSearchPage.value}&page_size=${pageLimit}`
-
     const cacheKey = `${query}::${audioSearchPage.value}::${pageLimit}`
     if (neteaseSearchCache.has(cacheKey)) {
       const cached = neteaseSearchCache.get(cacheKey)!
@@ -1926,7 +1892,11 @@ const searchNeteaseSongs = async (keywords: string) => {
       return
     }
 
-    const backendData = await fetchJsonWithTimeout(backendUrl, MUSIC_SEARCH_TIMEOUT_MS, abortController.signal)
+    const backendData = await musicAPI.searchMusic({
+      keywords: query,
+      page: audioSearchPage.value,
+      page_size: pageLimit
+    })
     const { items: backendItems, total: backendTotal } = resolveListPayload(backendData)
 
     if (currentRequestId !== neteaseSearchRequestId) return
@@ -2073,14 +2043,11 @@ const loadSfx = async (append = false) => {
 
   const targetPage = isAppendMode ? (sfxPage.value + 1) : 1
   try {
-    const params = new URLSearchParams({ limit: String(SFX_LAZY_PAGE_SIZE), page: String(targetPage) })
-    if (query) {
-      params.set('keywords', query)
-    } else {
-      params.set('category', sfxCategory.value)
-    }
-
-    const data = await fetchJsonWithTimeout(`/api/v1/sfx?${params.toString()}`, SFX_FETCH_TIMEOUT_MS)
+    const data = await sfxAPI.getSoundEffects({
+      limit: SFX_LAZY_PAGE_SIZE,
+      page: targetPage,
+      ...(query ? { keywords: query } : { category: sfxCategory.value })
+    })
     const { items } = resolveListPayload(data)
     const mapped = mapSfxItems(items, sfxCategory.value, isAppendMode ? sfxAssets.value.length : 0)
     const hasMoreFromResponse = typeof data?.has_more === 'boolean'
@@ -2134,19 +2101,8 @@ const generateSfx = async () => {
   if (generatingSfx.value) return
 
   generatingSfx.value = true
-  const { signal, cleanup } = createTimeoutSignal(SFX_FETCH_TIMEOUT_MS)
   try {
-    const response = await fetch('/api/v1/sfx/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, count: 3 }),
-      signal
-    })
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const data = await response.json()
-    const payload = data && typeof data === 'object' && 'success' in data && 'data' in data ? data.data : data
+    const payload = await sfxAPI.generateSoundEffect({ prompt, count: 3 })
     const { items } = resolveListPayload(payload)
     const generated = mapSfxItems(items, 'AI生成', 0)
     if (!generated.length) {
@@ -2170,19 +2126,26 @@ const generateSfx = async () => {
   } catch (error: any) {
     ElMessage.error(error?.message === 'timeout' ? '音效生成超时，请稍后重试' : '音效生成失败')
   } finally {
-    cleanup()
     generatingSfx.value = false
   }
 }
 
 const buildNeteaseStreamUrl = (id: string) => {
-  return `/api/v1/music/netease/stream?id=${encodeURIComponent(id)}`
+  return musicAPI.getNeteaseStreamUrl(id)
 }
 
 const buildResolverStreamUrl = (song: any, fallbackTitle?: string) => {
   const source = resolveSongSource(song)
   if (!source || source === 'netease') return ''
-  return `/api/v1/music/stream?source=${encodeURIComponent(source)}&id=${encodeURIComponent(song.id || '')}&mid=${encodeURIComponent(song.mid || '')}&hash=${encodeURIComponent(song.hash || '')}&content_id=${encodeURIComponent(song.content_id || '')}&title=${encodeURIComponent(song.title || fallbackTitle || '')}&artist=${encodeURIComponent(song.artist || '')}`
+  return musicAPI.getMusicStreamUrl({
+    source,
+    id: song.id || '',
+    mid: song.mid || '',
+    hash: song.hash || '',
+    content_id: song.content_id || '',
+    title: song.title || fallbackTitle || '',
+    artist: song.artist || ''
+  })
 }
 
 const buildMusicStreamUrl = (song: any, fallbackTitle?: string) => {
@@ -2193,7 +2156,7 @@ const buildMusicStreamUrl = (song: any, fallbackTitle?: string) => {
   }
   const resolverUrl = buildResolverStreamUrl(song, fallbackTitle)
   if (song.song_url) {
-    return `/api/v1/music/stream?url=${encodeURIComponent(song.song_url)}`
+    return musicAPI.getMusicStreamUrl({ url: song.song_url })
   }
   if (resolverUrl) {
     return resolverUrl
@@ -2208,8 +2171,7 @@ const resolveSearchPreviewCandidates = async (asset: AudioListItem) => {
   }
   const keyword = `${asset.name || ''} ${asset.artist || ''}`.trim()
   if (!keyword) return []
-  const searchUrl = `/api/v1/music/search?keywords=${encodeURIComponent(keyword)}&page=1&page_size=20`
-  const data = await fetchJsonWithTimeout(searchUrl, SEARCH_PREVIEW_FALLBACK_TIMEOUT_MS)
+  const data = await musicAPI.searchMusic({ keywords: keyword, page: 1, page_size: 20 })
   const { items } = resolveListPayload(data)
   if (!items.length) return []
 
@@ -2225,7 +2187,7 @@ const resolveSearchPreviewCandidates = async (asset: AudioListItem) => {
   const candidates: string[] = []
   sorted.slice(0, 20).forEach((song: any) => {
     if (song.song_url) {
-      candidates.push(`/api/v1/music/stream?url=${encodeURIComponent(song.song_url)}`)
+      candidates.push(musicAPI.getMusicStreamUrl({ url: song.song_url }))
     }
     const primary = buildMusicStreamUrl(song, keyword)
     if (primary) candidates.push(primary)
@@ -2452,10 +2414,11 @@ const loadFallbackHotMusic = async (seedItems: AudioListItem[] = [], requestCoun
       requestsUsed += 1
 
       try {
-        const data = await fetchJsonWithTimeout(
-          `/api/v1/music/search?keywords=${encodeURIComponent(cursor.keyword)}&page=${cursor.page}&page_size=${HOT_MUSIC_FALLBACK_PAGE_SIZE}`,
-          HOT_MUSIC_FALLBACK_TIMEOUT_MS
-        )
+        const data = await musicAPI.searchMusic({
+          keywords: cursor.keyword,
+          page: cursor.page,
+          page_size: HOT_MUSIC_FALLBACK_PAGE_SIZE
+        })
         const { items, total } = resolveListPayload(data)
         if (!items.length) {
           cursor.exhausted = true
@@ -2967,7 +2930,15 @@ const buildAssetResolverUrl = (asset: AudioListItem) => {
   if (!source || source === 'netease' || source === 'douyin' || source === 'asset' || source === 'sfx') {
     return ''
   }
-  return `/api/v1/music/stream?source=${encodeURIComponent(source)}&id=${encodeURIComponent(asset.sourceId || '')}&mid=${encodeURIComponent(asset.sourceMid || '')}&hash=${encodeURIComponent(asset.sourceHash || '')}&content_id=${encodeURIComponent(asset.sourceContentId || '')}&title=${encodeURIComponent(asset.name || '')}&artist=${encodeURIComponent(asset.artist || '')}`
+  return musicAPI.getMusicStreamUrl({
+    source,
+    id: asset.sourceId || '',
+    mid: asset.sourceMid || '',
+    hash: asset.sourceHash || '',
+    content_id: asset.sourceContentId || '',
+    title: asset.name || '',
+    artist: asset.artist || ''
+  })
 }
 
 const buildAssetCandidateUrls = (asset: AudioListItem) => {
@@ -2978,7 +2949,7 @@ const buildAssetCandidateUrls = (asset: AudioListItem) => {
   const resolverUrl = buildAssetResolverUrl(asset)
   if (resolverUrl) candidates.push(resolverUrl)
   if (asset.sourceSongUrl) {
-    candidates.push(`/api/v1/music/stream?url=${encodeURIComponent(asset.sourceSongUrl)}`)
+    candidates.push(musicAPI.getMusicStreamUrl({ url: asset.sourceSongUrl }))
   }
   if (asset.url) {
     candidates.push(asset.url)
@@ -2988,36 +2959,17 @@ const buildAssetCandidateUrls = (asset: AudioListItem) => {
 
 const probeAudioUrl = async (url: string) => {
   try {
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), MUSIC_PREVIEW_PROBE_TIMEOUT_MS)
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Range: 'bytes=0-2048' },
-      cache: 'no-store',
-      signal: controller.signal
-    })
-    window.clearTimeout(timer)
-    if (!response.ok) return false
-
-    const contentType = (response.headers.get('content-type') || '').toLowerCase()
-    const contentLength = Number(response.headers.get('content-length') || 0)
-    if (contentType.includes('application/json') || contentType.includes('text/html') || contentType.includes('text/plain')) {
-      return false
-    }
-    const isBackendMusicProxy = url.includes('/api/v1/music/stream') || url.includes('/api/v1/music/netease/stream')
-    const chunk = new Uint8Array(await response.arrayBuffer())
-    if (isBackendMusicProxy && contentType.includes('audio/wav')) {
+    const buffer = await mediaAPI.probeAudioUrl(url, MUSIC_PREVIEW_PROBE_TIMEOUT_MS)
+    const chunk = new Uint8Array(buffer)
+    if (musicAPI.isMusicStreamUrl(url)) {
       // 后端兜底静音 wav：RIFF 头 + 大量 0 字节，直接判定为不可播放候选。
       const payload = chunk.slice(44)
       const sample = payload.length > 0 ? payload : chunk
       const zeroCount = sample.reduce((count, b) => count + (b === 0 ? 1 : 0), 0)
       const zeroRatio = sample.length > 0 ? zeroCount / sample.length : 1
-      if ((contentLength > 0 && contentLength <= 90000) || zeroRatio > 0.98) {
+      if (zeroRatio > 0.98) {
         return false
       }
-    }
-    if (contentType.startsWith('audio/') || contentType.includes('octet-stream')) {
-      return true
     }
     if (chunk.length < 4) return false
     const header = Array.from(chunk.slice(0, 4)).map(b => String.fromCharCode(b)).join('')
@@ -4261,7 +4213,7 @@ const removeCharacterFromShot = async (charId: number) => {
 
 const loadData = async () => {
   try {
-    // 加载剧集信息
+    // 加载营销内容信息
     const dramaRes = await dramaAPI.get(dramaId.toString())
     drama.value = dramaRes
 
@@ -4295,7 +4247,7 @@ const loadData = async () => {
       const scenes = await dramaAPI.getBackgrounds(ep.id.toString())
       availableScenes.value = scenes || []
     } catch (sceneError: any) {
-      console.warn('加载场景列表失败，回退到剧集数据:', sceneError)
+      console.warn('加载场景列表失败，回退到营销内容数据:', sceneError)
       availableScenes.value = dramaRes.scenes || []
     }
 
@@ -4337,8 +4289,7 @@ const selectScene = async (sceneId: number) => {
   if (!currentStoryboard.value) return
 
   try {
-    // TODO: 调用API更新分镜的scene_id
-    await dramaAPI.updateScene(currentStoryboard.value.id.toString(), {
+    await dramaAPI.updateStoryboard(currentStoryboard.value.id.toString(), {
       scene_id: sceneId
     })
 
@@ -4369,7 +4320,7 @@ const handleTimelineSelect = (sceneId: number) => {
 }
 
 const handleAddStoryboard = async () => {
-  ElMessage.info('添加分镜功能开发中')
+  ElMessage.info('请先在脚本工作台生成营销分镜')
 }
 
 const togglePlay = () => {
@@ -4387,11 +4338,11 @@ const formatTime = (seconds: number) => {
 }
 
 const zoomIn = () => {
-  ElMessage.info('时间线缩放功能开发中')
+  ElMessage.info('请使用专业制作台预览与合成功能')
 }
 
 const zoomOut = () => {
-  ElMessage.info('时间线缩放功能开发中')
+  ElMessage.info('请使用专业制作台预览与合成功能')
 }
 
 const uploadInputRef = ref<HTMLInputElement | null>(null)
@@ -4401,7 +4352,7 @@ const generateImage = async () => {
   if (!currentStoryboard.value) return
 
   try {
-    ElMessage.info('图片生成功能开发中')
+    ElMessage.info('请先在内容创作页生成图片素材')
   } catch (error: any) {
     ElMessage.error(error.message || '生成失败')
   }
@@ -4424,18 +4375,8 @@ const handleUploadImage = async (event: Event) => {
 
   uploadingImage.value = true
   try {
-    const formData = new FormData()
-    formData.append('file', file)
-
-    const uploadResp = await fetch('/api/v1/upload/image', {
-      method: 'POST',
-      body: formData
-    })
-    const uploadJson = await uploadResp.json()
-    if (!uploadResp.ok || uploadJson?.success === false) {
-      throw new Error(uploadJson?.error?.message || '上传失败')
-    }
-    const imageUrl = uploadJson?.data?.url || uploadJson?.url
+    const uploadResult = await uploadAPI.uploadImage(file)
+    const imageUrl = uploadResult?.url
     if (!imageUrl) {
       throw new Error('上传失败：未返回图片地址')
     }
@@ -4726,7 +4667,7 @@ const getDefaultDistributionTitle = (merge: VideoMerge) => {
 
   const mergeTitle = (merge.title || '').trim()
   if (!mergeTitle) {
-    return '短剧'
+    return '营销视频'
   }
 
   return mergeTitle.replace(/\s*[-·•|｜]\s*第[\d一二三四五六七八九十百千万]+集\s*$/u, '').trim() || mergeTitle
@@ -4882,13 +4823,7 @@ const downloadVideo = async (url: string, title: string) => {
       duration: 0
     })
 
-    // 使用fetch获取视频blob
-    const response = await fetch(resolvedUrl)
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-
-    const blob = await response.blob()
+    const blob = await mediaAPI.fetchBlob(resolvedUrl)
     const blobUrl = window.URL.createObjectURL(blob)
 
     // 创建下载链接

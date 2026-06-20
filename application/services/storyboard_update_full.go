@@ -77,6 +77,11 @@ func (s *StoryboardService) UpdateStoryboard(storyboardID string, updates map[st
 		updateData["duration"] = int(val)
 		sb.Duration = int(val)
 	}
+	if val, ok := updates["scene_id"].(float64); ok && val > 0 {
+		updateData["scene_id"] = uint(val)
+	}
+
+	characterIDs := normalizeStoryboardCharacterIDs(updates["characters"])
 
 	// 使用当前数据库值填充缺失字段（用于生成提示词）
 	if sb.Title == "" && storyboard.Title != nil {
@@ -130,9 +135,59 @@ func (s *StoryboardService) UpdateStoryboard(storyboardID string, updates map[st
 		return fmt.Errorf("failed to update storyboard: %w", err)
 	}
 
+	if characterIDs != nil {
+		if err := s.UpdateStoryboardCharacters(storyboardID, characterIDs); err != nil {
+			return err
+		}
+	}
+
 	s.log.Infow("Storyboard updated successfully",
 		"storyboard_id", storyboardID,
 		"fields_updated", len(updateData))
 
 	return nil
+}
+
+func normalizeStoryboardCharacterIDs(value interface{}) []uint {
+	if value == nil {
+		return nil
+	}
+
+	switch raw := value.(type) {
+	case []uint:
+		return raw
+	case []int:
+		result := make([]uint, 0, len(raw))
+		for _, id := range raw {
+			if id > 0 {
+				result = append(result, uint(id))
+			}
+		}
+		return result
+	case []float64:
+		result := make([]uint, 0, len(raw))
+		for _, id := range raw {
+			if id > 0 {
+				result = append(result, uint(id))
+			}
+		}
+		return result
+	case []interface{}:
+		result := make([]uint, 0, len(raw))
+		for _, item := range raw {
+			switch id := item.(type) {
+			case float64:
+				if id > 0 {
+					result = append(result, uint(id))
+				}
+			case int:
+				if id > 0 {
+					result = append(result, uint(id))
+				}
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }

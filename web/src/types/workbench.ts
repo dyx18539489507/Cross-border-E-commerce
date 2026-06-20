@@ -1,14 +1,20 @@
 export interface WorkbenchOverview {
+  totalProjects: number
   pendingProducts: number
   complianceCompleted: number
+  imagesGenerated: number
   videosGenerated: number
+  processingTasks: number
   coveredMarkets: number
 }
 
 export interface WorkbenchOverviewTrend {
+  totalProjects: number
   pendingProducts: number
   complianceCompleted: number
+  imagesGenerated: number
   videosGenerated: number
+  processingTasks: number
   coveredMarkets: number
 }
 

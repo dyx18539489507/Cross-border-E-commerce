@@ -4,8 +4,8 @@
       <div class="header-content">
         <!-- Left section: Logo + Left slot -->
         <div class="header-left">
-          <router-link v-if="showLogo" to="/dramas" class="logo">
-            <span class="logo-text">🎬 {{ t('app.name') }}</span>
+          <router-link v-if="showLogo" to="/projects" class="logo">
+            <span class="logo-text">{{ t('app.name') }}</span>
           </router-link>
           <!-- Left slot for business content | 左侧插槽用于业务内容 -->
           <slot name="left" />

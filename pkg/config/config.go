@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/viper"
 	"github.com/subosito/gotenv"
@@ -130,6 +131,7 @@ func LoadConfig() (*Config, error) {
 	viper.AddConfigPath(".")
 
 	_ = gotenv.Load(".env")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -140,6 +142,8 @@ func LoadConfig() (*Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+
+	applyRuntimeOverrides(&config)
 
 	// 合规校验配置支持通过环境变量注入，避免在配置文件硬编码敏感信息。
 	// DeepSeek 与火山方舟均兼容 chat/completions，因此这里只保存协议层配置。
@@ -193,6 +197,60 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+func applyRuntimeOverrides(config *Config) {
+	config.App.Name = firstNonEmpty(os.Getenv("APP_NAME"), config.App.Name)
+	config.App.Language = firstNonEmpty(os.Getenv("APP_LANGUAGE"), config.App.Language)
+	if raw := strings.TrimSpace(os.Getenv("APP_DEBUG")); raw != "" {
+		if parsed, err := strconv.ParseBool(raw); err == nil {
+			config.App.Debug = parsed
+		}
+	}
+
+	config.Server.Host = firstNonEmpty(os.Getenv("SERVER_HOST"), config.Server.Host)
+	config.Server.Port = readIntEnv("SERVER_PORT", config.Server.Port)
+	config.Server.ReadTimeout = readIntEnv("SERVER_READ_TIMEOUT", config.Server.ReadTimeout)
+	config.Server.WriteTimeout = readIntEnv("SERVER_WRITE_TIMEOUT", config.Server.WriteTimeout)
+	if origins := splitEnvList(os.Getenv("SERVER_CORS_ORIGINS")); len(origins) > 0 {
+		config.Server.CORSOrigins = origins
+	}
+
+	config.Database.Type = firstNonEmpty(os.Getenv("DATABASE_TYPE"), config.Database.Type)
+	config.Database.Path = firstNonEmpty(os.Getenv("DATABASE_PATH"), config.Database.Path)
+	config.Database.Host = firstNonEmpty(os.Getenv("DATABASE_HOST"), config.Database.Host)
+	config.Database.Port = readIntEnv("DATABASE_PORT", config.Database.Port)
+	config.Database.User = firstNonEmpty(os.Getenv("DATABASE_USER"), config.Database.User)
+	config.Database.Password = firstNonEmpty(os.Getenv("DATABASE_PASSWORD"), config.Database.Password)
+	config.Database.Database = firstNonEmpty(os.Getenv("DATABASE_NAME"), config.Database.Database)
+	config.Database.Charset = firstNonEmpty(os.Getenv("DATABASE_CHARSET"), config.Database.Charset)
+
+	config.Storage.Type = firstNonEmpty(os.Getenv("STORAGE_TYPE"), config.Storage.Type)
+	config.Storage.LocalPath = firstNonEmpty(os.Getenv("STORAGE_LOCAL_PATH"), config.Storage.LocalPath)
+	config.Storage.BaseURL = firstNonEmpty(os.Getenv("STORAGE_BASE_URL"), config.Storage.BaseURL)
+	config.Storage.R2AccountID = firstNonEmpty(os.Getenv("R2_ACCOUNT_ID"), config.Storage.R2AccountID)
+	config.Storage.R2AccessKeyID = firstNonEmpty(os.Getenv("R2_ACCESS_KEY_ID"), config.Storage.R2AccessKeyID)
+	config.Storage.R2SecretKey = firstNonEmpty(os.Getenv("R2_SECRET_ACCESS_KEY"), config.Storage.R2SecretKey)
+	config.Storage.R2Bucket = firstNonEmpty(os.Getenv("R2_BUCKET"), config.Storage.R2Bucket)
+	config.Storage.R2Endpoint = firstNonEmpty(os.Getenv("R2_ENDPOINT"), config.Storage.R2Endpoint)
+	config.Storage.R2Region = firstNonEmpty(os.Getenv("R2_REGION"), config.Storage.R2Region)
+
+	config.Volcengine.AccessKeyID = firstNonEmpty(os.Getenv("VOLCENGINE_ACCESS_KEY_ID"), config.Volcengine.AccessKeyID)
+	config.Volcengine.SecretAccessKey = firstNonEmpty(os.Getenv("VOLCENGINE_SECRET_ACCESS_KEY"), config.Volcengine.SecretAccessKey)
+	config.Volcengine.Speech.AppID = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_APP_ID"), config.Volcengine.Speech.AppID)
+	config.Volcengine.Speech.Token = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_TOKEN"), config.Volcengine.Speech.Token)
+	config.Volcengine.Speech.VoiceType = firstNonEmpty(os.Getenv("VOLCENGINE_SPEECH_VOICE_TYPE"), config.Volcengine.Speech.VoiceType)
+}
+
+func splitEnvList(value string) []string {
+	items := strings.Split(value, ",")
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func (c *DatabaseConfig) DSN() string {

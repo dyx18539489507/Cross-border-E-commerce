@@ -136,7 +136,7 @@ func (s *SilkroadAgentProjectService) CreateFromAgentResult(deviceID string, res
 		return nil, err
 	}
 
-	path := fmt.Sprintf("/workspace/script?projectId=%d&episodeId=%d&source=agent", createdDrama.ID, createdEpisode.ID)
+	path := fmt.Sprintf("/projects/%d", createdDrama.ID)
 	return &CreateProjectFromAgentResponse{
 		ProjectID:   createdDrama.ID,
 		EpisodeID:   createdEpisode.ID,

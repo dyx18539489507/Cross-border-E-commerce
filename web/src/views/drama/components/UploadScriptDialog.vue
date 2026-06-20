@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="上传剧本"
+    title="上传营销脚本"
     width="800px"
     :close-on-click-modal="false"
     class="dialog-form-safe"
@@ -13,24 +13,24 @@
       class="long-form form-enter-flow"
       @keydown.enter="handleFormEnterNavigation"
     >
-      <el-form-item label="剧本内容" required>
+      <el-form-item label="脚本内容" required>
         <el-input
           v-model="form.script_content"
           type="textarea"
           :rows="15"
-          placeholder="粘贴您的剧本内容&#10;系统将自动识别并拆分为剧集和场景"
+          placeholder="粘贴商品讲解、短视频口播或直播切片脚本&#10;系统将识别并拆分为营销内容和视频场景"
           maxlength="50000"
           show-word-limit
         />
         <div class="form-tip">
-          支持多种剧本格式，系统会智能识别剧集、场景、对话等内容
+          支持多种脚本格式，系统会识别营销内容、场景、数字人口播和对话等结构
         </div>
       </el-form-item>
 
       <el-form-item label="拆分选项">
-        <el-checkbox v-model="form.auto_split">自动拆分剧集</el-checkbox>
+        <el-checkbox v-model="form.auto_split">自动拆分营销内容</el-checkbox>
         <div class="form-tip">
-          启用后将自动识别剧集分界点，否则作为单集处理
+          启用后将自动识别内容分界点，否则作为单条营销内容处理
         </div>
       </el-form-item>
     </el-form>
@@ -46,13 +46,13 @@
           show-icon
         >
           <template #default>
-            共识别 {{ parseResult.episodes.length }} 个剧集，
+            共识别 {{ parseResult.episodes.length }} 条营销内容，
             {{ totalScenes }} 个场景
           </template>
         </el-alert>
 
         <div class="summary-box" v-if="parseResult.summary">
-          <h4>剧本概要</h4>
+          <h4>脚本概要</h4>
           <p>{{ parseResult.summary }}</p>
         </div>
 
@@ -60,7 +60,7 @@
           <el-collapse-item
             v-for="episode in parseResult.episodes"
             :key="episode.episode_number"
-            :title="`第${episode.episode_number}集: ${episode.title}`"
+            :title="`内容 ${episode.episode_number}: ${episode.title}`"
             :name="episode.episode_number"
           >
             <div class="episode-info">
@@ -87,7 +87,7 @@
     <template #footer>
       <el-button @click="handleClose">取消</el-button>
       <el-button v-if="!parseResult" type="primary" @click="handleParse" :loading="parsing">
-        解析剧本
+        解析脚本
       </el-button>
       <el-button v-else type="success" @click="handleSave" :loading="saving">
         保存到项目
@@ -99,9 +99,10 @@
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { generationAPI } from '@/api/generation'
+import { dramaAPI } from '@/api/drama'
 import type { ParseScriptResult } from '@/types/generation'
 import { handleFormEnterNavigation } from '@/utils/formFocus'
+import { parseMarketingScript } from '@/utils/scriptParser'
 
 interface Props {
   modelValue: boolean
@@ -142,7 +143,7 @@ const handleParse = async () => {
 
   parsing.value = true
   try {
-    parseResult.value = await (generationAPI as any).parseScript({
+    parseResult.value = parseMarketingScript({
       drama_id: props.dramaId,
       script_content: form.script_content,
       auto_split: form.auto_split
@@ -160,7 +161,25 @@ const handleSave = async () => {
 
   saving.value = true
   try {
-    // TODO: 调用保存接口将解析结果保存到数据库
+    await dramaAPI.saveEpisodes(props.dramaId, parseResult.value.episodes.map((episode) => ({
+      episode_number: episode.episode_number,
+      title: episode.title,
+      description: episode.description,
+      script_content: episode.script_content,
+      duration: episode.duration,
+      status: 'draft'
+    })))
+
+    if (parseResult.value.characters.length > 0) {
+      await dramaAPI.saveCharacters(props.dramaId, parseResult.value.characters.map((character) => ({
+        name: character.name,
+        role: character.role || 'supporting',
+        description: character.description,
+        personality: character.personality,
+        appearance: ''
+      })))
+    }
+
     ElMessage.success('保存成功')
     emit('success')
     handleClose()

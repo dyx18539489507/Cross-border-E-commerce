@@ -83,7 +83,7 @@ const form = reactive({
 })
 
 const goBack = () => {
-  router.push(`/dramas/${dramaId}`)
+  router.push(`/projects/${dramaId}`)
 }
 
 const saveSettings = async () => {
@@ -109,7 +109,7 @@ const deleteProject = async () => {
     
     await dramaAPI.delete(dramaId)
     ElMessage.success(t('dramaSettings.messages.deleted'))
-    router.push('/dramas')
+    router.push('/projects')
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error.message || t('dramaSettings.messages.deleteFailed'))

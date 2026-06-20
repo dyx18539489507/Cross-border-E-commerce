@@ -54,11 +54,11 @@ ollama serve
 
 ```bash
 # 进入容器测试
-docker exec -it huobao-drama sh
+docker exec -it digital-silk-road sh
 wget -O- http://host.docker.internal:11434/api/tags
 
 # 查看容器日志
-docker logs huobao-drama -f
+docker logs digital-silk-road -f
 ```
 
 ### 常见问题

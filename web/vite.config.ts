@@ -1,18 +1,22 @@
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  },
-  server: {
-    host: '0.0.0.0',
-    port: 3012,
-    proxy: {
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const backendTarget = env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:5678'
+
+  return {
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url))
+      }
+    },
+    server: {
+      host: '0.0.0.0',
+      port: 3012,
+      proxy: {
       '/api/v1/music/netease': {
         target: 'https://music.163.com',
         changeOrigin: true,
@@ -42,13 +46,18 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/netease/, '')
       },
       '/api': {
-        target: 'http://localhost:5678',
+        target: backendTarget,
         changeOrigin: true
       },
       '/static': {
-        target: 'http://localhost:5678',
+        target: backendTarget,
+        changeOrigin: true
+      },
+      '/health': {
+        target: backendTarget,
         changeOrigin: true
       }
+    }
     }
   }
 })

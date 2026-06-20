@@ -461,7 +461,7 @@ const handleCreate = () => {
   createDialogVisible.value = true
 }
 
-const viewDrama = (id: string) => router.push(`/dramas/${id}`)
+const viewDrama = (id: string) => router.push(`/projects/${id}`)
 
 const editDialogVisible = ref(false)
 const editLoading = ref(false)

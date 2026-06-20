@@ -1,5 +1,5 @@
 <template>
-  <!-- Create Drama Dialog / 创建短剧弹窗 -->
+  <!-- Create marketing project dialog / 创建跨境营销项目弹窗 -->
   <el-dialog
     v-model="visible"
     :title="$t('drama.createNew')"
@@ -770,7 +770,7 @@ const handleComplianceEdit = async () => {
   saveCreateDramaDraft(draft);
   complianceDialogVisible.value = false;
   visible.value = false;
-  await router.push("/dramas/create");
+  await router.push("/projects/create");
   ElMessage.info(t("compliance.editHint"));
 };
 
@@ -807,7 +807,7 @@ const handleComplianceConfirm = async () => {
     } else {
       ElMessage.success(t("compliance.created"));
     }
-    router.push(`/dramas/${dramaId}`);
+    router.push(`/projects/${dramaId}`);
   } catch (error: any) {
     if (error?.code === "COMPLIANCE_PRECHECK_REQUIRED") {
       pendingComplianceToken.value = "";

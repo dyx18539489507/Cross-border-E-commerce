@@ -387,6 +387,39 @@
           <el-button type="primary" plain size="small" @click="downloadDigitalHumanVideo">下载视频</el-button>
         </div>
 
+        <div class="digital-human-history">
+          <div class="digital-human-history__header">
+            <span>最近数字人口播任务</span>
+            <el-button text size="small" :loading="digitalHumanHistoryLoading" @click="loadDigitalHumanHistory">
+              刷新
+            </el-button>
+          </div>
+          <el-alert
+            v-if="digitalHumanHistoryError"
+            :title="digitalHumanHistoryError"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <div v-else-if="digitalHumanHistoryLoading" class="digital-human-history__state">正在加载历史任务...</div>
+          <div v-else-if="digitalHumanTasks.length === 0" class="digital-human-history__state">
+            暂无数字人营销视频任务
+          </div>
+          <div v-else class="digital-human-history__list">
+            <button
+              v-for="task in digitalHumanTasks"
+              :key="task.id"
+              type="button"
+              class="digital-human-history__item"
+              :disabled="!task.video_url && !task.result?.video_url"
+              @click="applyDigitalHumanTask(task)"
+            >
+              <span class="digital-human-history__name">{{ formatDigitalHumanTaskStatus(task) }}</span>
+              <span class="digital-human-history__time">{{ formatDigitalHumanTaskTime(task.updated_at) }}</span>
+            </button>
+          </div>
+        </div>
+
         <template #footer>
           <el-button @click="digitalHumanDialogVisible = false">取消</el-button>
           <el-button
@@ -634,15 +667,15 @@
         </div>
       </el-card>
 
-      <!-- 阶段 3: 剧集制作 -->
+      <!-- 阶段 3: 营销内容制作 -->
       <el-card v-show="currentStep === 3" shadow="never" class="stage-card">
         <template #header>
           <div class="stage-header">
             <div class="header-left">
               <el-icon :size="48" color="#409eff"><Film /></el-icon>
               <div class="header-info">
-                <h2>剧集制作</h2>
-                <p>对每一集进行分镜、图片、视频、剪辑</p>
+                <h2>营销内容制作</h2>
+                <p>对每条营销内容进行分镜、图片、视频、剪辑</p>
               </div>
             </div>
             <el-tag v-if="completedEpisodesCount > 0" type="success" size="large">
@@ -654,7 +687,7 @@
         <div class="stage-body">
           <div class="stats-row">
             <div class="stat-box">
-              <div class="stat-label">总剧集数</div>
+              <div class="stat-label">内容数量</div>
               <div class="stat-value">{{ drama?.episodes?.length || 0 }}</div>
             </div>
             <div class="stat-box">
@@ -669,9 +702,9 @@
 
           <el-divider />
 
-          <h3>剧集列表</h3>
+          <h3>营销内容列表</h3>
           <el-table :data="sortedEpisodes" border size="small" max-height="400" style="margin-bottom: 24px;">
-            <el-table-column prop="episode_number" label="集数" width="80" sortable />
+            <el-table-column prop="episode_number" label="序号" width="80" sortable />
             <el-table-column prop="title" label="标题" width="200" />
             <el-table-column prop="description" label="简介" show-overflow-tooltip />
             <el-table-column label="状态" width="100">
@@ -701,10 +734,10 @@
 
           <div class="action-area">
             <h3>操作</h3>
-            <p class="hint-text">点击进入剧集列表，对每一集进行分镜、背景、合成、视频、剪辑</p>
+            <p class="hint-text">进入营销内容列表，对每条内容进行分镜、背景、合成、视频和剪辑</p>
             <el-button type="primary" size="large" @click="goToEpisodeList" class="main-action-btn">
               <el-icon :size="20"><Film /></el-icon>
-              <span>进入剧集制作</span>
+              <span>进入营销内容制作</span>
             </el-button>
           </div>
         </div>
@@ -869,10 +902,12 @@ import { dramaAPI } from '@/api/drama'
 import { generationAPI } from '@/api/generation'
 import { characterLibraryAPI } from '@/api/character-library'
 import { digitalHumanAPI } from '@/api/digital-human'
+import type { DigitalHumanTask } from '@/api/digital-human'
+import { mediaAPI } from '@/api/media'
 import { voiceLibraryAPI } from '@/api/voice-library'
 import type { VoiceLibraryItem } from '@/api/voice-library'
-import request from '@/utils/request'
 import { handleFormEnterNavigation } from '@/utils/formFocus'
+import { parseMarketingScript } from '@/utils/scriptParser'
 import type { Drama, DramaStatus } from '@/types/drama'
 import { AppHeader } from '@/components/common'
 
@@ -895,6 +930,9 @@ const digitalHumanDialogVisible = ref(false)
 const digitalHumanDialogFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const digitalHumanLoading = ref(false)
 const digitalHumanResultUrl = ref('')
+const digitalHumanHistoryLoading = ref(false)
+const digitalHumanHistoryError = ref('')
+const digitalHumanTasks = ref<DigitalHumanTask[]>([])
 const digitalHumanImageList = ref<UploadUserFile[]>([])
 const digitalHumanAudioList = ref<UploadUserFile[]>([])
 const digitalHumanImagePreview = ref('')
@@ -951,9 +989,9 @@ const toPlayableMediaUrl = (url: string): string => {
   const value = (url || '').trim()
   if (!value) return ''
   if (value.startsWith('blob:') || value.startsWith('data:')) return value
-  if (value.startsWith('/api/v1/media/proxy')) return value
+  if (mediaAPI.isMediaProxyUrl(value)) return value
   if (value.startsWith('http://') || value.startsWith('https://')) {
-    return `/api/v1/media/proxy?url=${encodeURIComponent(value)}`
+    return mediaAPI.getMediaProxyUrl(value)
   }
   return value
 }
@@ -1190,7 +1228,7 @@ const getStatusText = (status?: DramaStatus) => {
 
 // 导航
 const goBack = () => {
-  router.push('/dramas')
+  router.push('/projects')
 }
 
 const prevStep = () => {
@@ -1219,7 +1257,7 @@ const updateUrlState = () => {
 
 // 页面跳转
 const goToScriptGeneration = () => {
-  router.push(`/dramas/${drama.value?.id}/script`)
+  router.push(`/projects/${drama.value?.id}/script`)
 }
 
 // AI生成剧本
@@ -1322,6 +1360,50 @@ const saveChapterScript = async () => {
 
 const openDigitalHumanDialog = () => {
   digitalHumanDialogVisible.value = true
+  loadDigitalHumanHistory()
+}
+
+const loadDigitalHumanHistory = async () => {
+  digitalHumanHistoryLoading.value = true
+  digitalHumanHistoryError.value = ''
+  try {
+    const data = await digitalHumanAPI.getDigitalHumanTasks({ page: 1, page_size: 6 })
+    digitalHumanTasks.value = data.items || []
+  } catch (error: any) {
+    digitalHumanHistoryError.value = error?.message || '数字人历史任务加载失败'
+    digitalHumanTasks.value = []
+  } finally {
+    digitalHumanHistoryLoading.value = false
+  }
+}
+
+const formatDigitalHumanTaskTime = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const formatDigitalHumanTaskStatus = (task: DigitalHumanTask) => {
+  const labelMap: Record<string, string> = {
+    pending: '等待中',
+    processing: '生成中',
+    completed: '已完成',
+    failed: '生成失败'
+  }
+  return `${labelMap[task.status] || task.status} · ${task.progress || 0}%`
+}
+
+const applyDigitalHumanTask = (task: DigitalHumanTask) => {
+  const videoUrl = task.video_url || task.result?.video_url || ''
+  if (!videoUrl) {
+    if (task.error) {
+      ElMessage.warning(task.error)
+    }
+    return
+  }
+  digitalHumanResultUrl.value = videoUrl
+  ElMessage.success('已载入历史数字人口播结果')
 }
 
 const loadVoiceLibrary = async () => {
@@ -1464,11 +1546,7 @@ const downloadDigitalHumanVideo = async () => {
       message: '正在准备下载...',
       duration: 0
     })
-    const response = await fetch(playableURL)
-    if (!response.ok) {
-      throw new Error(`下载失败: ${response.status}`)
-    }
-    const blob = await response.blob()
+    const blob = await mediaAPI.fetchBlob(playableURL)
     const blobURL = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = blobURL
@@ -1657,6 +1735,7 @@ const submitDigitalHuman = async () => {
     }
     digitalHumanResultUrl.value = result.video_url
     ElMessage.success('数字人视频生成完成')
+    await loadDigitalHumanHistory()
   } catch (error: any) {
     const raw = String(error?.message || '')
     const errorCode = String(error?.code || '')
@@ -1815,8 +1894,13 @@ const regenerateShots = async () => {
 
 // 编辑镜头
 const editShot = (shot: any, index: number) => {
-  // TODO: 打开镜头编辑对话框
-  ElMessage.info('镜头编辑功能开发中')
+  router.push({
+    path: `/projects/${drama.value?.id || route.params.id}/episode/${currentEpisodeNumber.value}/professional`,
+    query: {
+      shot: String(index + 1),
+      storyboardId: shot.id ? String(shot.id) : undefined
+    }
+  })
 }
 
 // 从分镜解析角色
@@ -1833,7 +1917,7 @@ const parseShotsToCharacters = async () => {
     // 从所有镜头内容中提取角色
     const shotsContent = currentEpisode.value.shots.map((s: any) => s.content).join('\n')
     
-    const parseResult = await (generationAPI as any).parseScript({
+    const parseResult = parseMarketingScript({
       drama_id: drama.value!.id,
       script_content: shotsContent,
       auto_split: false
@@ -2099,18 +2183,8 @@ const openUploadDialog = (character: any) => {
     }
     
     try {
-      // 创建FormData上传文件
-      const formData = new FormData()
-      formData.append('file', file)
-      
       ElMessage.info('正在上传图片...')
-      
-      // 上传到后端MinIO（后端会自动更新数据库）
-      await request.post<{ url: string }>(`/characters/${selectedCharacter.value.id}/upload-image`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
+      await characterLibraryAPI.uploadCharacterImageFile(String(selectedCharacter.value.id), file)
       
       ElMessage.success('图片上传成功')
       await loadDramaData()
@@ -2156,11 +2230,11 @@ const addToCharacterLibrary = async (character: any) => {
 }
 
 const goToEpisodeList = () => {
-  router.push(`/dramas/${drama.value?.id}/episodes`)
+  router.push(`/projects/${drama.value?.id}/episodes`)
 }
 
 const goToEpisodeDetail = (episodeId: string) => {
-  router.push(`/dramas/${drama.value?.id}/episodes/${episodeId}`)
+  router.push(`/projects/${drama.value?.id}/episodes/${episodeId}`)
 }
 
 const loadDramaData = async () => {
@@ -2169,7 +2243,7 @@ const loadDramaData = async () => {
     drama.value = await dramaAPI.get(dramaId)
   } catch (error: any) {
     ElMessage.error(error.message || '获取剧本信息失败')
-    router.push('/dramas')
+    router.push('/projects')
   }
 }
 
@@ -2588,6 +2662,63 @@ onMounted(() => {
     width: 100%;
     border-radius: 8px;
     background: #000;
+  }
+
+  .digital-human-history {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .digital-human-history__header,
+  .digital-human-history__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .digital-human-history__header {
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .digital-human-history__state {
+    padding: 10px 0;
+    font-size: 12px;
+    color: #909399;
+  }
+
+  .digital-human-history__list {
+    display: grid;
+    gap: 6px;
+  }
+
+  .digital-human-history__item {
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #475569;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .digital-human-history__item:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+
+  .digital-human-history__time {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: #94a3b8;
   }
 
   .digital-human-textarea :deep(textarea) {

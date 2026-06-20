@@ -14,8 +14,17 @@ interface CustomAxiosInstance extends Omit<AxiosInstance, 'get' | 'post' | 'put'
   delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
 }
 
+const configuredAPIBaseURL = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+
+export const API_BASE_URL = (configuredAPIBaseURL || '/api/v1').replace(/\/$/, '')
+
+export const buildAPIURL = (path: string) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE_URL}${normalizedPath}`
+}
+
 const request = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   timeout: 900000, // 15分钟超时，匹配较慢的AI/媒体接口
   headers: {
     'Content-Type': 'application/json'
@@ -46,6 +55,11 @@ const generateDeviceID = (): string => {
  * 返回：稳定写入 localStorage 的设备标识，供每个数字丝路 API 请求复用。
  */
 const getOrCreateDeviceID = (): string => {
+  const configuredDemoDeviceID = String(import.meta.env.VITE_DEMO_DEVICE_ID || '').trim()
+  if (/^[a-zA-Z0-9_-]{16,128}$/.test(configuredDemoDeviceID)) {
+    return configuredDemoDeviceID
+  }
+
   const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY)
   if (existing && /^[a-zA-Z0-9_-]{16,128}$/.test(existing)) {
     return existing

@@ -49,7 +49,7 @@ const goCompliance = () => {
 }
 
 const goWorkbench = () => {
-  router.push('/dramas')
+  router.push('/projects')
 }
 
 onMounted(() => {

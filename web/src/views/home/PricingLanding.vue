@@ -267,7 +267,7 @@ const plans: PricingPlan[] = [
 ] as const
 
 const createProject = () => {
-  router.push({ path: '/dramas/create', query: { source: 'manual' } })
+  router.push({ path: '/projects/create', query: { source: 'manual' } })
 }
 
 const goHome = () => {
@@ -283,7 +283,7 @@ const goAboutPage = () => {
 }
 
 const goToWorkbench = () => {
-  router.push('/dramas')
+  router.push('/projects')
 }
 
 const contactSales = () => {

@@ -2,7 +2,7 @@
 /**
  * 模块说明：数字丝路数据分析展示页。
  * 业务场景：商品出海内容发布后，运营人员需要查看曝光、点击、转化、市场分布和 AI 优化建议。
- * 核心职责：提供前端数据看板原型与导航承接，当前数据为静态示例，后续可接入真实投放指标。
+ * 核心职责：调用后端 analytics 汇总接口展示项目、素材、成片和分发形成的真实/估算运营指标。
  */
 -->
 <template>
@@ -45,10 +45,26 @@
     </header>
 
     <main class="data-analysis-main">
-      <div class="data-analysis-shell">
+      <div class="data-analysis-shell" v-loading="loading">
         <section class="analytics-hero">
           <h1>数据分析中心</h1>
           <p>全链路数据追踪，AI智能优化建议</p>
+          <div class="analytics-hero__note">
+            当前数据基于平台内营销项目、素材生成、成片与分发记录估算；广告消耗、真实转化率、店铺销售额等需接入 TikTok Shop、Amazon、Shopee 等平台后进一步增强。
+          </div>
+        </section>
+
+        <section v-if="errorMessage || (!loading && isEmpty)" class="analytics-state-card">
+          <template v-if="errorMessage">
+            <strong>数据加载失败</strong>
+            <p>{{ errorMessage }}</p>
+            <button type="button" @click="loadAnalytics">重试</button>
+          </template>
+          <template v-else>
+            <strong>暂无可分析数据</strong>
+            <p>创建营销项目并生成图片、视频或成片后，数据趋势、市场分布和 AI 建议会自动更新。</p>
+            <button type="button" @click="router.push('/projects/create?source=manual')">录入商品</button>
+          </template>
         </section>
 
         <section class="metrics-grid">
@@ -297,8 +313,8 @@ const router = useRouter()
 const brandLogo = '/logo_circle.png'
 
 const navItems = [
-  { label: '工作台', path: '/dramas', active: false, width: '66px' },
-  { label: '商品录入', path: '/dramas/create', active: false, width: '80px' },
+  { label: '工作台', path: '/projects', active: false, width: '66px' },
+  { label: '商品录入', path: '/projects/create', active: false, width: '80px' },
   { label: '合规分析', path: '/compliance', active: false, width: '80px' },
   { label: '脚本/分镜', path: '/workspace/script', active: false, width: '92px' },
   { label: '内容创作', path: '/workspace/content', active: false, width: '80px' },
@@ -306,19 +322,13 @@ const navItems = [
   { label: '数据分析', path: '/analytics', active: true, width: '80px' }
 ] as const
 
-const metricCards = ref<AnalyticsMetricCard[]>([
-  { icon: 'eye', label: '总曝光量', value: '125.4K', trend: '+24.5%', tone: 'blue' },
-  { icon: 'spark', label: '点击率', value: '8.7%', trend: '+12.3%', tone: 'purple' },
-  { icon: 'cart', label: '转化率', value: '4.2%', trend: '+18.7%', tone: 'orange' },
-  { icon: 'coin', label: 'ROI', value: '3.8x', trend: '+25.4%', tone: 'green' }
-])
+const loading = ref(false)
+const errorMessage = ref('')
 
-const trendXAxis = ref(['04-12', '04-13', '04-14', '04-15', '04-16', '04-17', '04-18'])
-const trendSeries = ref<AnalyticsTrendSeries[]>([
-  { name: '曝光', color: '#19b9dc', width: 2.3, opacity: 0.7, data: [15600, 18800, 17200, 22100, 19600, 23800, 26000] },
-  { name: '点击', color: '#7c3aed', width: 2.6, opacity: 0.72, data: [1200, 1420, 1380, 1780, 1620, 1920, 2260] },
-  { name: '转化', color: '#ff7a18', width: 3.1, opacity: 1, data: [45, 72, 60, 96, 83, 118, 132] }
-])
+const metricCards = ref<AnalyticsMetricCard[]>([])
+
+const trendXAxis = ref<string[]>([])
+const trendSeries = ref<AnalyticsTrendSeries[]>([])
 
 const trendMax = computed(() => {
   const values = trendSeries.value.flatMap((series) => series.data)
@@ -330,20 +340,9 @@ const trendYAxis = computed(() => {
   return [max, max * 0.75, max * 0.5, max * 0.25, 0].map((value) => String(Math.round(value)))
 })
 
-const marketShare = ref<AnalyticsMarketShare[]>([
-  { name: '美国', value: '42%', color: '#18b5d5' },
-  { name: '德国', value: '18%', color: '#7a3fe8' },
-  { name: '日本', value: '15%', color: '#ff7a18' },
-  { name: '英国', value: '12%', color: '#14b97f' },
-  { name: '其他', value: '13%', color: '#64748b' }
-])
+const marketShare = ref<AnalyticsMarketShare[]>([])
 
-const videoBars = ref<AnalyticsVideoBar[]>([
-  { name: '视频A', views: 47000, conversions: 45000 },
-  { name: '视频B', views: 40500, conversions: 39000 },
-  { name: '视频C', views: 33000, conversions: 32000 },
-  { name: '视频D', views: 29500, conversions: 29000 }
-])
+const videoBars = ref<AnalyticsVideoBar[]>([])
 
 const videoChartMax = computed(() => {
   const values = videoBars.value.flatMap((item) => [item.views, item.conversions])
@@ -358,37 +357,17 @@ const videoYAxis = computed(() => [
   '0'
 ])
 
-const insights = ref<AnalyticsInsight[]>([
-  {
-    icon: 'growth',
-    tone: 'green',
-    title: '转化率提升显著',
-    description: '相比上周提升18.7%，建议继续优化当前营销策略'
-  },
-  {
-    icon: 'audience',
-    tone: 'blue',
-    title: '美国市场表现最佳',
-    description: '占总转化的42%，建议增加美国市场投放预算'
-  },
-  {
-    icon: 'video',
-    tone: 'orange',
-    title: '视频完播率待提升',
-    description: '平均完播率62%，建议优化视频前3秒内容以提升留存'
-  }
-])
+const insights = ref<AnalyticsInsight[]>([])
 
-const recommendations = ref<AnalyticsRecommendation[]>([
-  {
-    title: '投放策略优化',
-    description: '建议在美国市场增加30%预算，同时优化德国市场的内容本地化以提升转化率'
-  },
-  {
-    title: '内容创意优化',
-    description: '视频A表现最佳，建议制作相似风格的变体版本，并在前3秒突出核心卖点'
-  }
-])
+const recommendations = ref<AnalyticsRecommendation[]>([])
+
+const isEmpty = computed(() => {
+  const metricHasValue = metricCards.value.some((item) => !['0', '0%', '0.0%', '0.0x'].includes(String(item.value)))
+  const trendHasValue = trendSeries.value.some((series) => series.data.some((value) => value > 0))
+  const marketHasValue = marketShare.value.some((item) => item.name !== '暂无市场数据' && item.value !== '0%')
+  const videoHasValue = videoBars.value.some((item) => item.views > 0 || item.conversions > 0)
+  return !metricHasValue && !trendHasValue && !marketHasValue && !videoHasValue
+})
 
 const mapTrendPoint = (value: number, index: number, total: number) => {
   const x = total <= 1 ? 0 : Number(((index / (total - 1)) * 370).toFixed(2))
@@ -430,17 +409,21 @@ const handleNavClick = (path: string) => {
 const getChartHeight = (value: number, max: number) => Number(((value / max) * 236).toFixed(2))
 
 const loadAnalytics = async () => {
+  loading.value = true
+  errorMessage.value = ''
   try {
     const summary = await analyticsAPI.summary()
-    metricCards.value = summary.metricCards
-    trendXAxis.value = summary.trendXAxis
-    trendSeries.value = summary.trendSeries
-    marketShare.value = summary.marketShare
-    videoBars.value = summary.videoBars
-    insights.value = summary.insights
-    recommendations.value = summary.recommendations
-  } catch (error) {
-    console.warn('Failed to load analytics summary, fallback demo data is used.', error)
+    metricCards.value = summary.metricCards || []
+    trendXAxis.value = summary.trendXAxis || []
+    trendSeries.value = summary.trendSeries || []
+    marketShare.value = summary.marketShare || []
+    videoBars.value = summary.videoBars || []
+    insights.value = summary.insights || []
+    recommendations.value = summary.recommendations || []
+  } catch (error: any) {
+    errorMessage.value = error?.message || '数据分析接口暂时不可用，请稍后重试。'
+  } finally {
+    loading.value = false
   }
 }
 
@@ -674,6 +657,50 @@ onMounted(() => {
   color: #45556c;
   font-size: 16px;
   line-height: 24px;
+}
+
+.analytics-hero__note {
+  max-width: 880px;
+  padding: 10px 12px;
+  border: 1px solid rgba(25, 185, 220, 0.28);
+  border-radius: 8px;
+  background: rgba(25, 185, 220, 0.08);
+  color: #486073;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.analytics-state-card {
+  padding: 20px 22px;
+  border: 1px solid rgba(25, 185, 220, 0.26);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #45556c;
+}
+
+.analytics-state-card strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #0a2463;
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.analytics-state-card p {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.analytics-state-card button {
+  border: 0;
+  border-radius: 10px;
+  background: #0a2463;
+  color: #ffffff;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .metrics-grid {

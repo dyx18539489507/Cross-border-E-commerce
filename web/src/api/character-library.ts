@@ -63,6 +63,16 @@ export const characterLibraryAPI = {
     return request.put(`/characters/${characterId}/image`, { image_url: imageUrl })
   },
 
+  uploadCharacterImageFile(characterId: string, file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post<{ url: string; filename: string; size: number }>(`/characters/${characterId}/upload-image`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+
   // 从角色库应用形象
   applyFromLibrary(characterId: string, libraryItemId: string) {
     return request.put(`/characters/${characterId}/image-from-library`, {

@@ -313,7 +313,7 @@
                 {{ isSavingDraft ? '保存中...' : '保存草稿' }}
               </button>
 
-              <button type="button" class="stage-actions__ghost" @click="router.push('/dramas')">
+              <button type="button" class="stage-actions__ghost" @click="router.push('/projects')">
                 返回工作台
               </button>
             </section>
@@ -496,8 +496,8 @@ const workspaceStorageKey = computed(
 )
 
 const navItems = computed(() => [
-  { label: '工作台', path: '/dramas', active: false, width: '66px' },
-  { label: '商品录入', path: '/dramas/create', active: false, width: '80px' },
+  { label: '工作台', path: '/projects', active: false, width: '66px' },
+  { label: '商品录入', path: '/projects/create', active: false, width: '80px' },
   { label: '合规分析', path: '/compliance', active: false, width: '80px' },
   {
     label: '脚本/分镜',
@@ -932,7 +932,7 @@ const handleBeginCreation = async () => {
       return
     }
 
-    ElMessage.info('内容创作流程将在剧集上下文接入后自动跳转，当前先保留页面与草稿状态。')
+    ElMessage.info('内容创作流程将在项目上下文接入后自动跳转，当前先保留页面与草稿状态。')
   } finally {
     isStartingCreation.value = false
   }

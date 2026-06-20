@@ -8,12 +8,15 @@ package handlers
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	middlewares2 "github.com/drama-generator/backend/api/middlewares"
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/config"
@@ -28,6 +31,7 @@ type DigitalHumanHandler struct {
 	uploadService       *services.UploadService
 	speechTTSService    *services.SpeechTTSService
 	voiceLibraryService *services.VoiceLibraryService
+	taskService         *services.TaskService
 	log                 *logger.Logger
 }
 
@@ -48,8 +52,42 @@ func NewDigitalHumanHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger)
 		uploadService:       uploadService,
 		speechTTSService:    services.NewSpeechTTSService(cfg, log),
 		voiceLibraryService: voiceLibraryService,
+		taskService:         services.NewTaskService(db, log),
 		log:                 log,
 	}, nil
+}
+
+const digitalHumanTaskType = "digital_human_generation"
+
+type digitalHumanTaskResult struct {
+	LocalTaskID      string   `json:"local_task_id,omitempty"`
+	TaskID           string   `json:"task_id,omitempty"`
+	UpstreamTaskID   string   `json:"upstream_task_id,omitempty"`
+	VideoURL         string   `json:"video_url,omitempty"`
+	ImageURL         string   `json:"image_url,omitempty"`
+	AudioURL         string   `json:"audio_url,omitempty"`
+	SpeechText       string   `json:"speech_text,omitempty"`
+	MotionText       string   `json:"motion_text,omitempty"`
+	MaskURLs         []string `json:"mask_urls,omitempty"`
+	SubjectDetected  bool     `json:"subject_detected"`
+	MarketingUseCase string   `json:"marketing_use_case,omitempty"`
+}
+
+type digitalHumanTaskView struct {
+	ID             string                  `json:"id"`
+	Type           string                  `json:"type"`
+	Status         string                  `json:"status"`
+	Progress       int                     `json:"progress"`
+	Message        string                  `json:"message,omitempty"`
+	Error          string                  `json:"error,omitempty"`
+	ResourceID     string                  `json:"resource_id,omitempty"`
+	Result         *digitalHumanTaskResult `json:"result,omitempty"`
+	VideoURL       string                  `json:"video_url,omitempty"`
+	TaskID         string                  `json:"task_id,omitempty"`
+	UpstreamTaskID string                  `json:"upstream_task_id,omitempty"`
+	CreatedAt      string                  `json:"created_at"`
+	UpdatedAt      string                  `json:"updated_at"`
+	CompletedAt    *string                 `json:"completed_at,omitempty"`
 }
 
 /**
@@ -58,6 +96,8 @@ func NewDigitalHumanHandler(db *gorm.DB, cfg *config.Config, log *logger.Logger)
  * 返回：DigitalHumanResult，包含任务 ID、视频 URL 和主体检测状态。
  */
 func (h *DigitalHumanHandler) Generate(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
+
 	imageFile, imageHeader, err := c.Request.FormFile("image")
 	if err != nil {
 		response.BadRequest(c, "请上传图片")
@@ -224,6 +264,13 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 		voiceType = ""
 	}
 
+	task, taskErr := h.taskService.CreateTask(digitalHumanTaskType, "digital-human", deviceID)
+	if taskErr != nil {
+		h.log.Warnw("Failed to create digital human history task", "error", taskErr, "device_id", deviceID)
+	} else if err := h.taskService.UpdateTaskStatus(task.ID, "processing", 45, "数字人营销视频生成中"); err != nil {
+		h.log.Warnw("Failed to mark digital human task processing", "error", err, "task_id", task.ID)
+	}
+
 	result, err := h.service.Generate(c.Request.Context(), &services.DigitalHumanRequest{
 		ImageURL:    uploadedImageURL,
 		ImageBase64: imageBase64,
@@ -233,6 +280,9 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 		MotionText:  motionText,
 	})
 	if err != nil {
+		if task != nil {
+			_ = h.taskService.UpdateTaskError(task.ID, err)
+		}
 		h.log.Errorw("Failed to generate digital human video", "error", err)
 		msg := err.Error()
 		// 上游视觉/语音服务错误较细碎，这里转换成前端可执行的提示：换图、换音频、稍后重试或补充配置。
@@ -267,7 +317,204 @@ func (h *DigitalHumanHandler) Generate(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, result)
+	payload := digitalHumanTaskResult{
+		TaskID:           result.TaskID,
+		UpstreamTaskID:   result.TaskID,
+		VideoURL:         result.VideoURL,
+		ImageURL:         uploadedImageURL,
+		AudioURL:         audioURL,
+		SpeechText:       strings.TrimSpace(c.PostForm("speech_text")),
+		MotionText:       motionText,
+		MaskURLs:         result.MaskURLs,
+		SubjectDetected:  result.SubjectDetected,
+		MarketingUseCase: "跨境商品数字人口播视频",
+	}
+	if task != nil {
+		payload.LocalTaskID = task.ID
+		if err := h.taskService.UpdateTaskResult(task.ID, payload); err != nil {
+			h.log.Warnw("Failed to save digital human result", "error", err, "task_id", task.ID)
+		}
+	}
+
+	response.Success(c, payload)
+}
+
+func (h *DigitalHumanHandler) ListTasks(c *gin.Context) {
+	deviceID := middlewares2.GetDeviceID(c)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	status := strings.TrimSpace(c.Query("status"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	query := h.taskQuery(deviceID)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	var total int64
+	if err := query.Model(&models.AsyncTask{}).Count(&total).Error; err != nil {
+		h.log.Errorw("Failed to count digital human tasks", "error", err)
+		response.InternalError(c, "获取数字人任务失败")
+		return
+	}
+
+	var tasks []models.AsyncTask
+	if err := query.
+		Order("created_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&tasks).Error; err != nil {
+		h.log.Errorw("Failed to list digital human tasks", "error", err)
+		response.InternalError(c, "获取数字人任务失败")
+		return
+	}
+
+	views := make([]digitalHumanTaskView, 0, len(tasks))
+	for i := range tasks {
+		views = append(views, buildDigitalHumanTaskView(&tasks[i]))
+	}
+	response.SuccessWithPagination(c, views, total, page, pageSize)
+}
+
+func (h *DigitalHumanHandler) GetTask(c *gin.Context) {
+	task, ok := h.findTask(c)
+	if !ok {
+		return
+	}
+	response.Success(c, buildDigitalHumanTaskView(task))
+}
+
+func (h *DigitalHumanHandler) GetTaskStatus(c *gin.Context) {
+	task, ok := h.findTask(c)
+	if !ok {
+		return
+	}
+	view := buildDigitalHumanTaskView(task)
+	response.Success(c, gin.H{
+		"id":               view.ID,
+		"status":           view.Status,
+		"progress":         view.Progress,
+		"message":          view.Message,
+		"error":            view.Error,
+		"video_url":        view.VideoURL,
+		"task_id":          view.TaskID,
+		"upstream_task_id": view.UpstreamTaskID,
+		"updated_at":       view.UpdatedAt,
+	})
+}
+
+func (h *DigitalHumanHandler) GetTaskResult(c *gin.Context) {
+	task, ok := h.findTask(c)
+	if !ok {
+		return
+	}
+	view := buildDigitalHumanTaskView(task)
+	if view.Result == nil {
+		response.Success(c, gin.H{
+			"id":       view.ID,
+			"status":   view.Status,
+			"progress": view.Progress,
+			"error":    view.Error,
+		})
+		return
+	}
+	response.Success(c, view.Result)
+}
+
+func (h *DigitalHumanHandler) DeleteTask(c *gin.Context) {
+	task, ok := h.findTask(c)
+	if !ok {
+		return
+	}
+	if err := h.taskQuery(middlewares2.GetDeviceID(c)).Where("id = ?", task.ID).Delete(&models.AsyncTask{}).Error; err != nil {
+		h.log.Errorw("Failed to delete digital human task", "error", err, "task_id", task.ID)
+		response.InternalError(c, "删除数字人任务失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "删除成功"})
+}
+
+func (h *DigitalHumanHandler) taskQuery(deviceID string) *gorm.DB {
+	query := h.serviceDB().Where("type = ?", digitalHumanTaskType)
+	if deviceID != "" {
+		query = query.Where("device_id = ?", deviceID)
+	}
+	return query
+}
+
+func (h *DigitalHumanHandler) serviceDB() *gorm.DB {
+	return h.taskServiceDB()
+}
+
+func (h *DigitalHumanHandler) taskServiceDB() *gorm.DB {
+	return h.taskService.GetDB()
+}
+
+func (h *DigitalHumanHandler) findTask(c *gin.Context) (*models.AsyncTask, bool) {
+	deviceID := middlewares2.GetDeviceID(c)
+	taskID := strings.TrimSpace(c.Param("id"))
+	if taskID == "" {
+		response.BadRequest(c, "缺少数字人任务 ID")
+		return nil, false
+	}
+
+	var task models.AsyncTask
+	if err := h.taskQuery(deviceID).Where("id = ?", taskID).First(&task).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.NotFound(c, "数字人任务不存在")
+			return nil, false
+		}
+		h.log.Errorw("Failed to get digital human task", "error", err, "task_id", taskID)
+		response.InternalError(c, "获取数字人任务失败")
+		return nil, false
+	}
+	return &task, true
+}
+
+func buildDigitalHumanTaskView(task *models.AsyncTask) digitalHumanTaskView {
+	result := parseDigitalHumanTaskResult(task.Result)
+	view := digitalHumanTaskView{
+		ID:         task.ID,
+		Type:       task.Type,
+		Status:     task.Status,
+		Progress:   task.Progress,
+		Message:    task.Message,
+		Error:      task.Error,
+		ResourceID: task.ResourceID,
+		Result:     result,
+		CreatedAt:  task.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:  task.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+	}
+	if task.CompletedAt != nil {
+		completed := task.CompletedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+		view.CompletedAt = &completed
+	}
+	if result != nil {
+		view.VideoURL = result.VideoURL
+		view.TaskID = result.TaskID
+		view.UpstreamTaskID = result.UpstreamTaskID
+	}
+	return view
+}
+
+func parseDigitalHumanTaskResult(raw string) *digitalHumanTaskResult {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var result digitalHumanTaskResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return nil
+	}
+	if result.UpstreamTaskID == "" {
+		result.UpstreamTaskID = result.TaskID
+	}
+	return &result
 }
 
 func isAllowedAudioUpload(contentType, filename string) bool {

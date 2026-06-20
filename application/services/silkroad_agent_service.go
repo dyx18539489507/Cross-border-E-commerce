@@ -238,14 +238,14 @@ func (s *SilkroadAgentService) ExtractInput(input SilkroadAgentInput) SilkroadAg
 /**
  * 功能：生成丝路 Agent 完整结果页方案。
  * 参数：input 为商品、图片、目标市场、平台、人群、卖点和原始描述。
- * 返回：SilkroadAgentResult；配置缺失或模型调用失败时返回错误，开发环境可返回 mock 结果。
+ * 返回：SilkroadAgentResult；配置缺失或模型调用失败时返回错误，开发环境可返回本地兜底结果。
  */
 func (s *SilkroadAgentService) Generate(input SilkroadAgentInput) (*SilkroadAgentResult, error) {
 	input = extractSilkroadInput(input)
 	settings := s.readSettings()
 	if settings.APIKey == "" {
 		if s.cfg != nil && s.cfg.App.Debug {
-			result := buildFallbackAgentResult(input, "开发环境未配置 AGENT_API_KEY/DEEPSEEK_API_KEY，已返回 mock 数据。")
+			result := buildFallbackAgentResult(input, "开发环境未配置 AGENT_API_KEY/DEEPSEEK_API_KEY，已返回本地兜底结果。")
 			result.IsMock = true
 			result.Model = settings.TextModel
 			return result, nil

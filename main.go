@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -43,15 +44,12 @@ func main() {
 	}
 	logr.Info("Database tables migrated successfully")
 
-	// 初始化本地存储
-	var localStorage *storage.LocalStorage
-	if cfg.Storage.Type == "local" {
-		localStorage, err = storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Storage.BaseURL)
-		if err != nil {
-			logr.Fatal("Failed to initialize local storage", "error", err)
-		}
-		logr.Info("Local storage initialized successfully", "path", cfg.Storage.LocalPath)
+	// 本地目录同时承担本地存储和远端对象存储的上传缓存，所有部署模式都必须初始化。
+	localStorage, err := storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Storage.BaseURL)
+	if err != nil {
+		logr.Fatal("Failed to initialize local storage", "error", err)
 	}
+	logr.Info("Local storage initialized successfully", "path", cfg.Storage.LocalPath)
 
 	if cfg.App.Debug {
 		gin.SetMode(gin.DebugMode)
@@ -69,11 +67,23 @@ func main() {
 	)
 	distributionScheduler.Start()
 
+	readTimeout := time.Duration(cfg.Server.ReadTimeout) * time.Second
+	if readTimeout <= 0 {
+		readTimeout = 10 * time.Minute
+	}
+	writeTimeout := time.Duration(cfg.Server.WriteTimeout) * time.Second
+	if writeTimeout <= 0 {
+		writeTimeout = 10 * time.Minute
+	}
+	serverHost := cfg.Server.Host
+	if serverHost == "" {
+		serverHost = "0.0.0.0"
+	}
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Addr:         net.JoinHostPort(serverHost, fmt.Sprintf("%d", cfg.Server.Port)),
 		Handler:      router,
-		ReadTimeout:  10 * time.Minute,
-		WriteTimeout: 10 * time.Minute,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
 	}
 
 	go func() {

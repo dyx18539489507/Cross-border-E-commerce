@@ -428,12 +428,7 @@ const startResultGeneration = async () => {
 const startStreamingAnalysis = async () => {
   abortController = new AbortController()
   try {
-    const response = await fetch('/api/v1/agent/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildAnalyzePayload()),
-      signal: abortController.signal
-    })
+    const response = await agentAPI.analyzeProductStream(buildAnalyzePayload(), abortController.signal)
     if (!response.ok || !response.body) {
       throw new Error('stream unavailable')
     }

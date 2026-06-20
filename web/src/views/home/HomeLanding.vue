@@ -439,7 +439,7 @@ const testimonials = [
 ]
 
 const createProject = () => {
-  router.push({ path: '/dramas/create', query: { source: 'manual' } })
+  router.push({ path: '/projects/create', query: { source: 'manual' } })
 }
 
 const openProductPage = () => {
@@ -487,7 +487,7 @@ const openAgentPage = async () => {
     saveAgentInput(input)
     saveAgentUserInput(input.rawPrompt || defaultAgentUserInput)
     clearAgentResult()
-    await router.push('/agent/transition')
+    await router.push('/agent')
   } finally {
     agentStarting.value = false
   }

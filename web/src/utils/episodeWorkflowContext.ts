@@ -113,4 +113,4 @@ export const buildEpisodeStagePath = (
 }
 
 export const buildProfessionalEditorPath = (context: EpisodeWorkflowContext) =>
-  `/dramas/${context.dramaId}/episode/${context.episodeNumber}/professional`
+  `/projects/${context.dramaId}/episode/${context.episodeNumber}/professional`

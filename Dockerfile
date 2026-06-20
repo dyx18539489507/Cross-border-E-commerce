@@ -1,14 +1,20 @@
-# 多阶段构建 Dockerfile for Huobao Drama
+# 数字丝路前后端一体化多阶段构建
 
 # ==================== 阶段1: 构建前端 ====================
 # 声明构建参数（支持镜像源配置）
 ARG DOCKER_REGISTRY=
 ARG NPM_REGISTRY=
+ARG VITE_API_BASE_URL=/api/v1
+ARG VITE_DEMO_DEVICE_ID=
 
 FROM ${DOCKER_REGISTRY:-}node:20-alpine AS frontend-builder
 
 # 重新声明 ARG（FROM 之后 ARG 作用域失效，需要重新声明）
 ARG NPM_REGISTRY=
+ARG VITE_API_BASE_URL=/api/v1
+ARG VITE_DEMO_DEVICE_ID=
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_DEMO_DEVICE_ID=${VITE_DEMO_DEVICE_ID}
 
 # 配置 npm 镜像源（条件执行）
 ENV NPM_REGISTRY=${NPM_REGISTRY:-}
@@ -21,8 +27,8 @@ WORKDIR /app/web
 # 复制前端依赖文件
 COPY web/package*.json ./
 
-# 安装前端依赖（包括 devDependencies，构建需要）
-RUN npm install
+# 按 lockfile 安装前端依赖（包括构建所需 devDependencies）
+RUN npm ci
 
 # 复制前端源码
 COPY web/ ./
@@ -73,7 +79,7 @@ COPY . .
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
 # 构建后端可执行文件（纯 Go 编译，使用 modernc.org/sqlite）
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o huobao-drama .
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o digital-silk-road .
 
 # ==================== 阶段3: 运行时镜像 ====================
 # 每个阶段前重新声明构建参数
@@ -105,7 +111,7 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 
 # 从构建阶段复制可执行文件
-COPY --from=backend-builder /app/huobao-drama .
+COPY --from=backend-builder /app/digital-silk-road .
 
 # 复制前端构建产物
 COPY --from=frontend-builder /app/web/dist ./web/dist
@@ -117,15 +123,20 @@ RUN cp ./configs/config.example.yaml ./configs/config.yaml
 # 复制数据库迁移文件
 COPY migrations ./migrations/
 
+# 复制合规 RAG 规则库
+COPY data/compliance_rules.json ./data/compliance_rules.json
+
 # 创建数据目录（root 用户运行，无需权限设置）
 RUN mkdir -p /app/data/storage
 
 # 暴露端口
 EXPOSE 5678
 
+ENV SERVER_PORT=5678
+
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:5678/health || exit 1
+    CMD-SHELL wget --no-verbose --tries=1 --spider http://localhost:${SERVER_PORT:-5678}/health || exit 1
 
 # 启动应用
-CMD ["./huobao-drama"]
+CMD ["./digital-silk-road"]

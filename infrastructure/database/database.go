@@ -97,6 +97,11 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Asset{},
 		&models.CharacterLibrary{},
 		&models.CustomVoice{},
+		&models.Timeline{},
+		&models.TimelineTrack{},
+		&models.TimelineClip{},
+		&models.ClipTransition{},
+		&models.ClipEffect{},
 
 		// 任务管理
 		&models.AsyncTask{},

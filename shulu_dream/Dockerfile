@@ -1,4 +1,4 @@
-# 多阶段构建 Dockerfile for Huobao Drama
+# Historical backend compatibility image; not used by the active application.
 
 # ==================== 阶段1: 构建前端 ====================
 # 声明构建参数（支持镜像源配置）

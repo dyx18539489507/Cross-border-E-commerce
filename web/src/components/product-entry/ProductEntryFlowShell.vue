@@ -119,8 +119,8 @@ const brandLogo = '/logo_circle.png'
 const hasAgentPrefill = computed(() => getProductDraft()?.source === 'agent')
 
 const navItems = [
-  { label: '工作台', path: '/dramas', active: false, width: '66px' },
-  { label: '商品录入', path: '/dramas/create', active: true, width: '80px' },
+  { label: '工作台', path: '/projects', active: false, width: '66px' },
+  { label: '商品录入', path: '/projects/create', active: true, width: '80px' },
   { label: '合规分析', path: '/compliance', active: false, width: '80px' },
   { label: '脚本/分镜', path: '/workspace/script', active: false, width: '92px' },
   { label: '内容创作', path: '/workspace/content', active: false, width: '80px' },

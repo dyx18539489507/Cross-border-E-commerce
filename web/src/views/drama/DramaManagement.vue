@@ -532,7 +532,12 @@
           </el-tabs>
         </section>
 
-        <el-dialog v-model="addCharacterDialogVisible" :title="$t('character.add')" width="600px" class="dialog-form-safe">
+        <el-dialog
+          v-model="addCharacterDialogVisible"
+          :title="editingCharacterId ? $t('character.edit') : $t('character.add')"
+          width="600px"
+          class="dialog-form-safe"
+        >
           <el-form
             ref="characterFormRef"
             :model="newCharacter"
@@ -599,6 +604,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Clock, Document, EditPen, Picture, Plus, User } from '@element-plus/icons-vue'
 import { dramaAPI } from '@/api/drama'
 import { characterLibraryAPI } from '@/api/character-library'
+import { mediaAPI } from '@/api/media'
 import type { Drama } from '@/types/drama'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { ALL_COUNTRIES } from '@/constants/countries'
@@ -620,6 +626,7 @@ const editDescriptionFormRef = ref<{ $el?: HTMLElement } | null>(null)
 
 const addCharacterDialogVisible = ref(false)
 const addSceneDialogVisible = ref(false)
+const editingCharacterId = ref<number | null>(null)
 const characterFormRef = ref<{ $el?: HTMLElement } | null>(null)
 const sceneFormRef = ref<{ $el?: HTMLElement } | null>(null)
 
@@ -842,7 +849,7 @@ const goBack = () => {
     router.back()
     return
   }
-  router.push('/dramas')
+  router.push('/projects')
 }
 
 const getStatusTone = (status?: string) => {
@@ -954,7 +961,7 @@ const fixImageUrl = (url?: string | null): string => {
   const value = (url || '').trim()
   if (!value) return ''
   if (value.startsWith('blob:') || value.startsWith('data:')) return value
-  if (value.startsWith('/api/v1/media/proxy')) {
+  if (mediaAPI.isMediaProxyUrl(value)) {
     try {
       const parsed = new URL(value, window.location.origin)
       const raw = parsed.searchParams.get('url')
@@ -1078,6 +1085,7 @@ const deleteEpisode = async (episode: any) => {
 }
 
 const openAddCharacterDialog = () => {
+  editingCharacterId.value = null
   newCharacter.value = {
     name: '',
     role: 'supporting',
@@ -1095,6 +1103,20 @@ const addCharacter = async () => {
   }
 
   try {
+    if (editingCharacterId.value) {
+      await characterLibraryAPI.updateCharacter(editingCharacterId.value, {
+        name: newCharacter.value.name,
+        appearance: newCharacter.value.appearance,
+        personality: newCharacter.value.personality,
+        description: newCharacter.value.description
+      })
+      ElMessage.success(t('character.messages.saveSuccess'))
+      addCharacterDialogVisible.value = false
+      editingCharacterId.value = null
+      await loadDramaData()
+      return
+    }
+
     const existingCharacters = drama.value?.characters || []
     const allCharacters = [
       ...existingCharacters.map((character) => ({
@@ -1116,8 +1138,21 @@ const addCharacter = async () => {
   }
 }
 
-const editCharacter = (_character: any) => {
-  ElMessage.info(t('character.messages.editInDevelopment'))
+const editCharacter = (character: any) => {
+  if (!character?.id) {
+    ElMessage.warning(t('character.messages.missingId'))
+    return
+  }
+
+  editingCharacterId.value = Number(character.id)
+  newCharacter.value = {
+    name: character.name || '',
+    role: character.role || 'supporting',
+    appearance: character.appearance || '',
+    personality: character.personality || '',
+    description: character.description || ''
+  }
+  addCharacterDialogVisible.value = true
 }
 
 const deleteCharacter = async (character: any) => {

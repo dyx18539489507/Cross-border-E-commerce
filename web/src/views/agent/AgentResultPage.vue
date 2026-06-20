@@ -973,7 +973,7 @@ const continueProductEntryFromAgent = () => {
   if (!storedResult.value) return
   // 结果页进入商品录入时，把 Agent 识别出的市场、卖点和合规提示沉淀为商品草稿，避免用户重复填写。
   saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
-  router.push({ path: '/dramas/create', query: { source: 'agent' } })
+  router.push({ path: '/projects/create', query: { source: 'agent' } })
 }
 
 const getCurrentHistoryId = () => {
@@ -994,7 +994,7 @@ const createMarketingProject = async () => {
       workflow: storedWorkflow.value || undefined
     })
     ElMessage.success(created.summary || '营销项目已创建')
-    router.push(created.path || { path: '/workspace/script', query: { projectId: String(created.project_id), source: 'agent' } })
+    router.push(`/projects/${created.project_id}`)
   } catch (error) {
     ElMessage.error((error as Error).message || '创建营销项目失败')
   } finally {
@@ -1009,7 +1009,7 @@ const startContentWorkflow = (target: ContentWorkflowTarget) => {
   saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
   saveContentWorkflowIntent(buildContentWorkflowIntentFromAgent(storedResult.value, storedAgentInput.value, target))
   router.push({
-    path: '/workspace/content',
+    path: target === 'digital-human' ? '/digital-human/create' : '/media/image',
     query: {
       source: 'agent',
       focus: target
@@ -1028,14 +1028,14 @@ const goScriptWorkspace = () => {
   if (storedResult.value) {
     saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
   }
-  router.push({ path: '/workspace/script', query: { source: 'agent' } })
+  router.push({ path: '/projects/create', query: { source: 'agent', next: 'script' } })
 }
 
 const goTimelineWorkspace = () => {
   if (storedResult.value) {
     saveAgentResultAsProductDraft(storedResult.value, storedAgentInput.value)
   }
-  router.push({ path: '/workspace/timeline', query: { source: 'agent' } })
+  router.push({ path: '/projects', query: { source: 'agent', next: 'editor' } })
 }
 
 const getAgentDisplayName = (name: string) => {
@@ -1138,15 +1138,10 @@ const requestFollowUp = async (question: string, agentMessageId: string) => {
   let streamError = ''
 
   try {
-    const response = await fetch('/api/v1/agent/follow-up', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        question,
-        context: buildFollowUpContext()
-      }),
-      signal: followUpAbortController.signal
-    })
+    const response = await agentAPI.sendFollowUpStream({
+      question,
+      context: buildFollowUpContext()
+    }, followUpAbortController.signal)
 
     if (!response.ok || !response.body) {
       throw new Error('follow-up stream unavailable')

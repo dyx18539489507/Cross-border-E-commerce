@@ -1,4 +1,4 @@
-import request, { getClientDeviceID } from '@/utils/request'
+import request, { buildAPIURL, getClientDeviceID } from '@/utils/request'
 import type {
   CreateNotificationPayload,
   NotificationItem,
@@ -47,6 +47,6 @@ export const notificationAPI = {
   },
 
   streamURL() {
-    return `/api/v1/notifications/stream?device_id=${encodeURIComponent(getClientDeviceID())}`
+    return `${buildAPIURL('/notifications/stream')}?device_id=${encodeURIComponent(getClientDeviceID())}`
   }
 }

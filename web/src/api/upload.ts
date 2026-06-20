@@ -19,6 +19,20 @@ export interface UploadFileOptions {
   category?: string
 }
 
+const uploadMultipart = <T>(url: string, file: File, options: UploadFileOptions = {}) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (options.category) {
+    formData.append('category', options.category)
+  }
+
+  return request.post<T>(url, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
 export const uploadAPI = {
   /**
    * 功能：上传商品或营销素材文件。
@@ -26,16 +40,22 @@ export const uploadAPI = {
    * 返回：UploadFileResponse，包含可被商品草稿和素材库继续引用的 URL。
    */
   uploadFile(file: File, options: UploadFileOptions = {}) {
-    const formData = new FormData()
-    formData.append('file', file)
-    if (options.category) {
-      formData.append('category', options.category)
-    }
+    return uploadMultipart<UploadFileResponse>('/upload/file', file, options)
+  },
 
-    return request.post<UploadFileResponse>('/upload/file', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
+  uploadImage(file: File, options: UploadFileOptions = {}) {
+    return uploadMultipart<UploadFileResponse>('/upload/image', file, options)
+  },
+
+  uploadVideo(file: File, options: UploadFileOptions = {}) {
+    return uploadMultipart<UploadFileResponse>('/upload/file', file, { category: options.category || 'videos' })
+  },
+
+  uploadAudio(file: File, options: UploadFileOptions = {}) {
+    return uploadMultipart<UploadFileResponse>('/upload/file', file, { category: options.category || 'audios' })
+  },
+
+  uploadMaterial(file: File, options: UploadFileOptions = {}) {
+    return uploadMultipart<UploadFileResponse>('/upload/file', file, { category: options.category || 'materials' })
   }
 }

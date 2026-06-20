@@ -12,16 +12,22 @@ import (
 )
 
 type WorkbenchOverview struct {
+	TotalProjects       int64 `json:"totalProjects"`
 	PendingProducts     int64 `json:"pendingProducts"`
 	ComplianceCompleted int64 `json:"complianceCompleted"`
+	ImagesGenerated     int64 `json:"imagesGenerated"`
 	VideosGenerated     int64 `json:"videosGenerated"`
+	ProcessingTasks     int64 `json:"processingTasks"`
 	CoveredMarkets      int64 `json:"coveredMarkets"`
 }
 
 type WorkbenchOverviewTrend struct {
+	TotalProjects       int64 `json:"totalProjects"`
 	PendingProducts     int64 `json:"pendingProducts"`
 	ComplianceCompleted int64 `json:"complianceCompleted"`
+	ImagesGenerated     int64 `json:"imagesGenerated"`
 	VideosGenerated     int64 `json:"videosGenerated"`
+	ProcessingTasks     int64 `json:"processingTasks"`
 	CoveredMarkets      int64 `json:"coveredMarkets"`
 }
 
@@ -59,6 +65,10 @@ func NewWorkbenchService(db *gorm.DB, log *logger.Logger) *WorkbenchService {
 func (s *WorkbenchService) Summary(deviceID string) (*WorkbenchSummary, error) {
 	deviceID = strings.TrimSpace(deviceID)
 
+	totalProjects, err := s.countDramas(deviceID, "")
+	if err != nil {
+		return nil, err
+	}
 	pendingProducts, err := s.countDramas(deviceID, "status IN ?", []string{"draft", "planning", "generating", "error"})
 	if err != nil {
 		return nil, err
@@ -67,7 +77,15 @@ func (s *WorkbenchService) Summary(deviceID string) (*WorkbenchSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	imagesGenerated, err := s.countImages(deviceID, string(models.ImageStatusCompleted), time.Time{}, time.Time{})
+	if err != nil {
+		return nil, err
+	}
 	videosGenerated, err := s.countVideos(deviceID, string(models.VideoStatusCompleted), time.Time{}, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	processingTasks, err := s.countProcessingTasks(deviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +95,10 @@ func (s *WorkbenchService) Summary(deviceID string) (*WorkbenchSummary, error) {
 	}
 
 	sinceYesterday := time.Now().Add(-24 * time.Hour)
+	newProjects, _ := s.countDramasSince(deviceID, sinceYesterday)
 	newPending, _ := s.countDramasSince(deviceID, sinceYesterday)
 	newCompliance, _ := s.countDramasSince(deviceID, sinceYesterday, "compliance_report IS NOT NULL")
+	newImages, _ := s.countImages(deviceID, string(models.ImageStatusCompleted), sinceYesterday, time.Time{})
 	newVideos, _ := s.countVideos(deviceID, string(models.VideoStatusCompleted), sinceYesterday, time.Time{})
 
 	weeklyActivity, err := s.weeklyActivity(deviceID)
@@ -96,15 +116,21 @@ func (s *WorkbenchService) Summary(deviceID string) (*WorkbenchSummary, error) {
 
 	return &WorkbenchSummary{
 		Overview: WorkbenchOverview{
+			TotalProjects:       totalProjects,
 			PendingProducts:     pendingProducts,
 			ComplianceCompleted: complianceCompleted,
+			ImagesGenerated:     imagesGenerated,
 			VideosGenerated:     videosGenerated,
+			ProcessingTasks:     processingTasks,
 			CoveredMarkets:      coveredMarkets,
 		},
 		Trends: WorkbenchOverviewTrend{
+			TotalProjects:       newProjects,
 			PendingProducts:     newPending,
 			ComplianceCompleted: newCompliance,
+			ImagesGenerated:     newImages,
 			VideosGenerated:     newVideos,
+			ProcessingTasks:     0,
 			CoveredMarkets:      0,
 		},
 		WeeklyActivity:  weeklyActivity,
@@ -135,6 +161,26 @@ func (s *WorkbenchService) countDramasSince(deviceID string, since time.Time, ex
 	return count, err
 }
 
+func (s *WorkbenchService) countImages(deviceID string, status string, since time.Time, before time.Time) (int64, error) {
+	var count int64
+	query := s.db.Model(&models.ImageGeneration{}).
+		Joins("JOIN dramas ON dramas.id = image_generations.drama_id")
+	if deviceID != "" {
+		query = query.Where("dramas.device_id = ?", deviceID)
+	}
+	if status != "" {
+		query = query.Where("image_generations.status = ?", status)
+	}
+	if !since.IsZero() {
+		query = query.Where("image_generations.created_at >= ?", since)
+	}
+	if !before.IsZero() {
+		query = query.Where("image_generations.created_at < ?", before)
+	}
+	err := query.Count(&count).Error
+	return count, err
+}
+
 func (s *WorkbenchService) countVideos(deviceID string, status string, since time.Time, before time.Time) (int64, error) {
 	var count int64
 	query := s.db.Model(&models.VideoGeneration{}).
@@ -153,6 +199,44 @@ func (s *WorkbenchService) countVideos(deviceID string, status string, since tim
 	}
 	err := query.Count(&count).Error
 	return count, err
+}
+
+func (s *WorkbenchService) countProcessingTasks(deviceID string) (int64, error) {
+	var total int64
+
+	imageQuery := s.db.Model(&models.ImageGeneration{}).
+		Joins("JOIN dramas ON dramas.id = image_generations.drama_id").
+		Where("image_generations.status IN ?", []string{string(models.ImageStatusPending), string(models.ImageStatusProcessing)})
+	if deviceID != "" {
+		imageQuery = imageQuery.Where("dramas.device_id = ?", deviceID)
+	}
+	if err := imageQuery.Count(&total).Error; err != nil {
+		return 0, err
+	}
+
+	var videoCount int64
+	videoQuery := s.db.Model(&models.VideoGeneration{}).
+		Joins("JOIN dramas ON dramas.id = video_generations.drama_id").
+		Where("video_generations.status IN ?", []string{string(models.VideoStatusPending), string(models.VideoStatusProcessing)})
+	if deviceID != "" {
+		videoQuery = videoQuery.Where("dramas.device_id = ?", deviceID)
+	}
+	if err := videoQuery.Count(&videoCount).Error; err != nil {
+		return 0, err
+	}
+	total += videoCount
+
+	var asyncCount int64
+	taskQuery := s.db.Model(&models.AsyncTask{}).Where("status IN ?", []string{"pending", "processing"})
+	if deviceID != "" {
+		taskQuery = taskQuery.Where("device_id = ?", deviceID)
+	}
+	if err := taskQuery.Count(&asyncCount).Error; err != nil {
+		return 0, err
+	}
+	total += asyncCount
+
+	return total, nil
 }
 
 func (s *WorkbenchService) countCoveredMarkets(deviceID string) (int64, error) {
@@ -227,7 +311,7 @@ func (s *WorkbenchService) recentTasks(deviceID string) ([]WorkbenchRecentTask, 
 			Status: statusLabel(drama.Status),
 			Meta:   relativeTime(drama.UpdatedAt),
 			Tone:   statusTone(drama.Status),
-			Path:   fmt.Sprintf("/dramas/%d", drama.ID),
+			Path:   fmt.Sprintf("/projects/%d", drama.ID),
 		})
 	}
 	return tasks, nil

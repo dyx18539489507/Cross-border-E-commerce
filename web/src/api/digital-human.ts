@@ -7,9 +7,45 @@ import request from '../utils/request'
 
 export interface DigitalHumanResult {
   task_id: string
+  local_task_id?: string
+  upstream_task_id?: string
   video_url: string
+  image_url?: string
+  audio_url?: string
+  speech_text?: string
+  motion_text?: string
   mask_urls?: string[]
   subject_detected?: boolean
+  marketing_use_case?: string
+}
+
+export type DigitalHumanTaskStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+export interface DigitalHumanTask {
+  id: string
+  type: string
+  status: DigitalHumanTaskStatus | string
+  progress: number
+  message?: string
+  error?: string
+  resource_id?: string
+  result?: DigitalHumanResult
+  video_url?: string
+  task_id?: string
+  upstream_task_id?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+
+export interface DigitalHumanTaskListResponse {
+  items: DigitalHumanTask[]
+  pagination: {
+    page: number
+    page_size: number
+    total: number
+    total_pages: number
+  }
 }
 
 export const digitalHumanAPI = {
@@ -24,5 +60,37 @@ export const digitalHumanAPI = {
         'Content-Type': 'multipart/form-data'
       }
     })
+  },
+
+  createDigitalHumanTask(formData: FormData) {
+    return request.post<DigitalHumanResult>('/digital-humans', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+
+  getDigitalHumanTasks(params?: { page?: number; page_size?: number; status?: string }) {
+    return request.get<DigitalHumanTaskListResponse>('/digital-humans', { params })
+  },
+
+  getDigitalHumanHistory(params?: { page?: number; page_size?: number; status?: string }) {
+    return request.get<DigitalHumanTaskListResponse>('/digital-humans/history', { params })
+  },
+
+  getDigitalHumanTaskDetail(id: number | string) {
+    return request.get<DigitalHumanTask>(`/digital-humans/${id}`)
+  },
+
+  getDigitalHumanTaskStatus(id: number | string) {
+    return request.get<Pick<DigitalHumanTask, 'id' | 'status' | 'progress' | 'message' | 'error' | 'video_url' | 'task_id' | 'upstream_task_id' | 'updated_at'>>(`/digital-humans/${id}/status`)
+  },
+
+  getDigitalHumanResult(id: number | string) {
+    return request.get<DigitalHumanResult | { id: string; status: string; progress: number; error?: string }>(`/digital-humans/${id}/result`)
+  },
+
+  deleteDigitalHumanTask(id: number | string) {
+    return request.delete(`/digital-humans/${id}`)
   }
 }

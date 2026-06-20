@@ -1,6 +1,6 @@
 /**
  * 模块说明：商品录入到后端项目/合规接口的临时适配草稿。
- * 业务场景：数字丝路商品录入完成后，仍需复用现有 /dramas 创建和合规预检接口。
+ * 业务场景：数字丝路商品录入完成后，仍需复用现有 /projects 创建和合规预检接口。
  * 核心职责：把 ProductEntryDraft 派生出的 CreateDramaRequest 暂存到会话中，并在合规页读取。
  */
 import type { CreateDramaRequest } from "@/types/drama";

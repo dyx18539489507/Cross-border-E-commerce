@@ -21,7 +21,7 @@ build/
 *.dll
 *.so
 *.dylib
-huobao-drama
+digital-silk-road
 backend
 
 # 依赖
@@ -29,10 +29,19 @@ node_modules/
 **/node_modules/
 vendor/
 
-# 数据文件
-data/
+# 数据文件（仅保留只读合规规则进入构建上下文）
+data/*
+!data/compliance_rules.json
 *.db
 *.log
+
+# 本地密钥和运行配置
+.env
+.env.*
+!.env.example
+configs/config.yaml
+web/.env
+web/.env.local
 
 # 临时文件
 tmp/
@@ -48,7 +57,6 @@ coverage/
 
 # 文档
 README.md
-drama.png
 *.md
 
 # Docker
